@@ -69,7 +69,7 @@ class BalanceSheet::AccountTotals
         missing_rate_sql = ActiveRecord::Base.send(
           :sanitize_sql_array,
           [
-            "CASE WHEN accounts.currency = :family_currency THEN FALSE WHEN exchange_rates.rate IS NULL THEN TRUE ELSE FALSE END AS missing_exchange_rate",
+            "BOOL_OR(accounts.currency != :family_currency AND exchange_rates.rate IS NULL) AS missing_exchange_rate",
             { family_currency: family_currency }
           ]
         )
