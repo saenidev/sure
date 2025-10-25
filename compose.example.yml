@@ -46,11 +46,9 @@ x-rails-env: &rails_env
 
 services:
   web:
-    image: ghcr.io/we-promise/sure:latest
+    image: ghcr.io/saenidev/sure:latest
     volumes:
       - app-storage:/rails/storage
-    ports:
-      - 3000:3000
     restart: unless-stopped
     environment:
       <<: *rails_env
@@ -63,7 +61,7 @@ services:
       - sure_net
 
   worker:
-    image: ghcr.io/we-promise/sure:latest
+    image: ghcr.io/saenidev/sure:latest
     command: bundle exec sidekiq
     volumes:
       - app-storage:/rails/storage
