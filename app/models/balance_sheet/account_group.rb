@@ -34,7 +34,7 @@ class BalanceSheet::AccountGroup
   end
 
   def total
-    accounts.sum(&:converted_balance)
+    accounts.filter_map(&:converted_balance).sum
   end
 
   def weight
@@ -45,6 +45,10 @@ class BalanceSheet::AccountGroup
 
   def syncing?
     accounts.any?(&:syncing?)
+  end
+
+  def missing_exchange_rates?
+    accounts.any?(&:missing_exchange_rate?)
   end
 
   # "asset" or "liability"

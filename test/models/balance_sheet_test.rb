@@ -3,6 +3,7 @@ require "test_helper"
 class BalanceSheetTest < ActiveSupport::TestCase
   setup do
     @family = families(:empty)
+    Rails.cache.clear
   end
 
   test "calculates total assets" do
@@ -73,6 +74,25 @@ class BalanceSheetTest < ActiveSupport::TestCase
     assert_equal 2, liability_groups.size
     assert_equal 1000 + 2000, liability_groups.find { |ag| ag.name == "Credit Cards" }.total
     assert_equal 3000 + 5000, liability_groups.find { |ag| ag.name == "Other Liabilities" }.total
+  end
+
+  test "foreign currency accounts are excluded without exchange rates" do
+    create_account(balance: 1000, accountable: Depository.new, currency: "USD")
+    create_account(balance: 5000, accountable: OtherAsset.new, currency: "KRW")
+
+    balance_sheet = BalanceSheet.new(@family)
+    assert_equal 1000, balance_sheet.assets.total
+
+    ExchangeRate.create!(
+      from_currency: "KRW",
+      to_currency: @family.currency,
+      rate: BigDecimal("0.00075"),
+      date: Date.current
+    )
+    Rails.cache.clear
+
+    balance_sheet = BalanceSheet.new(@family)
+    assert_in_delta 1000 + (5000 * 0.00075), balance_sheet.assets.total
   end
 
   private

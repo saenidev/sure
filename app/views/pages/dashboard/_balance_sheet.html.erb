@@ -17,6 +17,21 @@
       </div>
 
       <% if classification_group.account_groups.any? %>
+        <% if classification_group.missing_exchange_rates? %>
+          <div class="bg-yellow-tint-10 border border-yellow-100 text-yellow-700 rounded-lg p-3 text-xs flex gap-2">
+            <%= icon "triangle-alert", size: "sm", color: "warning" %>
+            <div class="space-y-1">
+              <p class="font-medium">Missing exchange rates</p>
+              <p>
+                We couldn't convert
+                <%= pluralize(classification_group.missing_exchange_rate_accounts.size, "account") %>
+                into <%= classification_group.currency %>.
+                <%= link_to "Configure exchange rate providers.", settings_hosting_path, class: "underline font-medium" %>
+              </p>
+            </div>
+          </div>
+        <% end %>
+
         <div class="space-y-4">
           <div class="flex gap-1">
             <% classification_group.account_groups.each do |account_group| %>
@@ -86,13 +101,23 @@
                           <%
                               # Calculate weight as percentage of classification total
                               classification_total = classification_group.total_money.amount
-                              account_weight = classification_total.zero? ? 0 : account.converted_balance / classification_total * 100
+                              account_weight = if account.converted_balance.present? && !classification_total.zero?
+                                account.converted_balance / classification_total * 100
+                              else
+                                nil
+                              end
                           %>
                           <%= render "pages/dashboard/group_weight", weight: account_weight, color: account_group.color %>
                         </div>
 
                         <div class="w-40 shrink-0">
                           <p><%= format_money(account.balance_money) %></p>
+                          <% if account.missing_exchange_rate? %>
+                            <p class="text-xs text-yellow-600 flex items-center gap-1 mt-1">
+                              <%= icon "triangle-alert", size: "xs", color: "warning" %>
+                              Missing exchange rate (<%= account.currency %> → <%= classification_group.currency %>)
+                            </p>
+                          <% end %>
                         </div>
                       </div>
                     </div>

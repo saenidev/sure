@@ -21,11 +21,19 @@ class BalanceSheet::ClassificationGroup
   end
 
   def total
-    accounts.sum(&:converted_balance)
+    accounts.filter_map(&:converted_balance).sum
   end
 
   def syncing?
     accounts.any?(&:syncing?)
+  end
+
+  def missing_exchange_rates?
+    accounts.any?(&:missing_exchange_rate?)
+  end
+
+  def missing_exchange_rate_accounts
+    accounts.select(&:missing_exchange_rate?)
   end
 
   # For now, we group by accountable type. This can be extended in the future to support arbitrary user groupings.
