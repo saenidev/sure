@@ -56,8 +56,7 @@ Only proceed with pull request creation if ALL checks pass.
 - Use `Current.family` for the current family. Do NOT use `current_family`.
 
 ### Development Guidelines
-- Prior to generating any code, carefully read the project conventions and guidelines
-- Ignore i18n methods and files. Hardcode strings in English for now to optimize speed of development
+- Carefully read project conventions and guidelines before generating any code.
 - Do not run `rails server` in your responses
 - Do not run `touch tmp/restart.txt`
 - Do not run `rails credentials`
@@ -95,6 +94,27 @@ Two primary data ingestion methods:
    - Supports transaction and balance imports
    - Custom field mapping with transformation rules
 
+### Provider Integrations: Pending Transactions and FX (SimpleFIN/Plaid)
+
+- Detection
+  - SimpleFIN: pending via `pending: true` or `posted` blank/0 + `transacted_at`.
+  - Plaid: pending via Plaid `pending: true` (stored at `extra["plaid"]["pending"]` for bank/credit transactions imported via `PlaidEntry::Processor`).
+- Storage: provider data on `Transaction#extra` (e.g., `extra["simplefin"]["pending"]`; FX uses `fx_from`, `fx_date`).
+- UI: "Pending" badge when `transaction.pending?` is true; no badge if provider omits pendings.
+- Configuration (default-on for pending)
+  - SimpleFIN: `config/initializers/simplefin.rb` via `Rails.configuration.x.simplefin.*`.
+  - Plaid: `config/initializers/plaid_config.rb` via `Rails.configuration.x.plaid.*`.
+  - Pending transactions are fetched by default and handled via reconciliation/filtering.
+  - Set `SIMPLEFIN_INCLUDE_PENDING=0` to disable pending fetching for SimpleFIN.
+  - Set `PLAID_INCLUDE_PENDING=0` to disable pending fetching for Plaid.
+  - Set `SIMPLEFIN_DEBUG_RAW=1` to enable raw payload debug logging.
+
+Provider support notes:
+- SimpleFIN: supports pending + FX metadata (stored under `extra["simplefin"]`).
+- Plaid: supports pending when the upstream Plaid payload includes `pending: true` (stored under `extra["plaid"]`).
+- Plaid investments: investment transactions currently do not store pending metadata.
+- Lunchflow: does not currently store pending metadata.
+
 ### Background Processing
 Sidekiq handles asynchronous tasks:
 - Account syncing (`SyncJob`)
@@ -112,6 +132,15 @@ Sidekiq handles asynchronous tasks:
   - Always use functional tokens (e.g., `text-primary` not `text-white`)
   - Prefer semantic HTML elements over JS components
   - Use `icon` helper for icons, never `lucide_icon` directly
+- **i18n**: All user-facing strings must use localization (i18n). Update locale files for each new or changed element.
+
+### Internationalization (i18n) Guidelines
+- **Key Organization**: Use hierarchical keys by feature: `accounts.index.title`, `transactions.form.amount_label`
+- **Translation Helper**: Always use `t()` helper for user-facing strings
+- **Interpolation**: Use for dynamic content: `t("users.greeting", name: user.name)`
+- **Pluralization**: Use Rails pluralization: `t("transactions.count", count: @transactions.count)`
+- **Locale Files**: Update `config/locales/en.yml` for new strings
+- **Missing Translations**: Configure to raise errors in development for missing keys
 
 ### Multi-Currency Support
 - All monetary values stored in base currency (user's primary currency)
@@ -220,10 +249,35 @@ Sidekiq handles asynchronous tasks:
 ```erb
 <!-- GOOD: Declarative - HTML declares what happens -->
 <div data-controller="toggle">
-  <button data-action="click->toggle#toggle" data-toggle-target="button">Show</button>
-  <div data-toggle-target="content" class="hidden">Hello World!</div>
+  <button data-action="click->toggle#toggle" data-toggle-target="button">
+    <%= t("components.transaction_details.show_details") %>
+  </button>
+  <div data-toggle-target="content" class="hidden">
+    <p><%= t("components.transaction_details.amount_label") %>: <%= @transaction.amount %></p>
+    <p><%= t("components.transaction_details.date_label") %>: <%= @transaction.date %></p>
+    <p><%= t("components.transaction_details.category_label") %>: <%= @transaction.category.name %></p>
+  </div>
 </div>
 ```
+
+**Example locale file structure (config/locales/en.yml):**
+```yaml
+en:
+  components:
+    transaction_details:
+      show_details: "Show Details"
+      hide_details: "Hide Details"
+      amount_label: "Amount"
+      date_label: "Date"
+      category_label: "Category"
+```
+
+**i18n Best Practices:**
+- Organize keys by feature/component: `components.transaction_details.show_details`
+- Use descriptive key names that indicate purpose: `show_details` not `button`
+- Group related translations together in the same namespace
+- Use interpolation for dynamic content: `t("users.welcome", name: user.name)`
+- Always update locale files when adding new user-facing strings
 
 **Controller Best Practices:**
 - Keep controllers lightweight and simple (< 7 targets)

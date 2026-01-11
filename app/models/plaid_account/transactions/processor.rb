@@ -39,7 +39,7 @@ class PlaidAccount::Transactions::Processor
     end
 
     def account
-      plaid_account.account
+      plaid_account.current_account
     end
 
     def remove_plaid_transaction(raw_transaction)
@@ -51,7 +51,20 @@ class PlaidAccount::Transactions::Processor
       modified = plaid_account.raw_transactions_payload["modified"] || []
       added = plaid_account.raw_transactions_payload["added"] || []
 
-      modified + added
+      transactions = modified + added
+
+      # Filter out pending transactions based on env var or Setting
+      # Priority: env var > Setting (allows runtime changes via UI)
+      include_pending = if ENV["PLAID_INCLUDE_PENDING"].present?
+        Rails.configuration.x.plaid.include_pending
+      else
+        Setting.syncs_include_pending
+      end
+      unless include_pending
+        transactions = transactions.reject { |t| t["pending"] == true }
+      end
+
+      transactions
     end
 
     def removed_transactions

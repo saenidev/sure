@@ -66,8 +66,13 @@ module AccountableResource
 
   private
     def set_link_options
-      @show_us_link = Current.family.can_connect_plaid_us?
-      @show_eu_link = Current.family.can_connect_plaid_eu?
+      account_type_name = accountable_type.name
+
+      # Get all available provider configs dynamically for this account type
+      @provider_configs = Provider::Factory.connection_configs_for_account_type(
+        account_type: account_type_name,
+        family: Current.family
+      )
     end
 
     def accountable_type
@@ -81,6 +86,7 @@ module AccountableResource
     def account_params
       params.require(:account).permit(
         :name, :balance, :subtype, :currency, :accountable_type, :return_to,
+        :institution_name, :institution_domain, :notes,
         accountable_attributes: self.class.permitted_accountable_attributes
       )
     end

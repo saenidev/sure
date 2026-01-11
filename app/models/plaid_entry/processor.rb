@@ -7,53 +7,37 @@ class PlaidEntry::Processor
   end
 
   def process
-    PlaidAccount.transaction do
-      entry = account.entries.find_or_initialize_by(plaid_id: plaid_id) do |e|
-        e.entryable = Transaction.new
-      end
-
-      entry.assign_attributes(
-        amount: amount,
-        currency: currency,
-        date: date
-      )
-
-      entry.enrich_attribute(
-        :name,
-        name,
-        source: "plaid"
-      )
-
-      if detailed_category
-        matched_category = category_matcher.match(detailed_category)
-
-        if matched_category
-          entry.transaction.enrich_attribute(
-            :category_id,
-            matched_category.id,
-            source: "plaid"
-          )
-        end
-      end
-
-      if merchant
-        entry.transaction.enrich_attribute(
-          :merchant_id,
-          merchant.id,
-          source: "plaid"
-        )
-      end
-    end
+    import_adapter.import_transaction(
+      external_id: external_id,
+      amount: amount,
+      currency: currency,
+      date: date,
+      name: name,
+      source: "plaid",
+      category_id: matched_category&.id,
+      merchant: merchant,
+      pending_transaction_id: pending_transaction_id, # Plaid's linking ID for pending→posted
+      extra: {
+        plaid: {
+          pending: plaid_transaction["pending"],
+          pending_transaction_id: pending_transaction_id # Also store for reference
+        }
+      }
+    )
   end
 
   private
     attr_reader :plaid_transaction, :plaid_account, :category_matcher
 
-    def account
-      plaid_account.account
+    def import_adapter
+      @import_adapter ||= Account::ProviderImportAdapter.new(account)
     end
 
-    def plaid_id
+    def account
+      plaid_account.current_account
+    end
+
+    def external_id
       plaid_transaction["transaction_id"]
     end
 
@@ -73,23 +57,28 @@ class PlaidEntry::Processor
       plaid_transaction["date"]
     end
 
+    # Plaid provides this linking ID when a posted transaction matches a pending one
+    # This is the most reliable way to reconcile pending→posted
+    def pending_transaction_id
+      plaid_transaction["pending_transaction_id"]
+    end
+
     def detailed_category
       plaid_transaction.dig("personal_finance_category", "detailed")
     end
 
+    def matched_category
+      return nil unless detailed_category
+      @matched_category ||= category_matcher.match(detailed_category)
+    end
+
     def merchant
-      merchant_id = plaid_transaction["merchant_entity_id"]
-      merchant_name = plaid_transaction["merchant_name"]
-
-      return nil unless merchant_id.present? && merchant_name.present?
-
-      ProviderMerchant.find_or_create_by!(
+      @merchant ||= import_adapter.find_or_create_merchant(
+        provider_merchant_id: plaid_transaction["merchant_entity_id"],
+        name: plaid_transaction["merchant_name"],
         source: "plaid",
-        name: merchant_name,
-      ) do |m|
-        m.provider_merchant_id = merchant_id
-        m.website_url = plaid_transaction["website"]
-        m.logo_url = plaid_transaction["logo_url"]
-      end
+        website_url: plaid_transaction["website"],
+        logo_url: plaid_transaction["logo_url"]
+      )
     end
 end

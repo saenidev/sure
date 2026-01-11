@@ -17,7 +17,7 @@ gem "bootsnap", require: false
 gem "importmap-rails"
 gem "propshaft"
 gem "tailwindcss-rails"
-gem "lucide-rails", github: "maybe-finance/lucide-rails"
+gem "lucide-rails"
 
 # Hotwire + UI
 gem "stimulus-rails"
@@ -33,6 +33,7 @@ gem "hotwire_combobox"
 # Background Jobs
 gem "sidekiq"
 gem "sidekiq-cron"
+gem "sidekiq-unique-jobs"
 
 # Monitoring
 gem "vernier"
@@ -40,11 +41,12 @@ gem "rack-mini-profiler"
 gem "sentry-ruby"
 gem "sentry-rails"
 gem "sentry-sidekiq"
+gem "posthog-ruby"
 gem "logtail-rails"
 gem "skylight", groups: [ :production ]
 
 # Active Storage
-gem "aws-sdk-s3", "~> 1.177.0", require: false
+gem "aws-sdk-s3", "~> 1.208.0", require: false
 gem "image_processing", ">= 1.2"
 
 # Other
@@ -75,10 +77,12 @@ gem "rqrcode", "~> 3.0"
 gem "activerecord-import"
 gem "rubyzip", "~> 2.3"
 
-# OpenID Connect authentication
+# OpenID Connect & OAuth authentication
 gem "omniauth", "~> 2.1"
 gem "omniauth-rails_csrf_protection"
 gem "omniauth_openid_connect"
+gem "omniauth-google-oauth2"
+gem "omniauth-github"
 
 # State machines
 gem "aasm"
@@ -121,4 +125,8 @@ group :test do
   gem "webmock"
   gem "climate_control"
   gem "simplecov", require: false
+  gem "rspec-rails"
+  gem "rswag-api"
+  gem "rswag-specs"
+  gem "rswag-ui"
 end
