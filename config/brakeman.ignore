@@ -3,6 +3,29 @@
     {
       "warning_type": "Redirect",
       "warning_code": 18,
+      "fingerprint": "556f2fdd1f091ed50811cb2cce28dd2b987cd0a2eed4d19bea138c8c083a3a5d",
+      "check_name": "Redirect",
+      "message": "Possible unprotected redirect",
+      "file": "app/controllers/snaptrade_items_controller.rb",
+      "line": 125,
+      "link": "https://brakemanscanner.org/docs/warning_types/redirect/",
+      "code": "redirect_to(Current.family.snaptrade_items.find(params[:id]).connection_portal_url(:redirect_url => callback_snaptrade_items_url(:item_id => Current.family.snaptrade_items.find(params[:id]).id)), :allow_other_host => true)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "SnaptradeItemsController",
+        "method": "connect"
+      },
+      "user_input": "Current.family.snaptrade_items.find(params[:id]).connection_portal_url(:redirect_url => callback_snaptrade_items_url(:item_id => Current.family.snaptrade_items.find(params[:id]).id))",
+      "confidence": "Weak",
+      "cwe_id": [
+        601
+      ],
+      "note": "Intentional redirect to SnapTrade's external OAuth portal for brokerage connection"
+    },
+    {
+      "warning_type": "Redirect",
+      "warning_code": 18,
       "fingerprint": "723b1970ca6bf16ea0c2c1afa0c00d3c54854a16568d6cb933e497947565d9ab",
       "check_name": "Redirect",
       "message": "Possible unprotected redirect",
@@ -49,6 +72,29 @@
     {
       "warning_type": "Mass Assignment",
       "warning_code": 105,
+      "fingerprint": "d770e95392c6c69b364dcc0c99faa1c8f4f0cceb085bcc55630213d0b7b8b87f",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/api/v1/trades_controller.rb",
+      "line": 165,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.require(:trade).permit(:account_id, :date, :qty, :price, :currency, :security_id, :ticker, :manual_ticker, :investment_activity_label, :category_id)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::TradesController",
+        "method": "trade_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "account_id and security_id validated in create/update: account via family.accounts.find and supports_trades?, security via resolve_security"
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
       "fingerprint": "aaccd8db0be34afdc88e5af08d91ae2e8b7765dfea2f3fc6e1c37db0adc7b991",
       "check_name": "PermitAttributes",
       "message": "Potentially dangerous key allowed for mass assignment",
@@ -68,6 +114,29 @@
         915
       ],
       "note": ""
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "01a88a0a17848e70999c17f6438a636b00e01da39a2c0aa0c46f20f0685c7202",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/admin/users_controller.rb",
+      "line": 35,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.require(:user).permit(:role)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Admin::UsersController",
+        "method": "user_params"
+      },
+      "user_input": ":role",
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Protected by Pundit authorization - UserPolicy requires super_admin and prevents users from changing their own role"
     },
     {
       "warning_type": "Dangerous Eval",

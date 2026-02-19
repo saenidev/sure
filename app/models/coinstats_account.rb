@@ -1,7 +1,13 @@
 # Represents a single crypto token/coin within a CoinStats wallet.
 # Each wallet address may have multiple CoinstatsAccounts (one per token).
 class CoinstatsAccount < ApplicationRecord
-  include CurrencyNormalizable
+  include CurrencyNormalizable, Encryptable
+
+  # Encrypt raw payloads if ActiveRecord encryption is configured
+  if encryption_ready?
+    encrypts :raw_payload
+    encrypts :raw_transactions_payload
+  end
 
   belongs_to :coinstats_item
 
@@ -10,7 +16,7 @@ class CoinstatsAccount < ApplicationRecord
   has_one :account, through: :account_provider, source: :account
 
   validates :name, :currency, presence: true
-  validates :account_id, uniqueness: { scope: :coinstats_item_id, allow_nil: true }
+  validates :account_id, uniqueness: { scope: [ :coinstats_item_id, :wallet_address ], allow_nil: true }
 
   # Alias for compatibility with provider adapter pattern
   alias_method :current_account, :account

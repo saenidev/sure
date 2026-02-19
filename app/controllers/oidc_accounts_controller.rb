@@ -37,16 +37,27 @@ class OidcAccountsController < ApplicationController
         user
       )
 
+      # Log account linking
+      SsoAuditLog.log_link!(
+        user: user,
+        provider: @pending_auth["provider"],
+        request: request
+      )
+
       # Clear pending auth from session
       session.delete(:pending_oidc_auth)
 
-      # Check if user has MFA enabled
       if user.otp_required?
         session[:mfa_user_id] = user.id
         redirect_to verify_mfa_path
       else
         @session = create_session_for(user)
-        redirect_to root_path, notice: "Account successfully linked to #{@pending_auth['provider']}"
+        notice = if accept_pending_invitation_for(user)
+          t("invitations.accept_choice.joined_household")
+        else
+          t("sessions.openid_connect.account_linked", provider: @pending_auth["provider"])
+        end
+        redirect_to root_path, notice: notice
       end
     else
       @email = params[:email]
@@ -95,30 +106,46 @@ class OidcAccountsController < ApplicationController
     # Security: JIT users should NOT have password_digest set to prevent
     # chained authentication attacks where SSO users gain local login access
     # via password reset.
+    # Allow user to edit first_name and last_name from the form, but email comes from OIDC
+    user_params = params.fetch(:user, {}).permit(:first_name, :last_name)
     @user = User.new(
       email: email,
-      first_name: @pending_auth["first_name"],
-      last_name: @pending_auth["last_name"],
+      first_name: user_params[:first_name].presence || @pending_auth["first_name"],
+      last_name: user_params[:last_name].presence || @pending_auth["last_name"],
       skip_password_validation: true
     )
 
     # Create new family for this user
     @user.family = Family.new
-    @user.role = :admin
+
+    # Use provider-configured default role, or fall back to admin for family creators
+    # First user of an instance always becomes super_admin regardless of provider config
+    provider_config = Rails.configuration.x.auth.sso_providers&.find { |p| p[:name] == @pending_auth["provider"] }
+    provider_default_role = provider_config&.dig(:settings, :default_role)
+    @user.role = User.role_for_new_family_creator(fallback_role: provider_default_role || :admin)
 
     if @user.save
       # Create the OIDC (or other SSO) identity
-      OidcIdentity.create_from_omniauth(
+      identity = OidcIdentity.create_from_omniauth(
         build_auth_hash(@pending_auth),
         @user
       )
 
+      # Only log JIT account creation if identity was successfully created
+      if identity.persisted?
+        SsoAuditLog.log_jit_account_created!(
+          user: @user,
+          provider: @pending_auth["provider"],
+          request: request
+        )
+      end
+
       # Clear pending auth from session
       session.delete(:pending_oidc_auth)
 
-      # Create session and log them in
       @session = create_session_for(@user)
-      redirect_to root_path, notice: "Welcome! Your account has been created."
+      notice = accept_pending_invitation_for(@user) ? t("invitations.accept_choice.joined_household") : "Welcome! Your account has been created."
+      redirect_to root_path, notice: notice
     else
       render :new_user, status: :unprocessable_entity
     end

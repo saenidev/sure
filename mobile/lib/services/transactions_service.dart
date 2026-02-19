@@ -32,9 +32,8 @@ class TransactionsService {
       final response = await http.post(
         url,
         headers: {
+          ...ApiConfig.getAuthHeaders(accessToken),
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $accessToken',
         },
         body: jsonEncode(body),
       ).timeout(const Duration(seconds: 30));
@@ -75,19 +74,32 @@ class TransactionsService {
   Future<Map<String, dynamic>> getTransactions({
     required String accessToken,
     String? accountId,
+    int? page,
+    int? perPage,
   }) async {
+    final Map<String, String> queryParams = {};
+
+    if (accountId != null) {
+      queryParams['account_id'] = accountId;
+    }
+    if (page != null) {
+      queryParams['page'] = page.toString();
+    }
+    if (perPage != null) {
+      queryParams['per_page'] = perPage.toString();
+    }
+
     final baseUri = Uri.parse('${ApiConfig.baseUrl}/api/v1/transactions');
-    final url = accountId != null
-        ? baseUri.replace(queryParameters: {'account_id': accountId})
+    final url = queryParams.isNotEmpty
+        ? baseUri.replace(queryParameters: queryParams)
         : baseUri;
 
     try {
       final response = await http.get(
         url,
         headers: {
+          ...ApiConfig.getAuthHeaders(accessToken),
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $accessToken',
         },
       ).timeout(const Duration(seconds: 30));
 
@@ -96,10 +108,16 @@ class TransactionsService {
 
         // Handle both array and object responses
         List<dynamic> transactionsJson;
+        Map<String, dynamic>? pagination;
+
         if (responseData is List) {
           transactionsJson = responseData;
         } else if (responseData is Map && responseData.containsKey('transactions')) {
           transactionsJson = responseData['transactions'];
+          // Extract pagination metadata if present
+          if (responseData.containsKey('pagination')) {
+            pagination = responseData['pagination'];
+          }
         } else {
           transactionsJson = [];
         }
@@ -111,6 +129,7 @@ class TransactionsService {
         return {
           'success': true,
           'transactions': transactions,
+          if (pagination != null) 'pagination': pagination,
         };
       } else if (response.statusCode == 401) {
         return {
@@ -141,9 +160,8 @@ class TransactionsService {
       final response = await http.delete(
         url,
         headers: {
+          ...ApiConfig.getAuthHeaders(accessToken),
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $accessToken',
         },
       ).timeout(const Duration(seconds: 30));
 

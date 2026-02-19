@@ -70,6 +70,23 @@ module ApplicationHelper
     end
   end
 
+
+  def family_moniker
+    Current.family&.moniker_label || "Family"
+  end
+
+  def family_moniker_downcase
+    family_moniker.downcase
+  end
+
+  def family_moniker_plural
+    Current.family&.moniker_label_plural || "Families"
+  end
+
+  def family_moniker_plural_downcase
+    family_moniker_plural.downcase
+  end
+
   def format_money(number_or_money, options = {})
     return nil unless number_or_money
 
@@ -120,6 +137,31 @@ module ApplicationHelper
     )
 
     markdown.render(text).html_safe
+  end
+
+  # Formats quantity with adaptive precision based on the value size.
+  # Shows more decimal places for small quantities (common with crypto).
+  #
+  # @param qty [Numeric] The quantity to format
+  # @param max_precision [Integer] Maximum precision for very small numbers
+  # @return [String] Formatted quantity with appropriate precision
+  def format_quantity(qty)
+    return "0" if qty.nil? || qty.zero?
+
+    abs_qty = qty.abs
+
+    precision = if abs_qty >= 1
+      1     # "10.5"
+    elsif abs_qty >= 0.01
+      2     # "0.52"
+    elsif abs_qty >= 0.0001
+      4     # "0.0005"
+    else
+      8     # "0.00000052"
+    end
+
+    # Use strip_insignificant_zeros to avoid trailing zeros like "0.50000000"
+    number_with_precision(qty, precision: precision, strip_insignificant_zeros: true)
   end
 
   private

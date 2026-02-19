@@ -2,9 +2,10 @@ namespace :demo_data do
   desc "Load empty demo dataset (no financial data)"
   task empty: :environment do
     start = Time.now
-    puts "🚀 Loading EMPTY demo data…"
+    skip_clear = ENV.fetch("SKIP_CLEAR", "1") == "1"
+    puts "🚀 Loading EMPTY demo data#{skip_clear ? ' (preserving existing data)' : ' (clearing existing data)'}…"
 
-    Demo::Generator.new.generate_empty_data!
+    Demo::Generator.new.generate_empty_data!(skip_clear: skip_clear)
 
     puts "✅ Done in #{(Time.now - start).round(2)}s"
   end
@@ -12,9 +13,10 @@ namespace :demo_data do
   desc "Load new-user demo dataset (family created but not onboarded)"
   task new_user: :environment do
     start = Time.now
-    puts "🚀 Loading NEW-USER demo data…"
+    skip_clear = ENV.fetch("SKIP_CLEAR", "1") == "1"
+    puts "🚀 Loading NEW-USER demo data#{skip_clear ? ' (preserving existing data)' : ' (clearing existing data)'}…"
 
-    Demo::Generator.new.generate_new_user_data!
+    Demo::Generator.new.generate_new_user_data!(skip_clear: skip_clear)
 
     puts "✅ Done in #{(Time.now - start).round(2)}s"
   end
@@ -23,10 +25,11 @@ namespace :demo_data do
   task default: :environment do
     start    = Time.now
     seed     = ENV.fetch("SEED", Random.new_seed)
-    puts "🚀 Loading FULL demo data (seed=#{seed})…"
+    skip_clear = ENV.fetch("SKIP_CLEAR", "1") == "1"
+    puts "🚀 Loading FULL demo data (seed=#{seed})#{skip_clear ? ' (preserving existing data)' : ' (clearing existing data)'}…"
 
     generator = Demo::Generator.new(seed: seed)
-    generator.generate_default_data!
+    generator.generate_default_data!(skip_clear: skip_clear)
 
     validate_demo_data
 
@@ -62,4 +65,10 @@ namespace :demo_data do
       puts "Categorization coverage below 75%"
     end
   end
+end
+
+# Alias namespace to avoid forgetfulness
+namespace :sample_data do
+  desc "Load full realistic demo dataset (alias for demo_data:default)"
+  task default: "demo_data:default"
 end

@@ -1,9 +1,15 @@
 class ApplicationController < ActionController::Base
   include RestoreLayoutPreferences, Onboardable, Localize, AutoSync, Authentication, Invitable,
           SelfHostable, StoreLocation, Impersonatable, Breadcrumbable,
-          FeatureGuardable, Notifiable
+          FeatureGuardable, Notifiable, SafePagination
+  include Pundit::Authorization
 
   include Pagy::Backend
+
+  # Pundit uses current_user by default, but this app uses Current.user
+  def pundit_user
+    Current.user
+  end
 
   before_action :detect_os
   before_action :set_default_chat
@@ -12,6 +18,28 @@ class ApplicationController < ActionController::Base
   helper_method :demo_config, :demo_host_match?, :show_demo_warning?
 
   private
+    def accept_pending_invitation_for(user)
+      return false if user.blank?
+
+      token = session[:pending_invitation_token]
+      return false if token.blank?
+
+      invitation = Invitation.pending.find_by(token: token.to_s)
+      return false unless invitation
+      return false unless invitation.accept_for(user)
+
+      session.delete(:pending_invitation_token)
+      true
+    end
+
+    def store_pending_invitation_if_valid
+      token = params[:invitation].to_s.presence
+      return if token.blank?
+
+      invitation = Invitation.pending.find_by(token: token)
+      session[:pending_invitation_token] = token if invitation
+    end
+
     def detect_os
       user_agent = request.user_agent
       @os = case user_agent

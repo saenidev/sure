@@ -1,12 +1,19 @@
 # frozen_string_literal: true
 
 class Rack::Attack
-  # Enable Rack::Attack
+  # Enable Rack::Attack only in production and staging (disable in test/development to avoid rate-limit flakiness)
   enabled = Rails.env.production? || Rails.env.staging?
+  self.enabled = enabled
 
   # Throttle requests to the OAuth token endpoint
   throttle("oauth/token", limit: 10, period: 1.minute) do |request|
     request.ip if request.path == "/oauth/token"
+  end
+
+  # Throttle admin endpoints to prevent brute-force attacks
+  # More restrictive than general API limits since admin access is sensitive
+  throttle("admin/ip", limit: 10, period: 1.minute) do |request|
+    request.ip if request.path.start_with?("/admin/")
   end
 
   # Determine limits based on self-hosted mode

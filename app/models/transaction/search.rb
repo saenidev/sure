@@ -44,13 +44,27 @@ class Transaction::Search
   end
 
   # Computes totals for the specific search
+  # Note: Excludes tax-advantaged accounts (401k, IRA, etc.) from totals calculation
+  # because those transactions are retirement savings, not daily income/expenses.
   def totals
     @totals ||= begin
       Rails.cache.fetch("transaction_search_totals/#{cache_key_base}") do
-        result = transactions_scope
+        scope = transactions_scope
+
+        # Exclude tax-advantaged accounts from totals calculation
+        tax_advantaged_ids = family.tax_advantaged_account_ids
+        scope = scope.where.not(accounts: { id: tax_advantaged_ids }) if tax_advantaged_ids.present?
+
+        result = scope
                   .select(
-                    "COALESCE(SUM(CASE WHEN entries.amount >= 0 AND transactions.kind NOT IN ('funds_movement', 'cc_payment') THEN ABS(entries.amount * COALESCE(er.rate, 1)) ELSE 0 END), 0) as expense_total",
-                    "COALESCE(SUM(CASE WHEN entries.amount < 0 AND transactions.kind NOT IN ('funds_movement', 'cc_payment') THEN ABS(entries.amount * COALESCE(er.rate, 1)) ELSE 0 END), 0) as income_total",
+                    ActiveRecord::Base.sanitize_sql_array([
+                      "COALESCE(SUM(CASE WHEN entries.amount >= 0 AND transactions.kind NOT IN (?) THEN ABS(entries.amount * COALESCE(er.rate, 1)) ELSE 0 END), 0) as expense_total",
+                      Transaction::TRANSFER_KINDS
+                    ]),
+                    ActiveRecord::Base.sanitize_sql_array([
+                      "COALESCE(SUM(CASE WHEN entries.amount < 0 AND transactions.kind NOT IN (?) THEN ABS(entries.amount * COALESCE(er.rate, 1)) ELSE 0 END), 0) as income_total",
+                      Transaction::TRANSFER_KINDS
+                    ]),
                     "COUNT(entries.id) as transactions_count"
                   )
                   .joins(
@@ -74,7 +88,8 @@ class Transaction::Search
     [
       family.id,
       Digest::SHA256.hexdigest(attributes.sort.to_h.to_json), # cached by filters
-      family.entries_cache_version
+      family.entries_cache_version,
+      Digest::SHA256.hexdigest(family.tax_advantaged_account_ids.sort.to_json) # stable across processes
     ].join("/")
   end
 
@@ -93,28 +108,38 @@ class Transaction::Search
     def apply_category_filter(query, categories)
       return query unless categories.present?
 
+      # Check for "Uncategorized" in any supported locale (handles URL params in different languages)
+      all_uncategorized_names = Category.all_uncategorized_names
+      include_uncategorized = (categories & all_uncategorized_names).any?
+      real_categories = categories - all_uncategorized_names
+
       # Get parent category IDs for the given category names
-      parent_category_ids = family.categories.where(name: categories).pluck(:id)
+      parent_category_ids = family.categories.where(name: real_categories).pluck(:id)
+
+      uncategorized_condition = "categories.id IS NULL AND transactions.kind NOT IN (?)"
 
       # Build condition based on whether parent_category_ids is empty
       if parent_category_ids.empty?
-        query = query.left_joins(:category).where(
-          "categories.name IN (?) OR (
-          categories.id IS NULL AND (transactions.kind NOT IN ('funds_movement', 'cc_payment'))
-        )",
-          categories
-        )
+        if include_uncategorized
+          query = query.left_joins(:category).where(
+            "categories.name IN (?) OR (#{uncategorized_condition})",
+            real_categories.presence || [], Transaction::TRANSFER_KINDS
+          )
+        else
+          query = query.left_joins(:category).where(categories: { name: real_categories })
+        end
       else
-        query = query.left_joins(:category).where(
-          "categories.name IN (?) OR categories.parent_id IN (?) OR (
-          categories.id IS NULL AND (transactions.kind NOT IN ('funds_movement', 'cc_payment'))
-        )",
-          categories, parent_category_ids
-        )
-      end
-
-      if categories.exclude?("Uncategorized")
-        query = query.where.not(category_id: nil)
+        if include_uncategorized
+          query = query.left_joins(:category).where(
+            "categories.name IN (?) OR categories.parent_id IN (?) OR (#{uncategorized_condition})",
+            real_categories, parent_category_ids, Transaction::TRANSFER_KINDS
+          )
+        else
+          query = query.left_joins(:category).where(
+            "categories.name IN (?) OR categories.parent_id IN (?)",
+            real_categories, parent_category_ids
+          )
+        end
       end
 
       query
@@ -124,26 +149,22 @@ class Transaction::Search
       return query unless types.present?
       return query if types.sort == [ "expense", "income", "transfer" ]
 
-      transfer_condition = "transactions.kind IN ('funds_movement', 'cc_payment', 'loan_payment')"
-      expense_condition = "entries.amount >= 0"
-      income_condition = "entries.amount <= 0"
-
-      condition = case types.sort
+      case types.sort
       when [ "transfer" ]
-        transfer_condition
+        query.where(kind: Transaction::TRANSFER_KINDS)
       when [ "expense" ]
-        Arel.sql("#{expense_condition} AND NOT (#{transfer_condition})")
+        query.where("entries.amount >= 0").where.not(kind: Transaction::TRANSFER_KINDS)
       when [ "income" ]
-        Arel.sql("#{income_condition} AND NOT (#{transfer_condition})")
+        query.where("entries.amount < 0").where.not(kind: Transaction::TRANSFER_KINDS)
       when [ "expense", "transfer" ]
-        Arel.sql("#{expense_condition} OR #{transfer_condition}")
+        query.where("entries.amount >= 0 OR transactions.kind IN (?)", Transaction::TRANSFER_KINDS)
       when [ "income", "transfer" ]
-        Arel.sql("#{income_condition} OR #{transfer_condition}")
+        query.where("entries.amount < 0 OR transactions.kind IN (?)", Transaction::TRANSFER_KINDS)
       when [ "expense", "income" ]
-        Arel.sql("NOT (#{transfer_condition})")
+        query.where.not(kind: Transaction::TRANSFER_KINDS)
+      else
+        query
       end
-
-      query.where(condition)
     end
 
     def apply_merchant_filter(query, merchants)
@@ -163,11 +184,13 @@ class Transaction::Search
       pending_condition = <<~SQL.squish
         (transactions.extra -> 'simplefin' ->> 'pending')::boolean = true
         OR (transactions.extra -> 'plaid' ->> 'pending')::boolean = true
+        OR (transactions.extra -> 'lunchflow' ->> 'pending')::boolean = true
       SQL
 
       confirmed_condition = <<~SQL.squish
         (transactions.extra -> 'simplefin' ->> 'pending')::boolean IS DISTINCT FROM true
         AND (transactions.extra -> 'plaid' ->> 'pending')::boolean IS DISTINCT FROM true
+        AND (transactions.extra -> 'lunchflow' ->> 'pending')::boolean IS DISTINCT FROM true
       SQL
 
       case statuses.sort

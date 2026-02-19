@@ -17,7 +17,7 @@ class EntrySearch
       return scope if search.blank?
 
       query = scope
-      query = query.where("entries.name ILIKE :search",
+      query = query.where("entries.name ILIKE :search OR entries.notes ILIKE :search",
         search: "%#{ActiveRecord::Base.sanitize_sql_like(search)}%"
       )
       query
@@ -70,6 +70,7 @@ class EntrySearch
           AND (
             (t.extra -> 'simplefin' ->> 'pending')::boolean = true
             OR (t.extra -> 'plaid' ->> 'pending')::boolean = true
+            OR (t.extra -> 'lunchflow' ->> 'pending')::boolean = true
           )
         )
       SQL
@@ -82,6 +83,7 @@ class EntrySearch
           AND (
             (t.extra -> 'simplefin' ->> 'pending')::boolean = true
             OR (t.extra -> 'plaid' ->> 'pending')::boolean = true
+            OR (t.extra -> 'lunchflow' ->> 'pending')::boolean = true
           )
         )
       SQL

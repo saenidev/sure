@@ -4,14 +4,21 @@ class Import::ConfigurationsController < ApplicationController
   before_action :set_import
 
   def show
+    # PDF imports are auto-configured from AI extraction, skip to clean step
+    redirect_to import_clean_path(@import) if @import.is_a?(PdfImport)
   end
 
   def update
-    @import.update!(import_params)
-    @import.generate_rows_from_csv
-    @import.reload.sync_mappings
+    if params[:refresh_only]
+      @import.update!(rows_to_skip: params.dig(:import, :rows_to_skip).to_i)
+      redirect_to import_configuration_path(@import)
+    else
+      @import.update!(import_params)
+      @import.generate_rows_from_csv
+      @import.reload.sync_mappings
 
-    redirect_to import_clean_path(@import), notice: "Import configured successfully."
+      redirect_to import_clean_path(@import), notice: t(".success")
+    end
   rescue ActiveRecord::RecordInvalid => e
     message = e.record.errors.full_messages.to_sentence.presence || e.message
     redirect_back_or_to import_configuration_path(@import), alert: message
@@ -41,7 +48,9 @@ class Import::ConfigurationsController < ApplicationController
         :number_format,
         :signage_convention,
         :amount_type_strategy,
+        :amount_type_identifier_value,
         :amount_type_inflow_value,
+        :rows_to_skip
       )
     end
 end

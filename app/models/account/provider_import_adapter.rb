@@ -1,8 +1,14 @@
 class Account::ProviderImportAdapter
-  attr_reader :account
+  attr_reader :account, :skipped_entries
 
   def initialize(account)
     @account = account
+    @skipped_entries = []
+  end
+
+  # Resets skipped entries tracking (call at start of new sync batch)
+  def reset_skipped_entries!
+    @skipped_entries = []
   end
 
   # Imports a transaction from a provider
@@ -18,8 +24,9 @@ class Account::ProviderImportAdapter
   # @param notes [String, nil] Optional transaction notes/memo
   # @param pending_transaction_id [String, nil] Plaid's linking ID for pending→posted reconciliation
   # @param extra [Hash, nil] Optional provider-specific metadata to merge into transaction.extra
+  # @param investment_activity_label [String, nil] Optional activity type label (e.g., "Buy", "Dividend")
   # @return [Entry] The created or updated entry
-  def import_transaction(external_id:, amount:, currency:, date:, name:, source:, category_id: nil, merchant: nil, notes: nil, pending_transaction_id: nil, extra: nil)
+  def import_transaction(external_id:, amount:, currency:, date:, name:, source:, category_id: nil, merchant: nil, notes: nil, pending_transaction_id: nil, extra: nil, investment_activity_label: nil)
     raise ArgumentError, "external_id is required" if external_id.blank?
     raise ArgumentError, "source is required" if source.blank?
 
@@ -30,6 +37,24 @@ class Account::ProviderImportAdapter
         e.entryable = Transaction.new
       end
 
+      # === TYPE COLLISION CHECK: Must happen before protection check ===
+      # If entry exists but is a different type (e.g., Trade), that's an error.
+      # This prevents external_id collisions across different entryable types.
+      if entry.persisted? && !entry.entryable.is_a?(Transaction)
+        raise ArgumentError, "Entry with external_id '#{external_id}' already exists with different entryable type: #{entry.entryable_type}"
+      end
+
+      # === PROTECTION CHECK: Skip entries that should not be overwritten ===
+      # Check persisted Transaction entries for protection flags before making changes.
+      # This prevents sync from overwriting user edits, CSV imports, or excluded entries.
+      if entry.persisted?
+        skip_reason = determine_skip_reason(entry)
+        if skip_reason
+          record_skip(entry, skip_reason)
+          return entry
+        end
+      end
+
       # If this is a new entry, check for potential duplicates from manual/CSV imports
       # This handles the case where a user manually created or CSV imported a transaction
       # before linking their account to a provider
@@ -37,7 +62,14 @@ class Account::ProviderImportAdapter
       if entry.new_record?
         duplicate = find_duplicate_transaction(date: date, amount: amount, currency: currency)
         if duplicate
-          # "Claim" the duplicate by updating its external_id and source
+          # Check if duplicate is protected - if so, link but don't modify
+          if duplicate.protected_from_sync?
+            duplicate.update!(external_id: external_id, source: source)
+            record_skip(duplicate, determine_skip_reason(duplicate) || "protected")
+            return duplicate
+          end
+
+          # "Claim" the unprotected duplicate by updating its external_id and source
           # This prevents future duplicate checks from matching it again
           entry = duplicate
           entry.assign_attributes(external_id: external_id, source: source)
@@ -45,10 +77,14 @@ class Account::ProviderImportAdapter
       end
 
       # If still a new entry and this is a POSTED transaction, check for matching pending transactions
-      incoming_pending = extra.is_a?(Hash) && (
-        ActiveModel::Type::Boolean.new.cast(extra.dig("simplefin", "pending")) ||
-        ActiveModel::Type::Boolean.new.cast(extra.dig("plaid", "pending"))
-      )
+      incoming_pending = false
+      if extra.is_a?(Hash)
+        pending_extra = extra.with_indifferent_access
+        incoming_pending =
+          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("simplefin", "pending")) ||
+          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("plaid", "pending")) ||
+          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("lunchflow", "pending"))
+      end
 
       if entry.new_record? && !incoming_pending
         pending_match = nil
@@ -80,11 +116,6 @@ class Account::ProviderImportAdapter
       # Track if this is a new posted transaction (for fuzzy suggestion after save)
       is_new_posted = entry.new_record? && !incoming_pending
 
-      # Validate entryable type matches to prevent external_id collisions
-      if entry.persisted? && !entry.entryable.is_a?(Transaction)
-        raise ArgumentError, "Entry with external_id '#{external_id}' already exists with different entryable type: #{entry.entryable_type}"
-      end
-
       entry.assign_attributes(
         amount: amount,
         currency: currency,
@@ -114,7 +145,40 @@ class Account::ProviderImportAdapter
         entry.transaction.extra = existing.deep_merge(incoming)
         entry.transaction.save!
       end
+
+      # Auto-detect investment activity labels for investment accounts
+      detected_label = investment_activity_label
+      if account.investment? && detected_label.nil? && entry.entryable.is_a?(Transaction)
+        detected_label = detect_activity_label(name, amount)
+      end
+
+      # Auto-set kind for internal movements and contributions
+      auto_kind = nil
+      auto_category = nil
+      if Transaction::INTERNAL_MOVEMENT_LABELS.include?(detected_label)
+        auto_kind = "funds_movement"
+      elsif detected_label == "Contribution"
+        auto_kind = "investment_contribution"
+        auto_category = account.family.investment_contributions_category
+      end
+
+      # Set investment activity label, kind, and category if detected
+      if entry.entryable.is_a?(Transaction)
+        if detected_label.present? && entry.transaction.investment_activity_label.blank?
+          entry.transaction.assign_attributes(investment_activity_label: detected_label)
+        end
+
+        if auto_kind.present?
+          entry.transaction.assign_attributes(kind: auto_kind)
+        end
+
+        if auto_category.present? && entry.transaction.category_id.blank?
+          entry.transaction.assign_attributes(category: auto_category)
+        end
+      end
+
       entry.save!
+      entry.transaction.save! if entry.transaction.changed?
 
       # AFTER save: For NEW posted transactions, check for fuzzy matches to SUGGEST (not auto-claim)
       # This handles tip adjustments where auto-matching is too risky
@@ -263,20 +327,46 @@ class Account::ProviderImportAdapter
         holding = account.holdings.find_by(external_id: external_id)
 
         unless holding
-          # Fallback path: match by (security, date, currency) — and when provided,
-          # also scope by account_provider_id to avoid cross‑provider claiming.
-          # This keeps behavior symmetric with deletion logic below which filters
-          # by account_provider_id when present.
-          find_by_attrs = {
-            security: security,
+          # Fallback path 1a: match by provider_security (for remapped holdings)
+          # This allows re-matching a holding that was remapped to a different security
+          # Scope by account_provider_id to avoid cross-provider overwrites
+          fallback_1a_attrs = {
+            provider_security: security,
             date: date,
             currency: currency
           }
-          if account_provider_id.present?
-            find_by_attrs[:account_provider_id] = account_provider_id
+          fallback_1a_attrs[:account_provider_id] = account_provider_id if account_provider_id.present?
+          holding = account.holdings.find_by(fallback_1a_attrs)
+
+          # Fallback path 1b: match by provider_security ticker (for remapped holdings when
+          # Security::Resolver returns a different security instance for the same ticker)
+          # Scope by account_provider_id to avoid cross-provider overwrites
+          # Skip if ticker is blank to avoid matching NULL tickers
+          unless holding || security.ticker.blank?
+            scope = account.holdings
+              .joins("INNER JOIN securities AS ps ON ps.id = holdings.provider_security_id")
+              .where(date: date, currency: currency)
+              .where("ps.ticker = ?", security.ticker)
+            scope = scope.where(account_provider_id: account_provider_id) if account_provider_id.present?
+            holding = scope.first
           end
 
-          holding = account.holdings.find_by(find_by_attrs)
+          # Fallback path 2: match by (security, date, currency) — and when provided,
+          # also scope by account_provider_id to avoid cross‑provider claiming.
+          # This keeps behavior symmetric with deletion logic below which filters
+          # by account_provider_id when present.
+          unless holding
+            find_by_attrs = {
+              security: security,
+              date: date,
+              currency: currency
+            }
+            if account_provider_id.present?
+              find_by_attrs[:account_provider_id] = account_provider_id
+            end
+
+            holding = account.holdings.find_by(find_by_attrs)
+          end
         end
 
         holding ||= account.holdings.new(
@@ -313,17 +403,39 @@ class Account::ProviderImportAdapter
         end
       end
 
-      holding.assign_attributes(
-        security: security,
+      # Reconcile cost_basis to respect priority hierarchy
+      reconciled = Holding::CostBasisReconciler.reconcile(
+        existing_holding: holding.persisted? ? holding : nil,
+        incoming_cost_basis: cost_basis,
+        incoming_source: "provider"
+      )
+
+      # Build base attributes
+      attributes = {
         date: date,
         currency: currency,
         qty: quantity,
         price: price,
         amount: amount,
-        cost_basis: cost_basis,
         account_provider_id: account_provider_id,
         external_id: external_id
-      )
+      }
+
+      # Only update security if not locked by user
+      if holding.new_record? || holding.security_replaceable_by_provider?
+        attributes[:security] = security
+        # Track the provider's original security so reset_security_to_provider! works
+        # Only set if not already set (preserves original if user remapped then unlocked)
+        attributes[:provider_security_id] = security.id if holding.provider_security_id.blank?
+      end
+
+      # Only update cost_basis if reconciliation says to
+      if reconciled[:should_update]
+        attributes[:cost_basis] = reconciled[:cost_basis]
+        attributes[:cost_basis_source] = reconciled[:cost_basis_source]
+      end
+
+      holding.assign_attributes(attributes)
 
       begin
         Holding.transaction(requires_new: true) do
@@ -353,11 +465,22 @@ class Account::ProviderImportAdapter
             updates = {
               qty: quantity,
               price: price,
-              amount: amount,
-              cost_basis: cost_basis
+              amount: amount
             }
 
-            # Adopt the row to this provider if it’s currently unowned
+            # Reconcile cost_basis to respect priority hierarchy
+            collision_reconciled = Holding::CostBasisReconciler.reconcile(
+              existing_holding: existing,
+              incoming_cost_basis: cost_basis,
+              incoming_source: "provider"
+            )
+
+            if collision_reconciled[:should_update]
+              updates[:cost_basis] = collision_reconciled[:cost_basis]
+              updates[:cost_basis_source] = collision_reconciled[:cost_basis_source]
+            end
+
+            # Adopt the row to this provider if it's currently unowned
             if account_provider_id.present? && existing.account_provider_id.nil?
               updates[:account_provider_id] = account_provider_id
             end
@@ -422,8 +545,9 @@ class Account::ProviderImportAdapter
   # @param name [String, nil] Optional custom name for the trade
   # @param external_id [String, nil] Provider's unique ID (optional, for deduplication)
   # @param source [String] Provider name
+  # @param activity_label [String, nil] Investment activity label (e.g., "Buy", "Sell", "Reinvestment")
   # @return [Entry] The created entry with trade
-  def import_trade(security:, quantity:, price:, amount:, currency:, date:, name: nil, external_id: nil, source:)
+  def import_trade(security:, quantity:, price:, amount:, currency:, date:, name: nil, external_id: nil, source:, activity_label: nil)
     raise ArgumentError, "security is required" if security.nil?
     raise ArgumentError, "source is required" if source.blank?
 
@@ -460,7 +584,8 @@ class Account::ProviderImportAdapter
         security: security,
         qty: quantity,
         price: price,
-        currency: currency
+        currency: currency,
+        investment_activity_label: activity_label || (quantity > 0 ? "Buy" : "Sell")
       )
 
       entry.assign_attributes(
@@ -565,6 +690,7 @@ class Account::ProviderImportAdapter
       .where(<<~SQL.squish)
         (transactions.extra -> 'simplefin' ->> 'pending')::boolean = true
         OR (transactions.extra -> 'plaid' ->> 'pending')::boolean = true
+        OR (transactions.extra -> 'lunchflow' ->> 'pending')::boolean = true
       SQL
       .order(date: :desc) # Prefer most recent pending transaction
 
@@ -610,6 +736,7 @@ class Account::ProviderImportAdapter
       .where(<<~SQL.squish)
         (transactions.extra -> 'simplefin' ->> 'pending')::boolean = true
         OR (transactions.extra -> 'plaid' ->> 'pending')::boolean = true
+        OR (transactions.extra -> 'lunchflow' ->> 'pending')::boolean = true
       SQL
 
     # If merchant_id is provided, prioritize matching by merchant
@@ -678,6 +805,7 @@ class Account::ProviderImportAdapter
       .where(<<~SQL.squish)
         (transactions.extra -> 'simplefin' ->> 'pending')::boolean = true
         OR (transactions.extra -> 'plaid' ->> 'pending')::boolean = true
+        OR (transactions.extra -> 'lunchflow' ->> 'pending')::boolean = true
       SQL
 
     # For low confidence, require BOTH merchant AND name match (stronger signal needed)
@@ -715,6 +843,11 @@ class Account::ProviderImportAdapter
     # Don't overwrite if already has a suggestion (keep first one found)
     return if existing_extra["potential_posted_match"].present?
 
+    # Don't suggest if the posted entry is also still pending (pending→pending match)
+    # Suggestions are only for pending→posted reconciliation
+    posted_transaction = posted_entry.entryable
+    return if posted_transaction.is_a?(Transaction) && posted_transaction.pending?
+
     pending_transaction.update!(
       extra: existing_extra.merge(
         "potential_posted_match" => {
@@ -726,5 +859,61 @@ class Account::ProviderImportAdapter
         }
       )
     )
+  end
+
+  # Auto-detects investment activity label from transaction name and amount
+  # Only detects extremely obvious cases to maintain high accuracy
+  # Users can always manually adjust the label afterward
+  #
+  # @param name [String] Transaction name/description
+  # @param amount [BigDecimal, Numeric] Transaction amount (positive or negative)
+  # @return [String, nil] Detected activity label or nil if no pattern matches
+  def detect_activity_label(name, amount)
+    return nil if name.blank?
+
+    name_lower = name.downcase.strip
+
+    # Only detect the most obvious patterns - be conservative to avoid false positives
+    # Users can manually adjust labels for edge cases
+    case name_lower
+    when /^dividend\b/, /\bdividend payment\b/, /\bqualified dividend\b/, /\bordinary dividend\b/
+      "Dividend"
+    when /^interest\b/, /\binterest income\b/, /\binterest payment\b/
+      "Interest"
+    when /^fee\b/, /\bmanagement fee\b/, /\badvisory fee\b/, /\btransaction fee\b/
+      "Fee"
+    when /\bemployer match\b/, /\bemployer contribution\b/
+      "Contribution"
+    when /\b401[k\(]/, /\bira contribution\b/, /\broth contribution\b/
+      "Contribution"
+    else
+      nil # Let user categorize manually - default to nil for safety
+    end
+  end
+
+  # Determines why an entry should be skipped during sync.
+  # Returns nil if entry should NOT be skipped.
+  #
+  # @param entry [Entry] The entry to check
+  # @return [String, nil] Skip reason or nil if entry can be synced
+  def determine_skip_reason(entry)
+    return "excluded" if entry.excluded?
+    return "user_modified" if entry.user_modified?
+    return "import_locked" if entry.import_locked?
+    nil
+  end
+
+  # Records a skipped entry for stats collection.
+  #
+  # @param entry [Entry] The entry that was skipped
+  # @param reason [String] Why it was skipped
+  def record_skip(entry, reason)
+    @skipped_entries << {
+      id: entry.id,
+      name: entry.name,
+      reason: reason,
+      external_id: entry.external_id,
+      account_name: entry.account.name
+    }
   end
 end
