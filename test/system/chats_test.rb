@@ -37,6 +37,9 @@ class ChatsTest < ApplicationSystemTestCase
 
       click_on @user.chats.first.title
 
+      # Wait for the chat show page to load in the turbo frame
+      assert_selector "#chat-nav-back"
+
       # Page refresh
       visit root_url
 
