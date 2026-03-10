@@ -13,13 +13,7 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
       visit new_session_path
 
       unless page.has_selector?(%(form[action='#{sessions_path}']), wait: 1)
-        if page.has_selector?("div[data-testid=user-menu]", wait: 1)
-          within "div[data-testid=user-menu]" do
-            find("button").click
-          end
-          click_button "Logout"
-        end
-
+        visit destroy_session_path(Current.session || "placeholder") rescue nil
         visit new_session_path
       end
 
