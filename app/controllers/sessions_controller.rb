@@ -1,4 +1,6 @@
 class SessionsController < ApplicationController
+  before_action :clear_legacy_auth_cookie, only: %i[new create]
+  before_action :set_no_store_cache_headers, only: %i[new create]
   extend SslConfigurable
 
   before_action :set_session, only: :destroy
@@ -120,6 +122,19 @@ class SessionsController < ApplicationController
   def post_logout
     redirect_to new_session_path, notice: t(".logout_successful")
   end
+
+  private
+
+    def clear_legacy_auth_cookie
+      cookies.delete(:session_token, httponly: true)
+    end
+
+    def set_no_store_cache_headers
+      response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+      response.headers["Pragma"] = "no-cache"
+      response.headers["Expires"] = "0"
+    end
+
 
   def mobile_sso_start
     provider = params[:provider].to_s

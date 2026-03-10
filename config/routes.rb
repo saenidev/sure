@@ -484,9 +484,9 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
-  # Render dynamic PWA files from app/views/pwa/*
-  get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
-  get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
+  # PWA endpoints temporarily disabled to avoid stale cached assets and auth flow issues
+  get "service-worker", to: proc { [404, {"Content-Type" => "text/plain", "Cache-Control" => "no-store"}, ["Not Found"]] }, as: :pwa_service_worker
+  get "manifest", to: proc { [404, {"Content-Type" => "text/plain", "Cache-Control" => "no-store"}, ["Not Found"]] }, as: :pwa_manifest
 
   get "imports/:import_id/upload/sample_csv", to: "import/uploads#sample_csv", as: :import_upload_sample_csv
 

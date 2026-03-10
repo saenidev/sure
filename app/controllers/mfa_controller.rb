@@ -1,4 +1,6 @@
 class MfaController < ApplicationController
+  before_action :clear_legacy_auth_cookie, only: %i[verify verify_code]
+  before_action :set_no_store_cache_headers, only: %i[verify verify_code]
   layout :determine_layout
   skip_authentication only: [ :verify, :verify_code ]
 
@@ -46,6 +48,16 @@ class MfaController < ApplicationController
   end
 
   private
+
+    def clear_legacy_auth_cookie
+      cookies.delete(:session_token, httponly: true)
+    end
+
+    def set_no_store_cache_headers
+      response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+      response.headers["Pragma"] = "no-cache"
+      response.headers["Expires"] = "0"
+    end
 
     def determine_layout
       if action_name.in?(%w[verify verify_code])
