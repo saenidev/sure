@@ -15,8 +15,9 @@ class BalanceSheet::AccountTotals
   private
     attr_reader :family, :sync_status_monitor
 
-    AccountRow = Data.define(:account, :converted_balance, :is_syncing) do
+    AccountRow = Data.define(:account, :converted_balance, :is_syncing, :missing_exchange_rate) do
       def syncing? = is_syncing
+      def missing_exchange_rate? = missing_exchange_rate
 
       # Allows Rails path helpers to generate URLs from the wrapper
       def to_param = account.to_param
@@ -33,7 +34,8 @@ class BalanceSheet::AccountTotals
         AccountRow.new(
           account: account,
           converted_balance: converted_balance_for(account),
-          is_syncing: sync_status_monitor.account_syncing?(account)
+          is_syncing: sync_status_monitor.account_syncing?(account),
+          missing_exchange_rate: missing_exchange_rate_for(account)
         )
       end
     end
@@ -63,20 +65,31 @@ class BalanceSheet::AccountTotals
     end
 
     # Batch-fetches today's exchange rates for all foreign currencies present in accounts.
-    # @return [Hash{String => Numeric}] currency code to rate mapping
+    # Unlike ExchangeRate.rates_for, this preserves nil when a rate is unavailable so
+    # balance-sheet totals can exclude foreign-currency accounts with missing rates.
+    # @return [Hash{String => Numeric,nil}] currency code to rate mapping
     def exchange_rates
       @exchange_rates ||= begin
         foreign_currencies = accounts.filter_map { |a| a.currency if a.currency != family.currency }
-        ExchangeRate.rates_for(foreign_currencies, to: family.currency, date: Date.current)
+        foreign_currencies.uniq.each_with_object({}) do |currency, map|
+          rate = ExchangeRate.find_or_fetch_rate(from: currency, to: family.currency, date: Date.current)
+          map[currency] = rate&.rate
+        end
       end
     end
 
     # Converts an account's balance to the family's currency using pre-fetched exchange rates.
-    # @return [BigDecimal] balance in the family's currency
+    # @return [BigDecimal, nil] balance in the family's currency, or nil when rate is unavailable
     def converted_balance_for(account)
       return account.balance if account.currency == family.currency
 
       rate = exchange_rates[account.currency]
+      return nil if rate.nil?
+
       account.balance * rate
+    end
+
+    def missing_exchange_rate_for(account)
+      account.currency != family.currency && exchange_rates[account.currency].nil?
     end
 end
