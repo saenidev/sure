@@ -13,7 +13,7 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
       visit new_session_path
 
       unless page.has_selector?(%(form[action='#{sessions_path}']), wait: 1)
-        visit destroy_session_path(Current.session || "placeholder") rescue nil
+        page.driver.browser.manage.delete_all_cookies
         visit new_session_path
       end
 
