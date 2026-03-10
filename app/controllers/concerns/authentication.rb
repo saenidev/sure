@@ -28,7 +28,7 @@ module Authentication
     end
 
     def find_session_by_cookie
-      cookie_value = cookies.signed[:session_token]
+      cookie_value = cookies.signed[:sure_session_token_v2]
 
       if cookie_value.present?
         Session.find_by(id: cookie_value)
@@ -39,7 +39,9 @@ module Authentication
 
     def create_session_for(user)
       session = user.sessions.create!
-      cookies.signed.permanent[:session_token] = { value: session.id, httponly: true }
+      cookies.delete(:session_token, httponly: true)
+      cookies.delete(:sure_session_token_v2, httponly: true)
+      cookies.signed.permanent[:sure_session_token_v2] = { value: session.id, httponly: true }
       session
     end
 

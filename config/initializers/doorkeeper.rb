@@ -9,7 +9,7 @@ Doorkeeper.configure do
   resource_owner_authenticator do
     # Manually replicate the app's session-based authentication logic, since
     # Doorkeeper controllers don't include our Authentication concern.
-    if (session_id = cookies.signed[:session_token]).present?
+    if (session_id = cookies.signed[:sure_session_token_v2]).present?
       if (session_record = Session.find_by(id: session_id))
         # Set Current.session so downstream code expecting it behaves normally.
         Current.session = session_record
@@ -29,7 +29,7 @@ Doorkeeper.configure do
   # every time somebody will try to access the admin web interface.
   #
   admin_authenticator do
-    if (session_id = cookies.signed[:session_token]).present?
+    if (session_id = cookies.signed[:sure_session_token_v2]).present?
       if (session_record = Session.find_by(id: session_id))
         Current.session = session_record
         head :forbidden unless session_record.user&.super_admin?

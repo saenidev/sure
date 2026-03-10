@@ -12,6 +12,11 @@ class SessionsController < ApplicationController
   end
 
   def new
+    if find_session_by_cookie
+      redirect_to root_path
+      return
+    end
+
     store_pending_invitation_if_valid
     # Clear any stale mobile SSO session flag from an abandoned mobile flow
     session.delete(:mobile_sso)
@@ -90,6 +95,8 @@ class SessionsController < ApplicationController
 
     # Destroy local session
     @session.destroy
+    cookies.delete(:session_token, httponly: true)
+    cookies.delete(:sure_session_token_v2, httponly: true)
     session.delete(:id_token_hint)
     session.delete(:sso_login_provider)
 
