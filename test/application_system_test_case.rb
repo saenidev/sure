@@ -11,6 +11,18 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
 
     def sign_in(user)
       visit new_session_path
+
+      unless page.has_selector?(%(form[action='#{sessions_path}']), wait: 1)
+        if page.has_selector?("div[data-testid=user-menu]", wait: 1)
+          within "div[data-testid=user-menu]" do
+            find("button").click
+          end
+          click_button "Logout"
+        end
+
+        visit new_session_path
+      end
+
       within %(form[action='#{sessions_path}']) do
         fill_in "Email", with: user.email
         fill_in "Password", with: user_password_test

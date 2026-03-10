@@ -71,15 +71,8 @@ class SettingsTest < ApplicationSystemTestCase
 
   test "does not show admin settings to non-admin users" do
     VCR.use_cassette("git_repository_provider/fetch_latest_release_notes") do
-      # Visit accounts path directly as non-admin user to avoid user menu issues
-      visit new_session_path
-      within %(form[action='#{sessions_path}']) do
-        fill_in "Email", with: users(:family_member).email
-        fill_in "Password", with: user_password_test
-        click_on "Log in"
-      end
-
-      # Go directly to accounts (settings) page
+      # Sign in as non-admin user and go directly to accounts (settings) page
+      login_as(users(:family_member))
       visit accounts_path
 
       # Assert that admin-only settings are not present in the navigation
