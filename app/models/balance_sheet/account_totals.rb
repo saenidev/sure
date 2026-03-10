@@ -28,65 +28,63 @@ class BalanceSheet::AccountTotals
       @visible_accounts ||= family.accounts.visible.with_attached_logo
     end
 
+    # Wraps each account in an AccountRow with its converted balance and sync status.
     def account_rows
-      boolean_type = ActiveRecord::Type::Boolean.new
-
-      @account_rows ||= query.map do |account_row|
+      @account_rows ||= accounts.map do |account|
         AccountRow.new(
-          account: account_row,
-          converted_balance: account_row.converted_balance,
-          is_syncing: sync_status_monitor.account_syncing?(account_row),
-          missing_exchange_rate: boolean_type.cast(account_row.missing_exchange_rate)
+          account: account,
+          converted_balance: converted_balance_for(account),
+          is_syncing: sync_status_monitor.account_syncing?(account),
+          missing_exchange_rate: missing_exchange_rate_for(account)
         )
       end
     end
 
+    # Returns the cache key for storing visible account IDs, invalidated on data updates.
     def cache_key
-      key_components = [ "balance_sheet_account_rows", exchange_rates_cache_version ].compact.join("_")
-
-      family.build_cache_key(key_components, invalidate_on_data_updates: true)
+      family.build_cache_key(
+        "balance_sheet_account_ids",
+        invalidate_on_data_updates: true
+      )
     end
 
-    def exchange_rates_cache_version
-      currencies = visible_accounts.distinct.pluck(:currency)
-      return nil if currencies.blank?
+    # Loads visible accounts, caching their IDs to speed up subsequent requests.
+    # On cache miss, loads records once and writes IDs; on hit, filters by cached IDs.
+    def accounts
+      @accounts ||= begin
+        ids = Rails.cache.read(cache_key)
 
-      ExchangeRate.where(from_currency: currencies, to_currency: family.currency)
-                  .maximum(:updated_at)
-                  &.to_i
-    end
-
-    def query
-      @query ||= Rails.cache.fetch(cache_key) do
-        family_currency = family.currency
-        rate_sql = ActiveRecord::Base.send(
-          :sanitize_sql_array,
-          [
-            "CASE WHEN accounts.currency = :family_currency THEN 1 ELSE exchange_rates.rate END",
-            { family_currency: family_currency }
-          ]
-        )
-        missing_rate_sql = ActiveRecord::Base.send(
-          :sanitize_sql_array,
-          [
-            "BOOL_OR(accounts.currency != :family_currency AND exchange_rates.rate IS NULL) AS missing_exchange_rate",
-            { family_currency: family_currency }
-          ]
-        )
-
-        visible_accounts
-          .joins(ActiveRecord::Base.sanitize_sql_array([
-            "LEFT JOIN exchange_rates ON exchange_rates.date = ? AND accounts.currency = exchange_rates.from_currency AND exchange_rates.to_currency = ?",
-            Date.current,
-            family_currency
-          ]))
-          .select(
-            "accounts.*",
-            "SUM(accounts.balance * #{rate_sql}) AS converted_balance",
-            missing_rate_sql
-          )
-          .group(:classification, :accountable_type, :id)
-          .to_a
+        if ids
+          visible_accounts.where(id: ids).to_a
+        else
+          records = visible_accounts.to_a
+          Rails.cache.write(cache_key, records.map(&:id))
+          records
+        end
       end
+    end
+
+    # Batch-fetches today's exchange rates for all foreign currencies present in accounts.
+    # @return [Hash{String => Numeric}] currency code to rate mapping
+    def exchange_rates
+      @exchange_rates ||= begin
+        foreign_currencies = accounts.filter_map { |a| a.currency if a.currency != family.currency }
+        ExchangeRate.rates_for(foreign_currencies, to: family.currency, date: Date.current)
+      end
+    end
+
+    # Converts an account's balance to the family's currency using pre-fetched exchange rates.
+    # @return [BigDecimal, nil] balance in the family's currency, or nil when rate is unavailable
+    def converted_balance_for(account)
+      return account.balance if account.currency == family.currency
+
+      rate = exchange_rates[account.currency]
+      return nil if rate.nil?
+
+      account.balance * rate
+    end
+
+    def missing_exchange_rate_for(account)
+      account.currency != family.currency && exchange_rates[account.currency].nil?
     end
 end
