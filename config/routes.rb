@@ -485,8 +485,8 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
   # PWA endpoints temporarily disabled to avoid stale cached assets and auth flow issues
-  get "service-worker", to: proc { [404, {"Content-Type" => "text/plain", "Cache-Control" => "no-store"}, ["Not Found"]] }, as: :pwa_service_worker
-  get "manifest", to: proc { [404, {"Content-Type" => "text/plain", "Cache-Control" => "no-store"}, ["Not Found"]] }, as: :pwa_manifest
+  get "service-worker", to: proc { [ 404, { "Content-Type" => "text/plain", "Cache-Control" => "no-store" }, [ "Not Found" ] ] }, as: :pwa_service_worker
+  get "manifest", to: proc { [ 404, { "Content-Type" => "text/plain", "Cache-Control" => "no-store" }, [ "Not Found" ] ] }, as: :pwa_manifest
 
   get "imports/:import_id/upload/sample_csv", to: "import/uploads#sample_csv", as: :import_upload_sample_csv
 

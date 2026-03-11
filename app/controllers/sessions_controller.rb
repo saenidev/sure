@@ -135,7 +135,6 @@ class SessionsController < ApplicationController
       response.headers["Expires"] = "0"
     end
 
-
   def mobile_sso_start
     provider = params[:provider].to_s
     configured_providers = Rails.configuration.x.auth.sso_providers.map { |p| p[:name].to_s }
