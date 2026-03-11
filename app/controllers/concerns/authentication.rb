@@ -28,7 +28,7 @@ module Authentication
     end
 
     def find_session_by_cookie
-      cookie_value = cookies.signed[:sure_session_token_v2]
+      cookie_value = cookies.signed[:sure_session_token_v2] || cookies.signed[:session_token]
 
       if cookie_value.present?
         Session.find_by(id: cookie_value)
