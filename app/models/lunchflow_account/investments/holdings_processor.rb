@@ -65,7 +65,7 @@ class LunchflowAccount::Investments::HoldingsProcessor
       qty = parse_decimal(holding[:quantity])
       price = parse_decimal(holding[:price])
       amount = parse_decimal(holding[:value])
-      cost_basis = parse_decimal(holding[:costBasis])
+      cost_basis = normalize_cost_basis(holding[:costBasis], qty)
       currency = holding[:currency].presence || security_data[:currency].presence || "USD"
 
       # Skip zero positions with no value
@@ -137,6 +137,19 @@ class LunchflowAccount::Investments::HoldingsProcessor
         holding[:value]
       ].compact.join("-")
       Digest::MD5.hexdigest(content)[0..11]
+    end
+
+    # Lunchflow's holding fields are position-level totals: value is total
+    # market value and costBasis is total original cost. Sure stores
+    # Holding#cost_basis as per-share average cost.
+    def normalize_cost_basis(raw_cost_basis, qty)
+      return nil unless raw_cost_basis.present?
+
+      parsed_cost_basis = parse_decimal(raw_cost_basis)
+      return nil unless parsed_cost_basis.positive?
+      return nil unless qty.to_d.positive?
+
+      parsed_cost_basis / qty
     end
 
     def resolve_security(symbol, description, security_data)

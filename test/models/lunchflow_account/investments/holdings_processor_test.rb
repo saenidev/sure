@@ -79,6 +79,46 @@ class LunchflowAccount::Investments::HoldingsProcessorTest < ActiveSupport::Test
     assert_equal "lunchflow_hld_test_123", holdings.first.external_id
   end
 
+  test "normalizes Lunchflow total cost basis to per share cost basis" do
+    @account.holdings.delete_all
+
+    test_holdings_payload = [
+      {
+        "security" => {
+          "name" => "Total Basis Fund",
+          "currency" => "USD",
+          "tickerSymbol" => "TBASIS",
+          "figi" => nil,
+          "cusp" => nil,
+          "isin" => nil
+        },
+        "quantity" => 100,
+        "price" => 500.0,
+        "value" => 50_000.0,
+        "costBasis" => 45_000.0,
+        "currency" => "USD",
+        "raw" => {
+          "quiltt" => {
+            "id" => "hld_total_basis"
+          }
+        }
+      }
+    ]
+
+    @lunchflow_account.update!(raw_holdings_payload: test_holdings_payload)
+
+    processor = LunchflowAccount::Investments::HoldingsProcessor.new(@lunchflow_account)
+
+    assert_difference "Holding.count", 1 do
+      processor.process
+    end
+
+    holding = @account.holdings.find_by!(external_id: "lunchflow_hld_total_basis")
+
+    assert_in_delta 450.0, holding.cost_basis.to_f, 0.01
+    assert_in_delta 5_000.0, holding.trend.value.amount.to_f, 0.01
+  end
+
   test "skips processing for non-investment accounts" do
     # Create a depository account
     depository_account = accounts(:depository)
