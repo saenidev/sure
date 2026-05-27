@@ -87,18 +87,18 @@ class Entry < ApplicationRecord
     joins(:account).where(accounts: { family_id: family.id })
   end
 
-  # Uncategorized, non-transfer transaction entries on draft or active accounts.
+  # Uncategorized, categorization-eligible transaction entries on draft or active accounts.
   # Caller is responsible for scoping to accessible entries before applying this scope.
   scope :uncategorized_transactions, -> {
     joins(:account)
       .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
       .where(accounts: { status: %w[draft active] })
       .where(transactions: { category_id: nil })
-      .where.not(transactions: { kind: Transaction::TRANSFER_KINDS })
+      .where.not(transactions: { kind: Transaction::CATEGORIZATION_EXCLUDED_KINDS })
       .where(entries: { excluded: false })
   }
 
-  # Returns uncategorized, non-transfer entries whose name matches the given filter string.
+  # Returns uncategorized, categorization-eligible entries whose name matches the given filter string.
   # Used by the Quick Categorize Wizard to preview which transactions a rule would affect.
   # @param entries [ActiveRecord::Relation] pre-scoped entries (caller controls authorization)
   def self.uncategorized_matching(entries, filter, transaction_type = nil)

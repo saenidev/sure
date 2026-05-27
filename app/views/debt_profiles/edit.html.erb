@@ -36,13 +36,12 @@
                 min: 0,
                 step: 0.001 %>
 
-          <%= form.select :accrual_cadence,
-                DebtProfile::CADENCES.map { |cadence| [t("debt_profiles.cadences.#{cadence}"), cadence] },
-                { label: t(".accrual_cadence"), include_blank: t(".blank") } %>
-
-          <%= form.select :compounding_cadence,
-                DebtProfile::CADENCES.map { |cadence| [t("debt_profiles.cadences.#{cadence}"), cadence] },
-                { label: t(".compounding_cadence"), include_blank: t(".blank") } %>
+          <div class="flex flex-col gap-1">
+            <%= form.select :accrual_cadence,
+                  DebtProfile::CADENCES.map { |cadence| [t("debt_profiles.cadences.#{cadence}"), cadence] },
+                  { label: t(".accrual_cadence"), include_blank: t(".blank") } %>
+            <p class="text-xs text-secondary"><%= t(".accrual_cadence_description") %></p>
+          </div>
 
           <%= form.number_field :minimum_payment_percent,
                 label: t(".minimum_payment_percent"),

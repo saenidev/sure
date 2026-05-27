@@ -96,6 +96,33 @@ class Debt::PaymentAllocationServiceTest < ActiveSupport::TestCase
     assert_nil Debt::PaymentAllocationService.new(entry: @payment_entry).call
   end
 
+  test "skips payment entries before the profile effective start date" do
+    @profile.update!(effective_start_on: Date.new(2026, 2, 2))
+
+    assert_nil Debt::PaymentAllocationService.new(entry: @payment_entry).call
+    assert_equal 0, DebtPaymentAllocation.where(entry: @payment_entry).count
+  end
+
+  test "skips excluded payment entries" do
+    @payment_entry.update!(excluded: true)
+
+    assert_nil Debt::PaymentAllocationService.new(entry: @payment_entry).call
+    assert_equal 0, DebtPaymentAllocation.where(entry: @payment_entry).count
+  end
+
+  test "skips pending payment entries" do
+    @payment_entry.transaction.update!(
+      extra: {
+        "plaid" => {
+          "pending" => true
+        }
+      }
+    )
+
+    assert_nil Debt::PaymentAllocationService.new(entry: @payment_entry).call
+    assert_equal 0, DebtPaymentAllocation.where(entry: @payment_entry).count
+  end
+
   private
     def create_payment_transfer(amount:)
       cash_entry = accounts(:depository).entries.create!(

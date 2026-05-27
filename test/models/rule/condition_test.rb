@@ -447,6 +447,51 @@ class Rule::ConditionTest < ActiveSupport::TestCase
     assert_not filtered.map(&:id).include?(transfer_entry.transaction.id)
   end
 
+  test "transaction_type income expense and transfer exclude ledger-only debt interest" do
+    expense_interest = create_transaction(
+      date: Date.current,
+      account: @account,
+      amount: 25,
+      name: "Debt interest expense-side rule filter",
+      kind: "debt_interest"
+    )
+    income_interest = create_transaction(
+      date: Date.current,
+      account: @account,
+      amount: -25,
+      name: "Debt interest income-side rule filter",
+      kind: "debt_interest"
+    )
+
+    expense_condition = Rule::Condition.new(
+      rule: @transaction_rule,
+      condition_type: "transaction_type",
+      operator: "=",
+      value: "expense"
+    )
+    income_condition = Rule::Condition.new(
+      rule: @transaction_rule,
+      condition_type: "transaction_type",
+      operator: "=",
+      value: "income"
+    )
+    transfer_condition = Rule::Condition.new(
+      rule: @transaction_rule,
+      condition_type: "transaction_type",
+      operator: "=",
+      value: "transfer"
+    )
+
+    expense_scope = expense_condition.prepare(@rule_scope)
+    income_scope = income_condition.prepare(@rule_scope)
+    transfer_scope = transfer_condition.prepare(@rule_scope)
+
+    assert_not_includes expense_condition.apply(expense_scope).map(&:id), expense_interest.entryable.id
+    assert_not_includes income_condition.apply(income_scope).map(&:id), income_interest.entryable.id
+    assert_not_includes transfer_condition.apply(transfer_scope).map(&:id), expense_interest.entryable.id
+    assert_not_includes transfer_condition.apply(transfer_scope).map(&:id), income_interest.entryable.id
+  end
+
   test "transaction_type transfer includes investment_contribution" do
     scope = @rule_scope
 

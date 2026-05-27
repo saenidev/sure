@@ -52,7 +52,7 @@ class Transaction::Search
   # because those transactions are retirement savings, not daily income/expenses.
   def totals
     @totals ||= begin
-      Rails.cache.fetch("transaction_search_totals/v2/#{cache_key_base}") do
+      Rails.cache.fetch("transaction_search_totals/v3/#{cache_key_base}") do
         scope = transactions_scope
 
         # Exclude tax-advantaged accounts from totals calculation
@@ -63,11 +63,11 @@ class Transaction::Search
                   .select(
                     ActiveRecord::Base.sanitize_sql_array([
                       "COALESCE(SUM(CASE WHEN entries.amount >= 0 AND transactions.kind NOT IN (?) THEN ABS(entries.amount * COALESCE(er.rate, 1)) ELSE 0 END), 0) as expense_total",
-                      Transaction::TRANSFER_KINDS
+                      Transaction::SEARCH_TOTAL_EXCLUDED_KINDS
                     ]),
                     ActiveRecord::Base.sanitize_sql_array([
                       "COALESCE(SUM(CASE WHEN entries.amount < 0 AND transactions.kind NOT IN (?) THEN ABS(entries.amount * COALESCE(er.rate, 1)) ELSE 0 END), 0) as income_total",
-                      Transaction::TRANSFER_KINDS
+                      Transaction::SEARCH_TOTAL_EXCLUDED_KINDS
                     ]),
                     ActiveRecord::Base.sanitize_sql_array([
                       "COALESCE(SUM(CASE WHEN entries.amount < 0 AND transactions.kind IN (?) THEN ABS(entries.amount * COALESCE(er.rate, 1)) ELSE 0 END), 0) as transfer_inflow_total",
@@ -138,7 +138,7 @@ class Transaction::Search
         if include_uncategorized
           query = query.left_joins(:category).where(
             "categories.name IN (?) OR (#{uncategorized_condition})",
-            real_categories.presence || [], Transaction::TRANSFER_KINDS
+            real_categories.presence || [], Transaction::CATEGORIZATION_EXCLUDED_KINDS
           )
         else
           query = query.left_joins(:category).where(categories: { name: real_categories })
@@ -147,7 +147,7 @@ class Transaction::Search
         if include_uncategorized
           query = query.left_joins(:category).where(
             "categories.name IN (?) OR categories.parent_id IN (?) OR (#{uncategorized_condition})",
-            real_categories, parent_category_ids, Transaction::TRANSFER_KINDS
+            real_categories, parent_category_ids, Transaction::CATEGORIZATION_EXCLUDED_KINDS
           )
         else
           query = query.left_joins(:category).where(
@@ -168,15 +168,23 @@ class Transaction::Search
       when [ "transfer" ]
         query.where(kind: Transaction::TRANSFER_KINDS)
       when [ "expense" ]
-        query.where("entries.amount >= 0").where.not(kind: Transaction::TRANSFER_KINDS)
+        query.where("entries.amount >= 0").where.not(kind: Transaction::TYPE_FILTER_EXCLUDED_KINDS)
       when [ "income" ]
-        query.where("entries.amount < 0").where.not(kind: Transaction::TRANSFER_KINDS)
+        query.where("entries.amount < 0").where.not(kind: Transaction::TYPE_FILTER_EXCLUDED_KINDS)
       when [ "expense", "transfer" ]
-        query.where("entries.amount >= 0 OR transactions.kind IN (?)", Transaction::TRANSFER_KINDS)
+        query.where(
+          "(entries.amount >= 0 AND transactions.kind NOT IN (?)) OR transactions.kind IN (?)",
+          Transaction::LEDGER_ONLY_KINDS,
+          Transaction::TRANSFER_KINDS
+        )
       when [ "income", "transfer" ]
-        query.where("entries.amount < 0 OR transactions.kind IN (?)", Transaction::TRANSFER_KINDS)
+        query.where(
+          "(entries.amount < 0 AND transactions.kind NOT IN (?)) OR transactions.kind IN (?)",
+          Transaction::LEDGER_ONLY_KINDS,
+          Transaction::TRANSFER_KINDS
+        )
       when [ "expense", "income" ]
-        query.where.not(kind: Transaction::TRANSFER_KINDS)
+        query.where.not(kind: Transaction::TYPE_FILTER_EXCLUDED_KINDS)
       else
         query
       end

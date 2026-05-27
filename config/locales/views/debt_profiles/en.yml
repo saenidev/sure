@@ -21,7 +21,8 @@ en:
       auto_payment_allocation_enabled: Payment allocation
       rate_type: Rate type
       annual_rate: Annual rate
-      accrual_cadence: Accrual cadence
+      accrual_cadence: Interest posting cadence
+      accrual_cadence_description: Daily posts interest each maintenance run. Monthly posts on the statement closing day, or month end when no closing day is set.
       compounding_cadence: Compounding cadence
       minimum_payment_amount: Minimum payment amount
       minimum_payment_percent: Minimum payment percent

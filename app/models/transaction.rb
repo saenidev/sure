@@ -72,17 +72,29 @@ class Transaction < ApplicationRecord
     cc_payment: "cc_payment", # A CC payment, excluded from budget analytics (CC payments offset the sum of expense transactions)
     loan_payment: "loan_payment", # A payment to a Loan account, treated as an expense in budgets
     one_time: "one_time", # A one-time expense/income, excluded from budget analytics
-    investment_contribution: "investment_contribution" # Transfer to investment/crypto account, treated as an expense in budgets
+    investment_contribution: "investment_contribution", # Transfer to investment/crypto account, treated as an expense in budgets
+    debt_interest: "debt_interest" # Non-cash debt interest accrual, excluded from budget analytics
   }
 
   # All kinds where money moves between accounts (transfer? returns true).
   # Used for search filters, rule conditions, and UI display.
   TRANSFER_KINDS = %w[funds_movement cc_payment loan_payment investment_contribution].freeze
 
+  # Kinds that exist to maintain account ledgers, not to represent cash-flow activity.
+  LEDGER_ONLY_KINDS = %w[debt_interest].freeze
+
   # Kinds excluded from budget/income-statement analytics.
   # loan_payment and investment_contribution are intentionally NOT here —
   # they represent real cash outflow from a budgeting perspective.
-  BUDGET_EXCLUDED_KINDS = %w[funds_movement one_time cc_payment].freeze
+  BUDGET_EXCLUDED_KINDS = %w[funds_movement one_time cc_payment debt_interest].freeze
+
+  CATEGORIZATION_EXCLUDED_KINDS = (TRANSFER_KINDS + LEDGER_ONLY_KINDS).freeze
+
+  SEARCH_TOTAL_EXCLUDED_KINDS = (TRANSFER_KINDS + LEDGER_ONLY_KINDS).freeze
+
+  TYPE_FILTER_EXCLUDED_KINDS = (TRANSFER_KINDS + LEDGER_ONLY_KINDS).freeze
+
+  RECURRING_EXCLUDED_KINDS = (TRANSFER_KINDS + LEDGER_ONLY_KINDS).freeze
 
   # All valid investment activity labels (for UI dropdown)
   ACTIVITY_LABELS = [

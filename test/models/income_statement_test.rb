@@ -179,6 +179,18 @@ class IncomeStatementTest < ActiveSupport::TestCase
     assert_equal Money.new(1900, @family.currency), totals.expense_money # 900 + 1000
   end
 
+  test "excludes debt interest accrual while keeping loan payments as expenses" do
+    create_transaction(account: @loan_account, amount: 25, category: nil, kind: "debt_interest")
+    create_transaction(account: @checking_account, amount: 1000, category: nil, kind: "loan_payment")
+
+    income_statement = IncomeStatement.new(@family)
+    totals = income_statement.totals(date_range: Period.last_30_days.date_range)
+
+    assert_equal 5, totals.transactions_count
+    assert_equal Money.new(1000, @family.currency), totals.income_money
+    assert_equal Money.new(1900, @family.currency), totals.expense_money
+  end
+
   test "excludes one-time transactions from income statement calculations" do
     # Create a one-time transaction
     one_time_transaction = create_transaction(account: @checking_account, amount: 250, category: @groceries_category, kind: "one_time")

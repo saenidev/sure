@@ -10,28 +10,36 @@ module Debt
 
     def call
       return nil unless eligible?
+
+      schedule = AccrualSchedule.new(profile: profile, as_of: as_of)
+      period_start = schedule.period_start_on
+      period_end = schedule.period_end_on
+      @period_end = period_end
+
       return completed_event if completed_event.present?
+      return nil unless schedule.due?
 
-      period_start = next_period_start
-      return nil if period_start > as_of
-
-      terms = AccountTerms.new(account, as_of: as_of).resolve
+      terms = AccountTerms.new(account, as_of: period_end).resolve
       return nil unless terms.accrual_ready?
 
-      amount = accrued_amount(terms, period_start)
+      amount = accrued_amount(terms, period_start, period_end)
       return nil unless amount.positive?
 
-      create_posting_run(period_start)
+      create_posting_run(period_start, period_end)
 
       event = nil
       ApplicationRecord.transaction do
-        event = pending_event || create_event!(amount, period_start)
-        event.assign_attributes(event_attributes(amount, period_start).except(:idempotency_key)) if event.status == "pending"
+        event = pending_event || create_event!(amount, period_start, period_end)
+        if event.status == "pending"
+          event.assign_attributes(event_attributes(amount, period_start, period_end).except(:idempotency_key))
+        end
+
         event.save! if event.changed?
 
         match = ReconciliationService.new(event).call
 
         if match.present?
+          match.entry.transaction.update!(kind: "debt_interest")
           event.reload
         else
           entry = create_interest_entry!(event)
@@ -39,7 +47,7 @@ module Debt
           entry.sync_account_later
         end
 
-        profile.update!(last_accrued_on: as_of)
+        profile.update!(last_accrued_on: period_end)
       end
 
       posting_run.update!(status: "succeeded", finished_at: Time.current)
@@ -55,7 +63,7 @@ module Debt
     end
 
     private
-      attr_reader :account, :as_of, :posting_run
+      attr_reader :account, :as_of, :posting_run, :period_end
 
       def profile
         @profile ||= account.debt_profile
@@ -82,54 +90,50 @@ module Debt
       end
 
       def events_for_period
-        account.debt_events.where(event_type: "interest_accrual", period_end_on: as_of)
+        account.debt_events.where(event_type: "interest_accrual", period_end_on: period_end)
       end
 
-      def next_period_start
-        profile.last_accrued_on ? profile.last_accrued_on.next_day : as_of
-      end
-
-      def accrued_amount(terms, period_start)
-        days = (as_of - period_start).to_i + 1
+      def accrued_amount(terms, period_start, period_end)
+        days = (period_end - period_start).to_i + 1
         (terms.opening_balance * (terms.annual_rate / 100) / 365 * days).round(4)
       end
 
-      def create_posting_run(period_start)
+      def create_posting_run(period_start, period_end)
         @posting_run = account.debt_posting_runs.create!(
           debt_profile: profile,
           run_type: "interest_accrual",
           period_start_on: period_start,
-          period_end_on: as_of,
+          period_end_on: period_end,
           status: "started",
           started_at: Time.current
         )
       end
 
-      def create_event!(amount, period_start)
-        account.debt_events.create!(event_attributes(amount, period_start))
+      def create_event!(amount, period_start, period_end)
+        account.debt_events.create!(event_attributes(amount, period_start, period_end))
       end
 
-      def event_attributes(amount, period_start)
+      def event_attributes(amount, period_start, period_end)
         {
           debt_profile: profile,
           event_type: "interest_accrual",
           status: "pending",
-          event_date: as_of,
+          event_date: period_end,
           period_start_on: period_start,
-          period_end_on: as_of,
+          period_end_on: period_end,
           amount: amount,
           currency: account.currency,
           source: SOURCE,
-          idempotency_key: idempotency_key_for(period_start),
+          idempotency_key: idempotency_key_for(period_start, period_end),
           extra: {
             "calculation" => "simple_daily",
-            "annual_rate" => AccountTerms.new(account, as_of: as_of).resolve.annual_rate.to_s
+            "annual_rate" => AccountTerms.new(account, as_of: period_end).resolve.annual_rate.to_s
           }
         }
       end
 
-      def idempotency_key_for(period_start)
-        base_key = "interest_accrual:#{period_start}:#{as_of}"
+      def idempotency_key_for(period_start, period_end)
+        base_key = "interest_accrual:#{period_start}:#{period_end}"
         return base_key unless account.debt_events.where(idempotency_key: base_key).exists?
 
         retry_number = events_for_period.count + 1
@@ -147,7 +151,7 @@ module Debt
           user_modified: true,
           import_locked: true,
           entryable: Transaction.new(
-            kind: "standard",
+            kind: "debt_interest",
             extra: {
               "sure" => {
                 "debt_event_id" => event.id,

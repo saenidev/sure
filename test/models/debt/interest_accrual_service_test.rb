@@ -7,6 +7,7 @@ class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
     @profile = DebtProfile.create!(
       account: @account,
       auto_accrual_enabled: true,
+      effective_start_on: Date.new(2026, 1, 1),
       last_accrued_on: Date.new(2026, 1, 30)
     )
     DebtRatePeriod.create!(
@@ -30,7 +31,8 @@ class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("0.3945"), entry.amount
     assert_equal "sure", entry.source
     assert entry.user_modified?
-    assert_equal "standard", entry.transaction.kind
+    assert_equal "debt_interest", entry.transaction.kind
+    assert_includes Transaction::BUDGET_EXCLUDED_KINDS, entry.transaction.kind
 
     run = @account.debt_posting_runs.last
     assert_equal "interest_accrual", run.run_type
@@ -103,7 +105,91 @@ class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
 
     assert_equal "matched", event.status
     assert_equal manual_entry, event.entry
+    assert_equal "debt_interest", manual_entry.reload.transaction.kind
     assert_equal 0, @account.entries.where(source: "sure").count
+  end
+
+  test "skips monthly accrual before the statement closing day" do
+    @profile.update!(
+      accrual_cadence: "monthly",
+      statement_closing_day: 15,
+      effective_start_on: Date.new(2025, 12, 1),
+      last_accrued_on: Date.new(2025, 12, 15)
+    )
+
+    assert_nil Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 14)).call
+    assert_equal 0, @account.debt_events.where(event_type: "interest_accrual").count
+  end
+
+  test "monthly accrual posts through the scheduled anchor when maintenance runs late" do
+    @profile.update!(
+      accrual_cadence: "monthly",
+      statement_closing_day: 15,
+      effective_start_on: Date.new(2025, 12, 1),
+      last_accrued_on: Date.new(2025, 12, 15)
+    )
+
+    event = Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 20)).call
+
+    assert_equal Date.new(2025, 12, 16), event.period_start_on
+    assert_equal Date.new(2026, 1, 15), event.period_end_on
+    assert_equal Date.new(2026, 1, 15), event.event_date
+    assert_equal Date.new(2026, 1, 15), @profile.reload.last_accrued_on
+
+    run = @account.debt_posting_runs.last
+    assert_equal Date.new(2025, 12, 16), run.period_start_on
+    assert_equal Date.new(2026, 1, 15), run.period_end_on
+  end
+
+  test "monthly accrual is idempotent when repeated after a late maintenance run" do
+    @profile.update!(
+      accrual_cadence: "monthly",
+      statement_closing_day: 15,
+      effective_start_on: Date.new(2025, 12, 1),
+      last_accrued_on: Date.new(2025, 12, 15)
+    )
+
+    first_event = Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 20)).call
+    second_event = Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 20)).call
+
+    assert_equal first_event, second_event
+    assert_equal 1, @account.debt_events.where(event_type: "interest_accrual", period_end_on: Date.new(2026, 1, 15)).count
+    assert_equal 1, @account.entries.where(source: "sure").count
+  end
+
+  test "monthly accrual catches up the latest unpaid anchor after month changes" do
+    @profile.update!(
+      accrual_cadence: "monthly",
+      statement_closing_day: nil,
+      last_accrued_on: Date.new(2025, 12, 31)
+    )
+
+    event = Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 2, 1)).call
+
+    assert_equal Date.new(2026, 1, 1), event.period_start_on
+    assert_equal Date.new(2026, 1, 31), event.period_end_on
+    assert_equal Date.new(2026, 1, 31), event.event_date
+    assert_equal Date.new(2026, 1, 31), @profile.reload.last_accrued_on
+  end
+
+  test "skips accrual before the profile effective start date" do
+    @profile.update!(
+      effective_start_on: Date.new(2026, 2, 1),
+      last_accrued_on: nil
+    )
+
+    assert_nil Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 31)).call
+    assert_equal 0, @account.debt_events.where(event_type: "interest_accrual").count
+  end
+
+  test "skips accrual before effective start date when last accrued is earlier" do
+    @profile.update!(
+      effective_start_on: Date.new(2026, 2, 1),
+      last_accrued_on: Date.new(2026, 1, 15)
+    )
+
+    assert_nil Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 31)).call
+    assert_equal 0, @account.debt_events.where(event_type: "interest_accrual").count
   end
 
   test "skips connected debt accounts" do

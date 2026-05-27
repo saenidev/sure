@@ -42,8 +42,10 @@ module Debt
         account.manual_debt_account? &&
           profile&.active? &&
           profile.auto_payment_allocation_enabled? &&
+          !before_effective_start? &&
           entry.transaction? &&
           entry.amount.negative? &&
+          !entry.excluded? &&
           !entry.transaction.pending? &&
           safe_payment_source?
       end
@@ -63,6 +65,10 @@ module Debt
         transfer = entry.transaction.transfer_as_inflow
 
         transfer&.confirmed? && transfer.to_account == account
+      end
+
+      def before_effective_start?
+        profile.effective_start_on.present? && entry.date < profile.effective_start_on
       end
 
       def next_obligation

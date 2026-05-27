@@ -113,6 +113,12 @@ class Transaction::SearchTest < ActiveSupport::TestCase
       kind: "loan_payment"
     )
 
+    uncategorized_debt_interest = create_transaction(
+      account: @loan_account,
+      amount: 25,
+      kind: "debt_interest"
+    )
+
     # Search for uncategorized transactions
     uncategorized_results = Transaction::Search.new(@family, filters: { categories: [ Category.uncategorized.name ] }).transactions_scope
     uncategorized_ids = uncategorized_results.pluck(:id)
@@ -123,6 +129,7 @@ class Transaction::SearchTest < ActiveSupport::TestCase
     # Should exclude all transfer kinds (TRANSFER_KINDS) even if uncategorized
     assert_not_includes uncategorized_ids, uncategorized_transfer.entryable.id
     assert_not_includes uncategorized_ids, uncategorized_loan_payment.entryable.id
+    assert_not_includes uncategorized_ids, uncategorized_debt_interest.entryable.id
   end
 
   test "filtering for only Uncategorized returns only uncategorized transactions" do
@@ -277,6 +284,99 @@ class Transaction::SearchTest < ActiveSupport::TestCase
 
     assert_not_includes result_ids, investment_contribution.entryable.id
     assert_includes result_ids, standard_expense.entryable.id
+  end
+
+  test "search totals exclude ledger-only debt interest while ledger scope remains visible" do
+    token = "DEBT_INTEREST_SEARCH_TOTALS"
+    debt_interest = create_transaction(
+      account: @loan_account,
+      amount: 25,
+      name: "#{token} ledger",
+      kind: "debt_interest"
+    )
+    expense_entry = create_transaction(
+      account: @checking_account,
+      amount: 100,
+      name: "#{token} expense",
+      kind: "standard"
+    )
+    debt_interest_credit = create_transaction(
+      account: @loan_account,
+      amount: -50,
+      name: "#{token} ledger credit",
+      kind: "debt_interest"
+    )
+    income_entry = create_transaction(
+      account: @checking_account,
+      amount: -200,
+      name: "#{token} income",
+      kind: "standard"
+    )
+
+    search = Transaction::Search.new(@family, filters: { search: token })
+    result_ids = search.transactions_scope.pluck(:id)
+
+    assert_includes result_ids, debt_interest.entryable.id
+    assert_includes result_ids, expense_entry.entryable.id
+    assert_includes result_ids, debt_interest_credit.entryable.id
+    assert_includes result_ids, income_entry.entryable.id
+    assert_equal 4, search.totals.count
+    assert_equal Money.new(100, @family.currency), search.totals.expense_money
+    assert_equal Money.new(200, @family.currency), search.totals.income_money
+  end
+
+  test "type filters exclude ledger-only debt interest while normal search remains visible" do
+    token = "DEBT_INTEREST_TYPE_FILTER"
+    debt_interest = create_transaction(
+      account: @loan_account,
+      amount: 25,
+      name: "#{token} ledger",
+      kind: "debt_interest"
+    )
+    expense_entry = create_transaction(
+      account: @checking_account,
+      amount: 100,
+      name: "#{token} expense",
+      kind: "standard"
+    )
+    debt_interest_credit = create_transaction(
+      account: @loan_account,
+      amount: -50,
+      name: "#{token} ledger credit",
+      kind: "debt_interest"
+    )
+    income_entry = create_transaction(
+      account: @checking_account,
+      amount: -200,
+      name: "#{token} income",
+      kind: "standard"
+    )
+
+    normal_ids = Transaction::Search.new(@family, filters: { search: token }).transactions_scope.pluck(:id)
+    expense_ids = Transaction::Search.new(@family, filters: { search: token, types: [ "expense" ] }).transactions_scope.pluck(:id)
+    income_ids = Transaction::Search.new(@family, filters: { search: token, types: [ "income" ] }).transactions_scope.pluck(:id)
+    expense_transfer_ids = Transaction::Search.new(@family, filters: { search: token, types: [ "expense", "transfer" ] }).transactions_scope.pluck(:id)
+    income_transfer_ids = Transaction::Search.new(@family, filters: { search: token, types: [ "income", "transfer" ] }).transactions_scope.pluck(:id)
+    non_transfer_ids = Transaction::Search.new(@family, filters: { search: token, types: [ "expense", "income" ] }).transactions_scope.pluck(:id)
+    transfer_ids = Transaction::Search.new(@family, filters: { search: token, types: [ "transfer" ] }).transactions_scope.pluck(:id)
+    all_type_ids = Transaction::Search.new(@family, filters: { search: token, types: [ "expense", "income", "transfer" ] }).transactions_scope.pluck(:id)
+
+    assert_includes normal_ids, debt_interest.entryable.id
+    assert_includes normal_ids, debt_interest_credit.entryable.id
+    assert_includes normal_ids, expense_entry.entryable.id
+    assert_includes normal_ids, income_entry.entryable.id
+    assert_not_includes expense_ids, debt_interest.entryable.id
+    assert_includes expense_ids, expense_entry.entryable.id
+    assert_not_includes income_ids, debt_interest_credit.entryable.id
+    assert_includes income_ids, income_entry.entryable.id
+    assert_not_includes expense_transfer_ids, debt_interest.entryable.id
+    assert_not_includes income_transfer_ids, debt_interest_credit.entryable.id
+    assert_not_includes non_transfer_ids, debt_interest.entryable.id
+    assert_not_includes non_transfer_ids, debt_interest_credit.entryable.id
+    assert_not_includes transfer_ids, debt_interest.entryable.id
+    assert_not_includes transfer_ids, debt_interest_credit.entryable.id
+    assert_includes all_type_ids, debt_interest.entryable.id
+    assert_includes all_type_ids, debt_interest_credit.entryable.id
   end
 
   test "family-based API requires family parameter" do

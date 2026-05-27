@@ -98,4 +98,24 @@ class Debt::ObligationServiceTest < ActiveSupport::TestCase
     assert_nil Debt::ObligationService.new(account: @account, as_of: Date.new(2026, 1, 20)).generate_next
     assert_equal 0, @account.debt_obligations.count
   end
+
+  test "does not generate obligations before the profile effective start date" do
+    @profile.update!(effective_start_on: Date.new(2026, 2, 1))
+
+    assert_nil Debt::ObligationService.new(account: @account, as_of: Date.new(2026, 1, 20)).generate_next
+    assert_equal 0, @account.debt_obligations.count
+  end
+
+  test "does not upsert manual obligations before the profile effective start date" do
+    @profile.update!(effective_start_on: Date.new(2026, 2, 1))
+
+    result = Debt::ObligationService.new(account: @account, as_of: Date.new(2026, 1, 20)).upsert_manual(
+      due_on: Date.new(2026, 1, 15),
+      status: "open",
+      minimum_payment_amount: 35
+    )
+
+    assert_nil result
+    assert_equal 0, @account.debt_obligations.count
+  end
 end

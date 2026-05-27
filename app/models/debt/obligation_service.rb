@@ -10,6 +10,7 @@ module Debt
     def generate_next
       return nil unless account.manual_debt_account?
       return nil unless profile&.active?
+      return nil if before_effective_start?(as_of)
       return nil if profile.payment_due_day.blank?
 
       due_on = next_due_date
@@ -51,6 +52,8 @@ module Debt
       return nil unless account.manual_debt_account?
 
       due_on = attributes.fetch(:due_on)
+      return nil if before_effective_start?(due_on)
+
       external_id = attributes[:external_id].presence || "manual:#{due_on}"
       obligation = account.debt_obligations.find_or_initialize_by(source: "manual", external_id: external_id)
       obligation.assign_attributes(attributes.merge(debt_profile: profile, currency: attributes[:currency].presence || account.currency))
@@ -105,6 +108,10 @@ module Debt
 
       def external_id_for(due_on)
         "debt-obligation-#{account.id}-#{due_on}"
+      end
+
+      def before_effective_start?(date)
+        profile&.effective_start_on.present? && date < profile.effective_start_on
       end
   end
 end

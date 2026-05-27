@@ -56,12 +56,26 @@ class TransactionTest < ActiveSupport::TestCase
   end
 
   test "all transaction kinds are valid" do
-    valid_kinds = %w[standard funds_movement cc_payment loan_payment one_time investment_contribution]
+    valid_kinds = %w[standard funds_movement cc_payment loan_payment one_time investment_contribution debt_interest]
 
     valid_kinds.each do |kind|
       transaction = Transaction.new(kind: kind)
       assert_equal kind, transaction.kind, "#{kind} should be a valid transaction kind"
     end
+  end
+
+  test "debt_interest is a valid budget-excluded non-transfer kind" do
+    transaction = Transaction.new(kind: "debt_interest")
+
+    assert_equal "debt_interest", transaction.kind
+    assert transaction.debt_interest?
+    assert_not transaction.transfer?
+    assert_includes Transaction::BUDGET_EXCLUDED_KINDS, "debt_interest"
+    assert_includes Transaction::CATEGORIZATION_EXCLUDED_KINDS, "debt_interest"
+    assert_includes Transaction::SEARCH_TOTAL_EXCLUDED_KINDS, "debt_interest"
+    assert_includes Transaction::TYPE_FILTER_EXCLUDED_KINDS, "debt_interest"
+    assert_includes Transaction::RECURRING_EXCLUDED_KINDS, "debt_interest"
+    assert_not_includes Transaction::TRANSFER_KINDS, "debt_interest"
   end
 
   test "ACTIVITY_LABELS contains all valid labels" do

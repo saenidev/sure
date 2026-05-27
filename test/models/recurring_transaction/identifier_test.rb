@@ -166,6 +166,24 @@ class RecurringTransaction::IdentifierTest < ActiveSupport::TestCase
     assert_equal 0, @family.recurring_transactions.count
   end
 
+  test "does not identify ledger-only debt interest as recurring expense" do
+    account = @family.accounts.first
+
+    [ 0, 1, 2 ].each do |months_ago|
+      transaction = Transaction.create!(kind: "debt_interest")
+      account.entries.create!(
+        date: months_ago.months.ago.beginning_of_month + 14.days,
+        amount: 25,
+        currency: "USD",
+        name: "Interest accrued",
+        entryable: transaction
+      )
+    end
+
+    assert_equal 0, @identifier.identify_recurring_patterns
+    assert_equal 0, @family.recurring_transactions.count
+  end
+
   test "updates existing recurring transaction when pattern is found again" do
     account = @family.accounts.first
     merchant = merchants(:amazon)  # Use different merchant to avoid fixture conflicts

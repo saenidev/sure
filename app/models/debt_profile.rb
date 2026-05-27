@@ -24,6 +24,8 @@ class DebtProfile < ApplicationRecord
   validate :day_fields_in_range
   validate :effective_dates_ordered
 
+  before_validation :default_effective_start_on_for_auto_accrual
+
   def active?
     status == "active"
   end
@@ -60,5 +62,11 @@ class DebtProfile < ApplicationRecord
       return if effective_end_on >= effective_start_on
 
       errors.add(:effective_end_on, "must be on or after effective_start_on")
+    end
+
+    def default_effective_start_on_for_auto_accrual
+      return unless auto_accrual_enabled?
+
+      self.effective_start_on ||= Date.current
     end
 end

@@ -162,4 +162,37 @@ class BudgetCategoriesControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "MORTGAGE_REPRO_OUTFLOW",
       "loan_payment outflow remains visible (kind is not BUDGET_EXCLUDED)"
   end
+
+  test "show drilldown excludes ledger-only debt interest from recent transactions" do
+    create_transaction(
+      date: @budget.end_date,
+      account: accounts(:loan),
+      amount: 999_999,
+      name: "DEBT_INTEREST_DRILLDOWN_REPRO",
+      kind: "debt_interest"
+    )
+
+    get budget_budget_category_path(@budget, BudgetCategory.uncategorized.id)
+
+    assert_response :success
+    refute_includes @response.body, "DEBT_INTEREST_DRILLDOWN_REPRO",
+      "ledger-only debt interest must not appear in Uncategorized budget drilldown"
+  end
+
+  test "show category drilldown excludes categorized ledger-only debt interest" do
+    create_transaction(
+      date: @budget.end_date,
+      account: accounts(:loan),
+      amount: 999_999,
+      name: "DEBT_INTEREST_CATEGORY_DRILLDOWN_REPRO",
+      category: @electric_category,
+      kind: "debt_interest"
+    )
+
+    get budget_budget_category_path(@budget, @electric_budget_category)
+
+    assert_response :success
+    refute_includes @response.body, "DEBT_INTEREST_CATEGORY_DRILLDOWN_REPRO",
+      "ledger-only debt interest must not appear in categorized budget drilldowns"
+  end
 end

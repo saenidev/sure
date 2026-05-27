@@ -84,4 +84,16 @@ class EntryTest < ActiveSupport::TestCase
     # Should not include entry from disabled account
     assert_not_includes visible_entries, invisible_transaction
   end
+
+  test "uncategorized transactions exclude ledger-only debt interest" do
+    account = accounts(:loan)
+    debt_interest = create_transaction(
+      account: account,
+      amount: 25,
+      category: nil,
+      kind: "debt_interest"
+    )
+
+    assert_not_includes Entry.uncategorized_transactions, debt_interest
+  end
 end
