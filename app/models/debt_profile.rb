@@ -23,6 +23,7 @@ class DebtProfile < ApplicationRecord
   validate :account_must_be_liability
   validate :day_fields_in_range
   validate :effective_dates_ordered
+  validate :federal_student_loan_settings_valid
 
   before_validation :default_effective_start_on_for_auto_accrual
 
@@ -40,7 +41,15 @@ class DebtProfile < ApplicationRecord
     @annual_rate = value
   end
 
+  def federal_student_loan
+    @federal_student_loan ||= Debt::FederalStudentLoan::Profile.new(self)
+  end
+
   private
+    def federal_student_loan_settings_valid
+      federal_student_loan.validate
+    end
+
     def account_must_be_liability
       return if account&.liability?
 
