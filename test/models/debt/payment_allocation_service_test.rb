@@ -123,6 +123,111 @@ class Debt::PaymentAllocationServiceTest < ActiveSupport::TestCase
     assert_equal 0, DebtPaymentAllocation.where(entry: @payment_entry).count
   end
 
+  test "federal payment without obligation pays accrued interest before principal" do
+    @obligation.destroy!
+    @profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "in_school",
+      principal_balance: "10000",
+      accrued_interest_balance: "300"
+    )
+    @profile.save!
+    @payment_entry.update!(amount: -500)
+
+    allocation = Debt::PaymentAllocationService.new(entry: @payment_entry).call
+
+    assert_equal "estimated", allocation.status
+    assert_equal BigDecimal("300.0"), allocation.interest_amount
+    assert_equal BigDecimal("200.0"), allocation.principal_amount
+    assert_equal BigDecimal("0.0"), allocation.unapplied_amount
+    assert_equal BigDecimal("0.0"), @profile.reload.federal_student_loan.accrued_interest_balance
+    assert_equal BigDecimal("9800.0"), @profile.federal_student_loan.principal_balance
+  end
+
+  test "federal payment with small amount leaves remaining accrued interest" do
+    @obligation.destroy!
+    @profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "in_school",
+      principal_balance: "10000",
+      accrued_interest_balance: "300"
+    )
+    @profile.save!
+    @payment_entry.update!(amount: -100)
+
+    allocation = Debt::PaymentAllocationService.new(entry: @payment_entry).call
+
+    assert_equal BigDecimal("100.0"), allocation.interest_amount
+    assert_equal BigDecimal("0.0"), allocation.principal_amount
+    assert_equal BigDecimal("200.0"), @profile.reload.federal_student_loan.accrued_interest_balance
+    assert_equal BigDecimal("10000.0"), @profile.federal_student_loan.principal_balance
+  end
+
+  test "federal overpayment leaves unapplied amount without negative balances" do
+    @obligation.destroy!
+    @profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "100",
+      accrued_interest_balance: "50"
+    )
+    @profile.save!
+    @payment_entry.update!(amount: -200)
+
+    allocation = Debt::PaymentAllocationService.new(entry: @payment_entry).call
+
+    assert_equal BigDecimal("50.0"), allocation.interest_amount
+    assert_equal BigDecimal("100.0"), allocation.principal_amount
+    assert_equal BigDecimal("50.0"), allocation.unapplied_amount
+    assert_equal BigDecimal("0.0"), @profile.reload.federal_student_loan.accrued_interest_balance
+    assert_equal BigDecimal("0.0"), @profile.federal_student_loan.principal_balance
+  end
+
+  test "federal payment allocation updates profile balances only once for an entry" do
+    @obligation.destroy!
+    @profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "10000",
+      accrued_interest_balance: "300"
+    )
+    @profile.save!
+    @payment_entry.update!(amount: -500)
+
+    first = Debt::PaymentAllocationService.new(entry: @payment_entry).call
+    second = Debt::PaymentAllocationService.new(entry: @payment_entry).call
+
+    assert_equal first, second
+    assert_equal BigDecimal("0.0"), @profile.reload.federal_student_loan.accrued_interest_balance
+    assert_equal BigDecimal("9800.0"), @profile.federal_student_loan.principal_balance
+  end
+
+  test "federal payment allocation rolls back allocation and obligation on federal balance failure" do
+    @profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "10000",
+      accrued_interest_balance: "300"
+    )
+    @profile.save!
+    Debt::FederalStudentLoan::Profile.any_instance.stubs(:apply_payment!).raises(StandardError, "forced failure")
+
+    assert_raises(StandardError) do
+      Debt::PaymentAllocationService.new(entry: @payment_entry).call
+    end
+
+    assert_equal 0, DebtPaymentAllocation.where(entry: @payment_entry).count
+    assert_equal BigDecimal("0.0"), @obligation.reload.paid_amount
+    assert_equal "open", @obligation.status
+    assert_equal BigDecimal("300.0"), @profile.reload.federal_student_loan.accrued_interest_balance
+    assert_equal BigDecimal("10000.0"), @profile.federal_student_loan.principal_balance
+  end
+
   private
     def create_payment_transfer(amount:)
       cash_entry = accounts(:depository).entries.create!(

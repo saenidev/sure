@@ -9,26 +9,31 @@ module Debt
       return nil unless eligible?
       return existing_allocation if existing_allocation.present?
 
-      obligation = next_obligation
-      amounts = allocate_amounts(obligation)
-      allocation = DebtPaymentAllocation.create!(
-        account: account,
-        entry: entry,
-        debt_profile: profile,
-        debt_obligation: obligation,
-        allocation_method: "automatic",
-        status: allocation_status(obligation),
-        principal_amount: amounts[:principal],
-        interest_amount: amounts[:interest],
-        fee_amount: amounts[:fee],
-        unapplied_amount: amounts[:unapplied],
-        currency: entry.currency,
-        source: "sure",
-        external_id: "debt-allocation-#{entry.id}"
-      )
+      ApplicationRecord.transaction do
+        profile.lock!
+        obligation = next_obligation
+        federal_allocator = Debt::FederalStudentLoan::PaymentAllocator.new(profile: profile, entry: entry, obligation: obligation)
+        amounts = federal_allocator.allocate(fee_due_amount: outstanding_component(obligation, :fee_amount)) || allocate_amounts(obligation)
+        allocation = DebtPaymentAllocation.create!(
+          account: account,
+          entry: entry,
+          debt_profile: profile,
+          debt_obligation: obligation,
+          allocation_method: "automatic",
+          status: allocation_status(obligation),
+          principal_amount: amounts[:principal],
+          interest_amount: amounts[:interest],
+          fee_amount: amounts[:fee],
+          unapplied_amount: amounts[:unapplied],
+          currency: entry.currency,
+          source: "sure",
+          external_id: "debt-allocation-#{entry.id}"
+        )
 
-      update_obligation!(obligation, allocation) if obligation.present?
-      allocation
+        federal_allocator.after_create!(allocation)
+        update_obligation!(obligation, allocation) if obligation.present?
+        allocation
+      end
     end
 
     private
