@@ -64,5 +64,13 @@ en:
       unknown: Unknown
       interest: Interest
       payment_allocation: Payment allocation
+      principal_balance: Principal
+      accrued_interest: Accrued interest
+      school_status: Status
+      repayment_scenarios: Repayment scenarios
+      unavailable: Unavailable
+      month_count:
+        one: "%{count} month"
+        other: "%{count} months"
       on: "On"
       off: "Off"

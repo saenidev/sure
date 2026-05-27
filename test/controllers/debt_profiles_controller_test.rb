@@ -126,4 +126,31 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     get account_path(accounts(:other_liability), tab: "overview")
     assert_response :success
   end
+
+  test "account overview renders federal balances and repayment scenarios" do
+    profile = DebtProfile.create!(account: @account, status: "active")
+    profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "10000",
+      accrued_interest_balance: "500",
+      repayment_assumptions: {
+        "annual_income" => "65000",
+        "poverty_guideline" => "15650",
+        "selected_plan_codes" => [ "standard_10_year", "tiered_standard_estimated_2026" ]
+      }
+    )
+    profile.save!
+    profile.debt_rate_periods.create!(rate_type: "fixed", annual_rate: 6, starts_on: Date.current, source: "manual")
+
+    get account_path(@account, tab: "overview")
+
+    assert_response :success
+    assert_select "*", text: I18n.t("debt_profiles.overview.principal_balance")
+    assert_select "*", text: I18n.t("debt_profiles.overview.accrued_interest")
+    assert_select "*", text: I18n.t("debt_profiles.overview.repayment_scenarios")
+    assert_select "*", text: "Standard"
+    assert_select "*", text: "Tiered Standard estimate"
+  end
 end

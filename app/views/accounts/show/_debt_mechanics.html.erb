@@ -58,6 +58,52 @@
           <%= profile.auto_payment_allocation_enabled? ? t("debt_profiles.overview.on") : t("debt_profiles.overview.off") %>
         </div>
       </div>
+
+      <% if profile.federal_student_loan.enabled? %>
+        <% federal = profile.federal_student_loan %>
+        <% repayment_scenarios = Debt::FederalStudentLoan::RepaymentPlan::Comparison.new(profile).call %>
+
+        <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <%= summary_card title: t("debt_profiles.overview.principal_balance") do %>
+            <%= format_money Money.new(federal.principal_balance, account.currency) %>
+          <% end %>
+
+          <%= summary_card title: t("debt_profiles.overview.accrued_interest") do %>
+            <%= format_money Money.new(federal.accrued_interest_balance, account.currency) %>
+          <% end %>
+
+          <%= summary_card title: t("debt_profiles.overview.school_status") do %>
+            <%= t("debt_profiles.edit.#{federal.school_status}") %>
+          <% end %>
+        </div>
+
+        <% if repayment_scenarios.any? %>
+          <div class="mt-3 rounded-lg border border-primary p-3">
+            <p class="mb-2 text-sm font-medium text-primary"><%= t("debt_profiles.overview.repayment_scenarios") %></p>
+            <div class="divide-y divide-primary">
+              <% repayment_scenarios.each do |scenario| %>
+                <div class="grid grid-cols-3 gap-2 py-2 text-sm">
+                  <span class="text-primary"><%= scenario.plan_name %></span>
+                  <span class="text-secondary">
+                    <% if scenario.available? %>
+                      <%= format_money Money.new(scenario.first_payment_amount, account.currency) %>
+                    <% else %>
+                      <%= t("debt_profiles.overview.unavailable") %>
+                    <% end %>
+                  </span>
+                  <span class="text-secondary">
+                    <% if scenario.available? %>
+                      <%= t("debt_profiles.overview.month_count", count: scenario.month_count) %>
+                    <% else %>
+                      <%= scenario.warnings.first %>
+                    <% end %>
+                  </span>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      <% end %>
     <% end %>
   </div>
 <% end %>
