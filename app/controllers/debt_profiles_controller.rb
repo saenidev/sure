@@ -57,11 +57,32 @@ class DebtProfilesController < ApplicationController
         @debt_profile.federal_student_loan.assign(federal_attributes.to_h) if federal_attributes.present?
         @debt_profile.save!
         upsert_manual_rate_period!(annual_rate) if annual_rate.present?
+        sync_federal_student_loan_balance!(federal_attributes)
       end
 
       true
     rescue ActiveRecord::RecordInvalid
       false
+    end
+
+    def sync_federal_student_loan_balance!(federal_attributes)
+      return unless federal_balance_submitted?(federal_attributes)
+      return unless @debt_profile.federal_student_loan.enabled?
+
+      federal = @debt_profile.federal_student_loan
+      result = @account.set_current_balance(federal.principal_balance + federal.accrued_interest_balance)
+
+      return if result.success?
+
+      @debt_profile.errors.add(:base, result.error || "Unable to update account balance")
+      raise ActiveRecord::RecordInvalid.new(@debt_profile)
+    end
+
+    def federal_balance_submitted?(federal_attributes)
+      return false if federal_attributes.blank?
+
+      attrs = federal_attributes.to_h.with_indifferent_access
+      attrs[:principal_balance].present? || attrs[:accrued_interest_balance].present?
     end
 
     def upsert_manual_rate_period!(annual_rate)

@@ -117,6 +117,31 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_equal BigDecimal("6.12"), @account.debt_profile.debt_rate_periods.first.annual_rate
   end
 
+  test "update syncs federal student loan balance to manual loan account balance" do
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        federal_student_loan: {
+          enabled: "1",
+          subsidy_type: "unsubsidized",
+          school_status: "in_school",
+          principal_balance: "12500",
+          accrued_interest_balance: "315.42",
+          interest_bearing_principal_balance: "12500",
+          weighted_average_rate: "6.12",
+          servicer_balance_as_of: "2026-05-28"
+        }
+      }
+    }
+
+    @account.reload
+
+    assert_equal BigDecimal("12815.42"), @account.balance
+    reconciliation = @account.entries.valuations.find_by(date: Date.current)
+    assert_equal BigDecimal("12815.42"), reconciliation.amount
+    assert_equal "reconciliation", reconciliation.entryable.kind
+  end
+
   test "update does not create profile for connected debt account" do
     AccountProvider.create!(account: @account, provider: plaid_accounts(:one))
 
