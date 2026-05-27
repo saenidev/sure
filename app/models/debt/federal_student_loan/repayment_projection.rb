@@ -17,6 +17,5 @@ module Debt
         available
       end
     end
-
   end
 end
