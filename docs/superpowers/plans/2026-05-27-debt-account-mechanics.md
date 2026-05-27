@@ -14,6 +14,16 @@
 
 The spec is implementable, but phase 1 must stay focused on unconnected manual liability accounts. The primary risk is creating a parallel balance ledger or accidentally changing connected/provider accounts. The plan avoids that by requiring every balance-changing debt event to link to a real `Entry` + `Transaction`, while debt tables store terms, obligations, explanations, allocations, reconciliation state, and audit metadata.
 
+## Phasing
+
+This plan implements phase 1 only:
+
+- Manual unconnected liability accounts: in scope.
+- Connected-account/provider debt metadata: future project, not this plan.
+- Forecast scenarios, forecast events, forecast timeline UI, and assistant payoff recommendations: future project, not this plan.
+
+The schema remains future-compatible by keeping `source`, `external_id`, and `extra`. Core debt model validations should stay liability-wide; phase-1 manual-only behavior is enforced through UI, controller, and service guards.
+
 The migration should be additive and compatible:
 
 - Keep existing `Loan` and `CreditCard` columns.
@@ -35,8 +45,6 @@ Create:
 - `app/models/debt_reconciliation_match.rb`: accepted/dismissed matches between generated events and existing manual entries.
 - `app/models/debt_posting_run.rb`: audit rows for service runs.
 - `app/models/debt/account_terms.rb`: normalized read model for debt services.
-- `app/models/debt/projection.rb`: deterministic payoff projection.
-- `app/models/debt/account_projection.rb`: account-level projection wrapper.
 - `app/models/debt/interest_accrual_service.rb`: posts or matches interest events.
 - `app/models/debt/obligation_service.rb`: imports or generates obligations.
 - `app/models/debt/payment_allocation_service.rb`: allocates payment entries.
@@ -51,12 +59,12 @@ Create:
 - `test/models/debt_reconciliation_match_test.rb`
 - `test/models/debt_posting_run_test.rb`
 - `test/models/debt/account_terms_test.rb`
-- `test/models/debt/projection_test.rb`
 - `test/models/debt/interest_accrual_service_test.rb`
 - `test/models/debt/obligation_service_test.rb`
 - `test/models/debt/payment_allocation_service_test.rb`
 - `test/models/debt/reconciliation_service_test.rb`
 - `app/views/accounts/show/_debt_mechanics.html.erb`
+- `app/views/other_liabilities/tabs/_overview.html.erb`: render debt mechanics for manual other-liability accounts.
 
 Modify:
 
@@ -73,7 +81,7 @@ Modify:
 - `config/locales/views/loans/en.yml`: any loan overview labels needed.
 - `config/locales/views/credit_cards/en.yml`: any credit-card overview labels needed.
 
-Do not modify forecast files in this plan.
+Do not modify forecast or provider integration files in this plan.
 
 ## Task 1: Add Debt Mechanics Schema
 
@@ -131,7 +139,7 @@ class CreateDebtMechanicsTables < ActiveRecord::Migration[7.2]
     end
 
     add_index :debt_rate_periods, [ :debt_profile_id, :starts_on ]
-    add_index :debt_rate_periods, [ :debt_profile_id, :external_id ], unique: true, where: "external_id IS NOT NULL"
+    add_index :debt_rate_periods, [ :debt_profile_id, :source, :external_id ], unique: true, where: "source IS NOT NULL AND external_id IS NOT NULL"
     add_index :debt_rate_periods, :extra, using: :gin
 
     create_table :debt_events, id: :uuid do |t|
@@ -183,7 +191,7 @@ class CreateDebtMechanicsTables < ActiveRecord::Migration[7.2]
 
     add_index :debt_obligations, [ :account_id, :due_on ]
     add_index :debt_obligations, [ :account_id, :status ]
-    add_index :debt_obligations, [ :account_id, :source, :external_id ], unique: true, where: "source IS NOT NULL AND external_id IS NOT NULL"
+    add_index :debt_obligations, [ :account_id, :due_on, :source, :external_id ], unique: true, where: "source IS NOT NULL AND external_id IS NOT NULL"
     add_index :debt_obligations, :extra, using: :gin
 
     create_table :debt_payment_allocations, id: :uuid do |t|
@@ -279,6 +287,7 @@ git commit -m "Add debt mechanics tables"
 - Create: `app/models/debt_reconciliation_match.rb`
 - Create: `app/models/debt_posting_run.rb`
 - Modify: `app/models/account.rb`
+- Test: `test/models/account_test.rb`
 - Test: `test/models/debt_profile_test.rb`
 - Test: `test/models/debt_rate_period_test.rb`
 - Test: `test/models/debt_event_test.rb`
@@ -300,7 +309,7 @@ class DebtProfileTest < ActiveSupport::TestCase
     @asset_account = accounts(:depository)
   end
 
-  test "accepts unconnected manual liability account" do
+  test "accepts liability account" do
     profile = DebtProfile.new(account: @loan_account, status: "active")
 
     assert profile.valid?
@@ -311,14 +320,6 @@ class DebtProfileTest < ActiveSupport::TestCase
 
     assert_not profile.valid?
     assert_includes profile.errors[:account], "must be a liability account"
-  end
-
-  test "rejects connected liability account" do
-    @loan_account.update!(plaid_account: plaid_accounts(:one))
-    profile = DebtProfile.new(account: @loan_account, status: "active")
-
-    assert_not profile.valid?
-    assert_includes profile.errors[:account], "must be an unconnected manual liability account"
   end
 
   test "validates day fields" do
@@ -344,6 +345,21 @@ class DebtProfileTest < ActiveSupport::TestCase
     assert_includes profile.errors[:effective_end_on], "must be on or after effective_start_on"
   end
 end
+```
+
+Add to `test/models/account_test.rb`:
+
+```ruby
+  test "manual debt account helper is true only for unlinked liabilities" do
+    loan_account = accounts(:loan)
+
+    assert loan_account.manual_debt_account?
+
+    loan_account.update!(plaid_account: plaid_accounts(:one))
+
+    assert_not loan_account.reload.manual_debt_account?
+    assert_not accounts(:depository).manual_debt_account?
+  end
 ```
 
 Create `test/models/debt_rate_period_test.rb`:
@@ -656,7 +672,7 @@ end
 Run:
 
 ```bash
-bin/rails test test/models/debt_profile_test.rb test/models/debt_rate_period_test.rb test/models/debt_event_test.rb test/models/debt_obligation_test.rb test/models/debt_payment_allocation_test.rb test/models/debt_reconciliation_match_test.rb test/models/debt_posting_run_test.rb
+bin/rails test test/models/account_test.rb test/models/debt_profile_test.rb test/models/debt_rate_period_test.rb test/models/debt_event_test.rb test/models/debt_obligation_test.rb test/models/debt_payment_allocation_test.rb test/models/debt_reconciliation_match_test.rb test/models/debt_posting_run_test.rb
 ```
 
 Expected: tests fail with missing constants such as `uninitialized constant DebtProfile`.
@@ -686,7 +702,7 @@ class DebtProfile < ApplicationRecord
   validates :minimum_payment_amount, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :minimum_payment_percent, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :grace_period_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
-  validate :account_must_be_manual_liability
+  validate :account_must_be_liability
   validate :day_fields_in_range
   validate :effective_dates_ordered
 
@@ -695,13 +711,8 @@ class DebtProfile < ApplicationRecord
   end
 
   private
-    def account_must_be_manual_liability
-      return if account&.manual_debt_account?
-
-      if account&.liability?
-        errors.add(:account, "must be an unconnected manual liability account")
-        return
-      end
+    def account_must_be_liability
+      return if account&.liability?
 
       errors.add(:account, "must be a liability account")
     end
@@ -786,7 +797,7 @@ class DebtEvent < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :event_date, :currency, presence: true
   validates :amount, numericality: true
-  validate :account_must_be_manual_liability
+  validate :account_must_be_liability
   validate :entry_belongs_to_account
   validate :posted_or_matched_balance_changing_events_require_entry
 
@@ -795,13 +806,8 @@ class DebtEvent < ApplicationRecord
   end
 
   private
-    def account_must_be_manual_liability
-      return if account&.manual_debt_account?
-
-      if account&.liability?
-        errors.add(:account, "must be an unconnected manual liability account")
-        return
-      end
+    def account_must_be_liability
+      return if account&.liability?
 
       errors.add(:account, "must be a liability account")
     end
@@ -836,7 +842,7 @@ class DebtObligation < ApplicationRecord
   validates :statement_balance_amount, :minimum_payment_amount, :principal_due_amount,
             :interest_due_amount, :fee_due_amount, :paid_amount,
             numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
-  validate :account_must_be_manual_liability
+  validate :account_must_be_liability
   validate :period_dates_ordered
 
   def amount_due
@@ -844,13 +850,8 @@ class DebtObligation < ApplicationRecord
   end
 
   private
-    def account_must_be_manual_liability
-      return if account&.manual_debt_account?
-
-      if account&.liability?
-        errors.add(:account, "must be an unconnected manual liability account")
-        return
-      end
+    def account_must_be_liability
+      return if account&.liability?
 
       errors.add(:account, "must be a liability account")
     end
@@ -881,7 +882,7 @@ class DebtPaymentAllocation < ApplicationRecord
   validates :currency, presence: true
   validates :principal_amount, :interest_amount, :fee_amount, :unapplied_amount,
             numericality: { greater_than_or_equal_to: 0 }
-  validate :account_must_be_manual_liability
+  validate :account_must_be_liability
   validate :entry_belongs_to_account
   validate :entry_is_liability_payment
   validate :components_equal_payment_magnitude_unless_review
@@ -891,13 +892,8 @@ class DebtPaymentAllocation < ApplicationRecord
   end
 
   private
-    def account_must_be_manual_liability
-      return if account&.manual_debt_account?
-
-      if account&.liability?
-        errors.add(:account, "must be an unconnected manual liability account")
-        return
-      end
+    def account_must_be_liability
+      return if account&.liability?
 
       errors.add(:account, "must be a liability account")
     end
@@ -972,16 +968,11 @@ class DebtPostingRun < ApplicationRecord
 
   validates :run_type, presence: true, inclusion: { in: RUN_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
-  validate :account_must_be_manual_liability
+  validate :account_must_be_liability
 
   private
-    def account_must_be_manual_liability
-      return if account&.manual_debt_account?
-
-      if account&.liability?
-        errors.add(:account, "must be an unconnected manual liability account")
-        return
-      end
+    def account_must_be_liability
+      return if account&.liability?
 
       errors.add(:account, "must be a liability account")
     end
@@ -1010,13 +1001,7 @@ Add helpers to `app/models/account.rb` near other instance helpers:
   end
 
   def manual_debt_account?
-    liability? && !connected_account?
-  end
-
-  def connected_account?
-    plaid_account_id.present? ||
-      simplefin_account_id.present? ||
-      account_providers.exists?
+    liability? && unlinked?
   end
 ```
 
@@ -1025,7 +1010,7 @@ Add helpers to `app/models/account.rb` near other instance helpers:
 Run:
 
 ```bash
-bin/rails test test/models/debt_profile_test.rb test/models/debt_rate_period_test.rb test/models/debt_event_test.rb test/models/debt_obligation_test.rb test/models/debt_payment_allocation_test.rb test/models/debt_reconciliation_match_test.rb test/models/debt_posting_run_test.rb
+bin/rails test test/models/account_test.rb test/models/debt_profile_test.rb test/models/debt_rate_period_test.rb test/models/debt_event_test.rb test/models/debt_obligation_test.rb test/models/debt_payment_allocation_test.rb test/models/debt_reconciliation_match_test.rb test/models/debt_posting_run_test.rb
 ```
 
 Expected: all tests pass.
@@ -1033,21 +1018,18 @@ Expected: all tests pass.
 - [ ] **Step 5: Commit models**
 
 ```bash
-git add app/models/account.rb app/models/debt_profile.rb app/models/debt_rate_period.rb app/models/debt_event.rb app/models/debt_obligation.rb app/models/debt_payment_allocation.rb app/models/debt_reconciliation_match.rb app/models/debt_posting_run.rb test/models/debt_profile_test.rb test/models/debt_rate_period_test.rb test/models/debt_event_test.rb test/models/debt_obligation_test.rb test/models/debt_payment_allocation_test.rb test/models/debt_reconciliation_match_test.rb test/models/debt_posting_run_test.rb
+git add app/models/account.rb app/models/debt_profile.rb app/models/debt_rate_period.rb app/models/debt_event.rb app/models/debt_obligation.rb app/models/debt_payment_allocation.rb app/models/debt_reconciliation_match.rb app/models/debt_posting_run.rb test/models/account_test.rb test/models/debt_profile_test.rb test/models/debt_rate_period_test.rb test/models/debt_event_test.rb test/models/debt_obligation_test.rb test/models/debt_payment_allocation_test.rb test/models/debt_reconciliation_match_test.rb test/models/debt_posting_run_test.rb
 git commit -m "Add debt mechanics models"
 ```
 
-## Task 3: Add Debt Terms And Projection Services
+## Task 3: Add Debt Terms Resolver
 
 **Files:**
 
 - Create: `app/models/debt/account_terms.rb`
-- Create: `app/models/debt/projection.rb`
-- Create: `app/models/debt/account_projection.rb`
 - Modify: `app/models/loan.rb`
 - Modify: `app/models/credit_card.rb`
 - Test: `test/models/debt/account_terms_test.rb`
-- Test: `test/models/debt/projection_test.rb`
 
 - [ ] **Step 1: Write failing tests**
 
@@ -1061,7 +1043,7 @@ class Debt::AccountTermsTest < ActiveSupport::TestCase
     account = accounts(:loan)
     terms = Debt::AccountTerms.new(account).call
 
-    assert terms.projectable?
+    assert terms.accrual_ready?
     assert_equal "fixed", terms.rate_type
     assert_equal account.loan.interest_rate.to_d, terms.annual_rate
     assert terms.monthly_payment.positive?
@@ -1082,7 +1064,7 @@ class Debt::AccountTermsTest < ActiveSupport::TestCase
 
     terms = Debt::AccountTerms.new(account, as_of: Date.new(2026, 2, 1)).call
 
-    assert terms.projectable?
+    assert terms.accrual_ready?
     assert_equal 8.25.to_d, terms.annual_rate
     assert_equal 1_250.to_d, terms.monthly_payment
   end
@@ -1091,7 +1073,7 @@ class Debt::AccountTermsTest < ActiveSupport::TestCase
     account = accounts(:credit_card)
     terms = Debt::AccountTerms.new(account).call
 
-    assert terms.projectable?
+    assert terms.accrual_ready?
     assert_equal account.credit_card.apr.to_d, terms.annual_rate
     assert_equal account.credit_card.minimum_payment.to_d, terms.monthly_payment
   end
@@ -1101,9 +1083,8 @@ class Debt::AccountTermsTest < ActiveSupport::TestCase
 
     missing = Debt::AccountTerms.new(account).call
 
-    assert_not missing.projectable?
+    assert_not missing.accrual_ready?
     assert_includes missing.missing_fields, :annual_rate
-    assert_includes missing.missing_fields, :monthly_payment
 
     profile = DebtProfile.create!(
       account: account,
@@ -1114,59 +1095,7 @@ class Debt::AccountTermsTest < ActiveSupport::TestCase
 
     present = Debt::AccountTerms.new(account).call
 
-    assert present.projectable?
-  end
-end
-```
-
-Create `test/models/debt/projection_test.rb`:
-
-```ruby
-require "test_helper"
-
-class Debt::ProjectionTest < ActiveSupport::TestCase
-  test "projects monthly payoff rows" do
-    result = Debt::Projection.new(
-      opening_balance: 10_000.to_d,
-      annual_rate: 12.to_d,
-      monthly_payment: 500.to_d,
-      start_on: Date.new(2026, 1, 1),
-      months: 2
-    ).call
-
-    assert_equal 2, result.rows.size
-    assert_equal 10_000.to_d, result.rows.first.opening_balance
-    assert_equal 100.to_d, result.rows.first.accrued_interest
-    assert_equal 500.to_d, result.rows.first.payment
-    assert_equal 9_600.to_d, result.rows.first.closing_balance
-  end
-
-  test "caps final payment at remaining balance plus interest" do
-    result = Debt::Projection.new(
-      opening_balance: 300.to_d,
-      annual_rate: 0.to_d,
-      monthly_payment: 500.to_d,
-      start_on: Date.new(2026, 1, 1),
-      months: 12
-    ).call
-
-    assert_equal 1, result.rows.size
-    assert_equal 300.to_d, result.rows.first.payment
-    assert_equal 0.to_d, result.rows.first.closing_balance
-    assert_not result.truncated?
-  end
-
-  test "marks projection truncated when payment does not amortize" do
-    result = Debt::Projection.new(
-      opening_balance: 10_000.to_d,
-      annual_rate: 24.to_d,
-      monthly_payment: 50.to_d,
-      start_on: Date.new(2026, 1, 1),
-      months: 12
-    ).call
-
-    assert result.truncated?
-    assert_nil result.payoff_on
+    assert present.accrual_ready?
   end
 end
 ```
@@ -1176,10 +1105,10 @@ end
 Run:
 
 ```bash
-bin/rails test test/models/debt/account_terms_test.rb test/models/debt/projection_test.rb
+bin/rails test test/models/debt/account_terms_test.rb
 ```
 
-Expected: tests fail with missing `Debt::AccountTerms` and `Debt::Projection`.
+Expected: tests fail with missing `Debt::AccountTerms`.
 
 - [ ] **Step 3: Add debt term defaults to accountables**
 
@@ -1215,7 +1144,7 @@ Modify `app/models/credit_card.rb`:
   end
 ```
 
-- [ ] **Step 4: Add terms resolver and projection services**
+- [ ] **Step 4: Add terms resolver**
 
 Create `app/models/debt/account_terms.rb`:
 
@@ -1224,7 +1153,7 @@ module Debt
   class AccountTerms
     Result = Data.define(
       :account,
-      :projectable,
+      :accrual_ready,
       :missing_fields,
       :rate_type,
       :annual_rate,
@@ -1233,8 +1162,8 @@ module Debt
       :currency,
       :source
     ) do
-      def projectable?
-        projectable
+      def accrual_ready?
+        accrual_ready
       end
     end
 
@@ -1247,12 +1176,11 @@ module Debt
       missing = []
       missing << :account unless account&.liability?
       missing << :annual_rate if annual_rate.blank?
-      missing << :monthly_payment if monthly_payment.blank? || monthly_payment.to_d <= 0
       missing << :opening_balance if opening_balance.blank?
 
       Result.new(
         account: account,
-        projectable: missing.empty?,
+        accrual_ready: missing.empty?,
         missing_fields: missing,
         rate_type: resolved_rate_type,
         annual_rate: annual_rate&.to_d,
@@ -1306,116 +1234,21 @@ module Debt
 end
 ```
 
-Create `app/models/debt/projection.rb`:
-
-```ruby
-module Debt
-  class Projection
-    Row = Data.define(:period_start, :period_end, :opening_balance, :accrued_interest, :payment, :closing_balance)
-    Result = Data.define(:rows, :total_interest, :payoff_on, :truncated) do
-      def truncated?
-        truncated
-      end
-    end
-
-    def initialize(opening_balance:, annual_rate:, monthly_payment:, start_on:, months: 360)
-      @opening_balance = opening_balance.to_d
-      @annual_rate = annual_rate.to_d
-      @monthly_payment = monthly_payment.to_d
-      @start_on = start_on.to_date.beginning_of_month
-      @months = months.to_i
-    end
-
-    def call
-      balance = opening_balance
-      total_interest = 0.to_d
-      payoff_on = nil
-      rows = []
-
-      months.times do |offset|
-        period_start = start_on + offset.months
-        period_end = period_start.end_of_month
-        interest = (balance * monthly_rate).round(4)
-        total_due = balance + interest
-        payment = [ monthly_payment, total_due ].min
-        closing = [ total_due - payment, 0.to_d ].max
-        row = Row.new(
-          period_start: period_start,
-          period_end: period_end,
-          opening_balance: balance,
-          accrued_interest: interest,
-          payment: payment,
-          closing_balance: closing
-        )
-
-        total_interest += interest
-        balance = closing
-        rows << row
-
-        if closing.zero?
-          payoff_on = period_end
-          break
-        end
-      end
-
-      Result.new(rows: rows, total_interest: total_interest, payoff_on: payoff_on, truncated: payoff_on.nil?)
-    end
-
-    private
-      attr_reader :opening_balance, :annual_rate, :monthly_payment, :start_on, :months
-
-      def monthly_rate
-        annual_rate / 100 / 12
-      end
-  end
-end
-```
-
-Create `app/models/debt/account_projection.rb`:
-
-```ruby
-module Debt
-  class AccountProjection
-    def initialize(account, as_of: Date.current, months: 360)
-      @account = account
-      @as_of = as_of
-      @months = months
-    end
-
-    def call
-      terms = AccountTerms.new(account, as_of: as_of).call
-      return terms unless terms.projectable?
-
-      Projection.new(
-        opening_balance: terms.opening_balance,
-        annual_rate: terms.annual_rate,
-        monthly_payment: terms.monthly_payment,
-        start_on: as_of,
-        months: months
-      ).call
-    end
-
-    private
-      attr_reader :account, :as_of, :months
-  end
-end
-```
-
 - [ ] **Step 5: Run tests**
 
 Run:
 
 ```bash
-bin/rails test test/models/debt/account_terms_test.rb test/models/debt/projection_test.rb
+bin/rails test test/models/debt/account_terms_test.rb
 ```
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit debt terms and projections**
+- [ ] **Step 6: Commit debt terms**
 
 ```bash
-git add app/models/loan.rb app/models/credit_card.rb app/models/debt/account_terms.rb app/models/debt/projection.rb app/models/debt/account_projection.rb test/models/debt/account_terms_test.rb test/models/debt/projection_test.rb
-git commit -m "Add debt terms and payoff projection services"
+git add app/models/loan.rb app/models/credit_card.rb app/models/debt/account_terms.rb test/models/debt/account_terms_test.rb
+git commit -m "Add debt account terms resolver"
 ```
 
 ## Task 4: Add Interest Accrual And Reconciliation Services
@@ -1483,6 +1316,22 @@ class Debt::ReconciliationServiceTest < ActiveSupport::TestCase
 
     assert_nil Debt::ReconciliationService.new(@event).call
     assert_equal "pending", @event.reload.status
+  end
+
+  test "does not reconcile connected liability account events" do
+    @account.update!(plaid_account: plaid_accounts(:one))
+
+    @account.entries.create!(
+      date: Date.new(2026, 1, 31),
+      name: "Interest Charge",
+      amount: 100,
+      currency: "USD",
+      entryable: Transaction.new
+    )
+
+    assert_no_difference -> { DebtReconciliationMatch.count } do
+      assert_nil Debt::ReconciliationService.new(@event).call
+    end
   end
 end
 ```
@@ -1636,6 +1485,8 @@ module Debt
     end
 
     def call
+      return nil unless debt_event.account.manual_debt_account?
+
       entries = matching_entries.to_a
       return nil unless entries.one?
 
@@ -1683,7 +1534,7 @@ module Debt
     def call
       return nil unless account.manual_debt_account?
       return nil unless debt_profile.auto_accrual_enabled?
-      return nil unless terms.projectable?
+      return nil unless terms.accrual_ready?
       return existing_event if existing_event.present?
 
       run = start_run!
@@ -1865,12 +1716,36 @@ class Debt::ObligationServiceTest < ActiveSupport::TestCase
     assert_equal 1, DebtObligation.where(source: "manual", external_id: "manual-statement-1").count
   end
 
+  test "does not save user-entered obligation for connected liability account" do
+    @account.update!(plaid_account: plaid_accounts(:one))
+
+    attributes = {
+      due_on: Date.new(2026, 2, 15),
+      minimum_payment_amount: 100,
+      statement_balance_amount: 1_000,
+      currency: "USD",
+      external_id: "manual-statement-1"
+    }
+
+    assert_no_difference -> { DebtObligation.count } do
+      assert_nil Debt::ObligationService.new(@profile).upsert_manual_obligation!(attributes)
+    end
+  end
+
   test "generates local obligation from profile terms" do
     obligation = Debt::ObligationService.new(@profile, as_of: Date.new(2026, 2, 1)).generate_local_obligation!
 
     assert_equal Date.new(2026, 2, 15), obligation.due_on
     assert_equal 100.to_d, obligation.minimum_payment_amount
     assert_equal "open", obligation.status
+  end
+
+  test "does not generate local obligation for connected liability account" do
+    @account.update!(plaid_account: plaid_accounts(:one))
+
+    assert_no_difference -> { DebtObligation.count } do
+      assert_nil Debt::ObligationService.new(@profile, as_of: Date.new(2026, 2, 1)).generate_local_obligation!
+    end
   end
 end
 ```
@@ -1978,14 +1853,16 @@ module Debt
     end
 
     def upsert_manual_obligation!(attributes)
+      return nil unless account.manual_debt_account?
+
       DebtObligation.find_or_initialize_by(
         account: account,
+        due_on: attributes.fetch(:due_on),
         source: "manual",
         external_id: attributes.fetch(:external_id)
       ).tap do |obligation|
         obligation.assign_attributes(
           debt_profile: debt_profile,
-          due_on: attributes.fetch(:due_on),
           status: attributes.fetch(:status, "open"),
           statement_balance_amount: attributes[:statement_balance_amount],
           minimum_payment_amount: attributes[:minimum_payment_amount],
@@ -2000,6 +1877,8 @@ module Debt
     end
 
     def generate_local_obligation!
+      return nil unless account.manual_debt_account?
+
       DebtObligation.find_or_create_by!(
         account: account,
         debt_profile: debt_profile,
@@ -2153,6 +2032,7 @@ git commit -m "Add debt obligations and payment allocation"
 
 - Create: `app/views/accounts/show/_debt_mechanics.html.erb`
 - Move: `app/views/credit_cards/_overview.html.erb` to `app/views/credit_cards/tabs/_overview.html.erb`
+- Create: `app/views/other_liabilities/tabs/_overview.html.erb`
 - Create: `app/controllers/debt_profiles_controller.rb`
 - Create: `app/views/debt_profiles/edit.html.erb`
 - Modify: `app/components/UI/account_page.rb`
@@ -2163,6 +2043,7 @@ git commit -m "Add debt obligations and payment allocation"
 - Modify: `config/locales/views/credit_cards/en.yml`
 - Test: `test/controllers/loans_controller_test.rb`
 - Test: `test/controllers/credit_cards_controller_test.rb`
+- Test: `test/controllers/other_liabilities_controller_test.rb`
 - Test: `test/controllers/debt_profiles_controller_test.rb`
 
 - [ ] **Step 1: Write failing overview tests**
@@ -2216,15 +2097,35 @@ Add to `test/controllers/credit_cards_controller_test.rb`:
   end
 ```
 
+Add to `test/controllers/other_liabilities_controller_test.rb`:
+
+```ruby
+  test "shows debt mechanics on other liability overview" do
+    DebtProfile.create!(
+      account: @account,
+      rate_type: "fixed",
+      minimum_payment_amount: 50,
+      payment_due_day: 10,
+      next_due_on: Date.new(2026, 2, 10)
+    )
+
+    get account_path(@account, tab: "overview")
+
+    assert_response :success
+    assert_select "[data-testid='debt-mechanics']"
+    assert_select "h3", text: I18n.t("accounts.show.debt_mechanics.title")
+  end
+```
+
 - [ ] **Step 2: Run tests to verify missing UI**
 
 Run:
 
 ```bash
-bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb
+bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb test/controllers/other_liabilities_controller_test.rb
 ```
 
-Expected: credit-card overview test fails because `CreditCard` does not yet expose an overview tab or tab partial.
+Expected: credit-card and other-liability overview tests fail because those account types do not yet expose overview tab partials.
 
 - [ ] **Step 3: Add debt profile settings surface**
 
@@ -2350,6 +2251,20 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     assert profile.auto_accrual_enabled?
     assert profile.auto_payment_allocation_enabled?
   end
+
+  test "does not update connected liability account" do
+    @account.update!(plaid_account: plaid_accounts(:one))
+
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        rate_type: "fixed",
+        auto_accrual_enabled: "1"
+      }
+    }
+
+    assert_redirected_to account_path(@account)
+    assert_nil @account.reload.debt_profile
+  end
 end
 ```
 
@@ -2362,7 +2277,6 @@ Create `app/views/accounts/show/_debt_mechanics.html.erb`:
 <% if account.debt_mechanics_supported? %>
   <% profile = account.debt_profile %>
   <% terms = Debt::AccountTerms.new(account).call %>
-  <% projection = terms.projectable? ? Debt::AccountProjection.new(account).call : nil %>
   <% open_obligation = account.debt_obligations.where(status: %w[open partially_paid overdue]).order(:due_on).first %>
   <% last_event = account.debt_events.where(status: %w[posted matched]).order(event_date: :desc, created_at: :desc).first %>
   <% last_allocation = account.debt_payment_allocations.order(created_at: :desc).first %>
@@ -2427,16 +2341,6 @@ Create `app/views/accounts/show/_debt_mechanics.html.erb`:
         <%= t("accounts.show.debt_mechanics.none") %>
       <% end %>
     <% end %>
-
-    <%= summary_card title: t("accounts.show.debt_mechanics.payoff") do %>
-      <% if projection.respond_to?(:payoff_on) && projection.payoff_on.present? %>
-        <%= l(projection.payoff_on, format: :long) %>
-      <% elsif projection.respond_to?(:truncated?) && projection.truncated? %>
-        <%= t("accounts.show.debt_mechanics.not_within_horizon") %>
-      <% else %>
-        <%= t("accounts.show.debt_mechanics.unavailable") %>
-      <% end %>
-    <% end %>
   </div>
 
   <% if last_allocation.present? %>
@@ -2482,11 +2386,13 @@ Create `app/views/accounts/show/_debt_mechanics.html.erb`:
 Modify `app/components/UI/account_page.rb`:
 
 ```ruby
-    when "Property", "Vehicle", "Loan", "CreditCard"
-      if account.accountable_type == "CreditCard" && !account.debt_mechanics_supported?
-        [ :activity ]
-      else
+    when "Property", "Vehicle", "Loan"
+      [ :activity, :overview ]
+    when "CreditCard", "OtherLiability"
+      if account.debt_mechanics_supported?
         [ :activity, :overview ]
+      else
+        [ :activity ]
       end
 ```
 
@@ -2500,6 +2406,14 @@ Also modify the overview render path in `app/components/UI/account_page.rb` so m
 Append to `app/views/loans/tabs/_overview.html.erb` after the edit link:
 
 ```erb
+<%= render "accounts/show/debt_mechanics", account: account %>
+```
+
+Create `app/views/other_liabilities/tabs/_overview.html.erb`:
+
+```erb
+<%# locals: (account:) %>
+
 <%= render "accounts/show/debt_mechanics", account: account %>
 ```
 
@@ -2560,18 +2474,16 @@ Add under `accounts.show` in `config/locales/views/accounts/en.yml`:
 ```yaml
       debt_mechanics:
         title: Debt mechanics
-        subtitle: Interest, due dates, payment allocation, and payoff estimates.
+        subtitle: Interest, due dates, and payment allocation.
         configure: Configure
         current_rate: Current rate
         minimum_payment: Minimum payment
         next_due: Next due
         open_amount_due: Amount due
         last_interest: Last interest
-        payoff: Payoff estimate
         unknown: Unknown
         none: None
         unavailable: Unavailable
-        not_within_horizon: Not within 30 years
         last_allocation: "Last payment allocation: %{principal} principal, %{interest} interest, %{fees} fees"
         review_title: Review needed
         pending_event: "%{type} for %{amount} on %{date}"
@@ -2622,7 +2534,7 @@ If `config/locales/views/credit_cards/en.yml` already has the overview keys at `
 Run:
 
 ```bash
-bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb test/controllers/debt_profiles_controller_test.rb
+bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb test/controllers/other_liabilities_controller_test.rb test/controllers/debt_profiles_controller_test.rb
 ```
 
 Expected: all tests pass.
@@ -2630,7 +2542,7 @@ Expected: all tests pass.
 - [ ] **Step 8: Commit UI**
 
 ```bash
-git add app/components/UI/account_page.rb app/controllers/debt_profiles_controller.rb app/views/accounts/show/_debt_mechanics.html.erb app/views/loans/tabs/_overview.html.erb app/views/credit_cards/tabs/_overview.html.erb app/views/credit_cards/_overview.html.erb app/views/debt_profiles/edit.html.erb config/routes.rb config/locales/views/accounts/en.yml config/locales/views/credit_cards/en.yml config/locales/views/debt_profiles/en.yml test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb test/controllers/debt_profiles_controller_test.rb
+git add app/components/UI/account_page.rb app/controllers/debt_profiles_controller.rb app/views/accounts/show/_debt_mechanics.html.erb app/views/loans/tabs/_overview.html.erb app/views/credit_cards/tabs/_overview.html.erb app/views/credit_cards/_overview.html.erb app/views/other_liabilities/tabs/_overview.html.erb app/views/debt_profiles/edit.html.erb config/routes.rb config/locales/views/accounts/en.yml config/locales/views/credit_cards/en.yml config/locales/views/debt_profiles/en.yml test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb test/controllers/other_liabilities_controller_test.rb test/controllers/debt_profiles_controller_test.rb
 git commit -m "Show debt mechanics on account overviews"
 ```
 
@@ -2646,6 +2558,7 @@ Run:
 
 ```bash
 bin/rails test \
+  test/models/account_test.rb \
   test/models/debt_profile_test.rb \
   test/models/debt_rate_period_test.rb \
   test/models/debt_event_test.rb \
@@ -2654,13 +2567,13 @@ bin/rails test \
   test/models/debt_reconciliation_match_test.rb \
   test/models/debt_posting_run_test.rb \
   test/models/debt/account_terms_test.rb \
-  test/models/debt/projection_test.rb \
   test/models/debt/reconciliation_service_test.rb \
   test/models/debt/interest_accrual_service_test.rb \
   test/models/debt/obligation_service_test.rb \
   test/models/debt/payment_allocation_service_test.rb \
   test/controllers/loans_controller_test.rb \
   test/controllers/credit_cards_controller_test.rb \
+  test/controllers/other_liabilities_controller_test.rb \
   test/controllers/debt_profiles_controller_test.rb
 ```
 
@@ -2705,6 +2618,7 @@ Spec coverage:
 
 Known implementation sacrifices:
 
+- Payoff projections and schedule simulations are deliberately deferred with forecasting. Phase 1 only stores and posts real debt mechanics.
 - Provider support is deliberately deferred. The schema keeps `source`, `external_id`, and `extra` for future compatibility, but phase 1 does not modify provider import code.
 - Payment allocation starts deterministic and conservative. Manual overrides can adjust ambiguous splits through the same allocation table.
 - Auto accrual is opt-in. Existing accounts do not change balances until a profile enables posting.

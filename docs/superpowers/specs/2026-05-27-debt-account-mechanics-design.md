@@ -6,6 +6,16 @@ Build real debt-account mechanics for unconnected manual liability accounts befo
 
 This feature should let manual loans, manual credit cards, and manual other liabilities store durable terms, accrue interest into the database, split payments into principal/interest/fees, support rate changes and due dates, and reconcile generated records against existing manually-entered account activity. Forecasting and connected-account provider integration remain out of scope for this phase.
 
+## Phasing
+
+This design covers phase 1.
+
+- Phase 1, this project: unconnected manual liability accounts only.
+- Future provider phase: connected-account debt metadata, provider statement imports, and provider reconciliation. The phase-1 schema keeps `source`, `external_id`, and `extra` so this can be added later without redesigning the tables.
+- Future forecasting phase: forecast scenarios, forecast events, forecast timelines, and assistants consuming the persisted debt mechanics.
+
+Phase 1 should not modify provider import code or forecast code.
+
 ## Scope
 
 In scope:
@@ -15,7 +25,6 @@ In scope:
 - Principal, interest, and fee allocation for manually-entered debt payments.
 - Rate periods for fixed, variable, adjustable, and promotional rates.
 - Payment due-day metadata, statements, obligations, and minimum-payment terms.
-- Generated schedule/projection services for account pages only.
 - Reconciliation rules so generated debt activity does not duplicate existing manual entries.
 - UI surfaces for configuring debt terms and reviewing generated debt activity.
 
@@ -107,7 +116,7 @@ Columns:
 Indexes:
 
 - `debt_profile_id, starts_on`.
-- `debt_profile_id, external_id`, unique where `external_id` is present.
+- `debt_profile_id, source, external_id`, unique where source and external ID are present.
 
 Validation:
 
@@ -178,7 +187,7 @@ Indexes:
 
 - `account_id, due_on`.
 - `account_id, status`.
-- `account_id, source, external_id`, unique where both are present.
+- `account_id, due_on, source, external_id`, unique where source and external ID are present.
 
 Rules:
 
@@ -264,7 +273,7 @@ Indexes:
 `Account`:
 
 - Add `has_one :debt_profile`.
-- Add helpers such as `debt_profile_or_default`, `debt_mechanics_enabled?`, and `debt_projectable?`.
+- Add helpers such as `debt_mechanics_supported?`, `debt_mechanics_enabled?`, and `manual_debt_account?`.
 
 `Loan`:
 
@@ -359,7 +368,6 @@ Show:
 - Minimum payment.
 - Last posted interest event.
 - Recent payment allocation: principal, interest, fees.
-- Payoff estimate based on current persisted terms.
 - Reconciliation warnings when generated and manually-entered activity may duplicate.
 
 Editing should be conservative:
@@ -382,6 +390,7 @@ Phase 1 is explicitly for unconnected manual accounts.
 
 Rules:
 
+- Debt tables and core debt models should remain liability-wide for future compatibility. Do not encode manual-only as a database constraint or core model validation.
 - Debt mechanics UI should only appear for liability accounts with no account-provider connection.
 - Debt automation services should return without posting when the account is connected to Plaid, SimpleFIN, Lunchflow, Enable Banking, Sophtron, or another provider.
 - Provider processors and `Account::ProviderImportAdapter` should not be modified in this phase.
@@ -425,8 +434,6 @@ Create:
 - `app/models/debt/payment_allocation_service.rb`
 - `app/models/debt/obligation_service.rb`
 - `app/models/debt/reconciliation_service.rb`
-- `app/models/debt/projection.rb`
-- `app/models/debt/account_projection.rb`
 - Matching model and service tests under `test/models/debt*`.
 - Account overview partials for debt mechanics where existing views need them.
 
@@ -478,6 +485,6 @@ Forecasting should later consume:
 - Persisted debt events.
 - Payment allocations.
 - Open obligations and due dates.
-- Current payoff projections.
+- Future payoff projections built from current terms, events, allocations, and obligations.
 
 Forecasting should not create these tables or own debt mechanics. It should treat this feature as the upstream debt source.
