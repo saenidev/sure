@@ -2,25 +2,27 @@
 
 ## Purpose
 
-Build real debt-account mechanics for Sure before any forecasting work resumes.
+Build real debt-account mechanics for unconnected manual liability accounts before any forecasting work resumes.
 
-This feature should let debt accounts store durable terms, accrue interest into the database, split payments into principal/interest/fees, support rate changes and due dates, and reconcile those generated records against provider-imported activity. Forecasting remains out of scope for this phase.
+This feature should let manual loans, manual credit cards, and manual other liabilities store durable terms, accrue interest into the database, split payments into principal/interest/fees, support rate changes and due dates, and reconcile generated records against existing manually-entered account activity. Forecasting and connected-account provider integration remain out of scope for this phase.
 
 ## Scope
 
 In scope:
 
-- Debt terms for loans, credit cards, and other liabilities.
+- Debt terms for unconnected manual loans, credit cards, and other liabilities.
 - Interest accrual posting into account history.
-- Principal, interest, and fee allocation for debt payments.
+- Principal, interest, and fee allocation for manually-entered debt payments.
 - Rate periods for fixed, variable, adjustable, and promotional rates.
 - Payment due-day metadata, statements, obligations, and minimum-payment terms.
 - Generated schedule/projection services for account pages only.
-- Reconciliation rules so generated debt activity does not duplicate provider-imported activity.
+- Reconciliation rules so generated debt activity does not duplicate existing manual entries.
 - UI surfaces for configuring debt terms and reviewing generated debt activity.
 
 Out of scope:
 
+- Connected accounts and provider sync integration.
+- Plaid, SimpleFIN, Lunchflow, Enable Banking, or Sophtron liability metadata import.
 - Forecast scenarios, forecast events, forecast runs, forecast timeline UI, and forecast persistence.
 - Investment or market forecasting.
 - Debt payoff recommendations from Hermes or other assistants.
@@ -43,10 +45,10 @@ These are deliberate tradeoffs.
 
 - The migration is wider. Real accrual and allocation need several additive tables, not one assumptions table.
 - Database constraints should be conservative. Use string types plus model validations for rate/event/source kinds so future providers can add new values without a migration.
-- Most new columns should be nullable except foreign keys, amounts that are required for a concrete row, and timestamps. This makes provider backfills and partial metadata safe.
+- Most new columns should be nullable except foreign keys, amounts that are required for a concrete row, and timestamps. This keeps future provider backfills and partial metadata safe without implementing provider support now.
 - `Entry` remains the balance source of truth. Debt tables must reconcile with entries instead of replacing them, which adds implementation complexity.
 - Automatic accrual should default off for existing accounts until a user or setup flow confirms terms. This avoids silently changing historical balances.
-- Provider-imported payments may initially be "unallocated" if Sure cannot confidently split principal, interest, and fees.
+- Connected accounts should not enable debt automation in phase 1. Provider-imported payments remain governed by existing import behavior until a later provider-specific project.
 - Existing `Loan` and `CreditCard` columns stay in place. New debt terms can override them, but should not force a risky data migration on day one.
 
 ## Data Model
@@ -114,14 +116,14 @@ Validation:
 
 ### `debt_events`
 
-Records generated or provider-observed debt mechanics. These rows link debt logic to ledger entries.
+Records generated or user-observed debt mechanics. These rows link debt logic to ledger entries.
 
 Columns:
 
 - `account_id`: required, foreign key.
 - `debt_profile_id`: nullable foreign key.
 - `entry_id`: nullable foreign key.
-- `event_type`: required string, examples: `interest_accrual`, `fee`, `principal_adjustment`, `rate_change`, `manual_adjustment`, `provider_observed`.
+- `event_type`: required string, examples: `interest_accrual`, `fee`, `principal_adjustment`, `rate_change`, `manual_adjustment`, `user_observed`.
 - `status`: required string, examples: `pending`, `posted`, `matched`, `voided`, `superseded`.
 - `event_date`: required date.
 - `period_start_on`: nullable date.
@@ -149,7 +151,7 @@ Rules:
 
 ### `debt_obligations`
 
-Stores statement-like payment obligations from provider data or generated debt mechanics. This keeps due dates and statement balances durable without making forecast tables.
+Stores statement-like payment obligations from user-entered or generated debt mechanics. This keeps due dates and statement balances durable without making forecast tables.
 
 Columns:
 
@@ -180,7 +182,7 @@ Indexes:
 
 Rules:
 
-- Provider-observed obligations should not be overwritten by generated obligations unless a reconciliation service accepts the match.
+- User-observed obligations should not be overwritten by generated obligations unless a reconciliation service accepts the match.
 - Obligations track what was due; they do not change balances by themselves.
 - Payments can be linked to obligations through payment allocations.
 
@@ -194,7 +196,7 @@ Columns:
 - `entry_id`: required, unique foreign key.
 - `debt_profile_id`: nullable foreign key.
 - `debt_obligation_id`: nullable foreign key.
-- `allocation_method`: required string, examples: `automatic`, `provider`, `manual`.
+- `allocation_method`: required string, examples: `automatic`, `manual`.
 - `status`: required string, examples: `allocated`, `estimated`, `needs_review`, `voided`.
 - `principal_amount`: decimal, default `0`.
 - `interest_amount`: decimal, default `0`.
@@ -215,7 +217,7 @@ Rules:
 
 ### `debt_reconciliation_matches`
 
-Links generated debt events to provider-imported entries when Sure detects that a generated accrual or fee already arrived from a provider.
+Links generated debt events to existing manual entries when Sure detects that a generated accrual or fee was already entered by the user.
 
 Columns:
 
@@ -293,12 +295,12 @@ Indexes:
 
 The accrual service should:
 
-1. Find enabled debt profiles.
+1. Find enabled debt profiles for unconnected manual liability accounts.
 2. Determine the accrual window from `last_accrued_on`, account start date, and current date.
 3. Resolve the applicable rate period for each day or month.
 4. Calculate accrued interest.
-5. Search for matching provider-imported interest entries first.
-6. If a provider match exists, create a reconciliation match and mark the debt event `matched`.
+5. Search for matching existing manual interest entries first.
+6. If a manual match exists, create a reconciliation match and mark the debt event `matched`.
 7. If no match exists and auto posting is enabled, create an `Entry` + `Transaction` on the liability account and link a posted `DebtEvent`.
 8. Update `last_accrued_on` only after successful posting or matching.
 
@@ -308,7 +310,7 @@ Interest entries increase liability balances, so they should use positive amount
 
 Fees should use the same event path as interest:
 
-- Provider-imported fees can be matched.
+- Existing manually-entered fees can be matched.
 - Manually entered or generated fees can create entries.
 - Fee events should be allocatable from future payments.
 
@@ -316,14 +318,13 @@ Fees should use the same event path as interest:
 
 The allocation service should:
 
-1. Find liability-account payment entries.
+1. Find unconnected manual liability-account payment entries.
 2. Skip entries with accepted allocations unless recalculation is explicitly requested.
-3. Apply provider-supplied allocation if available.
-4. Otherwise allocate payment magnitude to fees first, then accrued interest, then principal.
-5. Link the allocation to the open obligation when one can be matched by due date and amount.
-6. Store the split in `debt_payment_allocations`.
-7. Update obligation paid amount and status when linked.
-8. Mark low-confidence allocations as `estimated` or `needs_review`.
+3. Allocate payment magnitude to fees first, then accrued interest, then principal.
+4. Link the allocation to the open obligation when one can be matched by due date and amount.
+5. Store the split in `debt_payment_allocations`.
+6. Update obligation paid amount and status when linked.
+7. Mark low-confidence allocations as `estimated` or `needs_review`.
 
 Payment allocations explain payments; they should not create new entries.
 
@@ -331,11 +332,10 @@ Payment allocations explain payments; they should not create new entries.
 
 The obligation service should:
 
-1. Import provider statement or due-date data when available.
-2. Generate an obligation from local profile terms only when provider data is absent.
-3. Avoid duplicate obligations by account, due date, source, and external ID.
-4. Mark obligations paid when linked allocations cover the amount due.
-5. Mark obligations overdue only from a background check, not during read-only page rendering.
+1. Generate obligations from local profile terms or user-entered statement details.
+2. Avoid duplicate obligations by account, due date, source, and external ID.
+3. Mark obligations paid when linked allocations cover the amount due.
+4. Mark obligations overdue only from a background check, not during read-only page rendering.
 
 Obligations support real debt account operations. They are not forecast events.
 
@@ -360,7 +360,7 @@ Show:
 - Last posted interest event.
 - Recent payment allocation: principal, interest, fees.
 - Payoff estimate based on current persisted terms.
-- Reconciliation warnings when generated and provider activity may duplicate.
+- Reconciliation warnings when generated and manually-entered activity may duplicate.
 
 Editing should be conservative:
 
@@ -376,17 +376,17 @@ Review surfaces:
 - A list of low-confidence reconciliation matches.
 - A list of payments that need allocation review.
 
-## Provider Sync Integration
+## Manual Account Boundary
 
-Provider sync should not blindly copy every provider debt value into `debt_profiles`.
+Phase 1 is explicitly for unconnected manual accounts.
 
 Rules:
 
-- Continue filling existing `Loan` and `CreditCard` fields where providers already do so.
-- Rich provider debt metadata can write `debt_profiles`, `debt_rate_periods`, obligations, or allocations only through a single debt import service.
-- Provider-imported interest/fee transactions should be reconciled against generated events before Sure posts its own.
-- User edits should win over provider enrichment. Use existing locked/enrichment patterns where possible.
-- Store raw provider-only details in `extra` when no first-class column exists yet.
+- Debt mechanics UI should only appear for liability accounts with no account-provider connection.
+- Debt automation services should return without posting when the account is connected to Plaid, SimpleFIN, Lunchflow, Enable Banking, Sophtron, or another provider.
+- Provider processors and `Account::ProviderImportAdapter` should not be modified in this phase.
+- Existing connected-account `Loan` and `CreditCard` provider behavior stays as-is.
+- Schema fields such as `source`, `external_id`, and `extra` remain so a later provider-specific project can integrate without a migration rewrite.
 
 ## Migration Compatibility Guidelines
 
@@ -403,7 +403,7 @@ Rules:
 
 - Generated postings must be idempotent by account, period, and event type.
 - If posting creates an entry but debt-event save fails, the transaction must roll back.
-- If provider reconciliation is ambiguous, create a `needs_review` match rather than posting.
+- If manual reconciliation is ambiguous, create a `needs_review` match rather than posting.
 - If account terms are incomplete, do not accrue interest automatically.
 - If rate periods overlap, block save at the model layer.
 - If payment allocation does not balance, mark it `needs_review` instead of forcing bad math.
@@ -435,8 +435,6 @@ Modify:
 - `app/models/account.rb`: debt associations and helpers.
 - `app/models/loan.rb`: expose debt term defaults through existing methods.
 - `app/models/credit_card.rb`: expose debt term defaults through existing methods.
-- `app/models/account/provider_import_adapter.rb`: route provider debt metadata through debt services when needed.
-- Provider liability processors only where they already receive usable debt metadata.
 - Loan, credit-card, and other-liability overview views.
 - English locale files for new UI copy.
 
@@ -449,20 +447,20 @@ Model tests:
 - Debt profile accepts liability accounts and rejects asset accounts.
 - Rate periods validate non-overlap.
 - Debt events require idempotent posting keys when generated.
-- Debt obligations deduplicate by provider external ID and due date.
+- Debt obligations deduplicate by account, source, external ID, and due date.
 - Payment allocations validate component sums.
 - Reconciliation matches prevent duplicate accepted matches.
 
 Service tests:
 
 - Interest accrual posts an entry and debt event for a configured loan.
-- Interest accrual matches a provider-imported interest transaction instead of duplicating it.
+- Interest accrual matches an existing manual interest transaction instead of duplicating it.
 - Interest accrual is idempotent when run twice for the same period.
 - Payment allocation splits payment to fees, then interest, then principal.
-- Obligation service imports provider due-date data without creating balance-changing entries.
-- Obligation service generates a local obligation only when provider data is absent.
+- Obligation service generates a local obligation from user-entered profile terms.
 - Payment allocation marks ambiguous splits as `needs_review`.
 - Variable/promotional rates resolve by date.
+- Debt mechanics do not render or post for connected liability accounts.
 
 Controller or integration tests:
 

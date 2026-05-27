@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build persisted debt account mechanics for liability accounts without touching forecasting code.
+**Goal:** Build persisted debt account mechanics for unconnected manual liability accounts without touching forecasting code or provider sync.
 
-**Architecture:** Add additive debt tables that annotate Sure's existing `Entry` and `Transaction` ledger instead of replacing it. Implement debt terms, rate periods, obligations, generated debt events, payment allocations, reconciliation, posting-run audit rows, and account-page review surfaces in phases. Keep automatic interest posting opt-in and idempotent.
+**Architecture:** Add additive debt tables that annotate Sure's existing `Entry` and `Transaction` ledger instead of replacing it. Implement debt terms, rate periods, obligations, generated debt events, payment allocations, manual duplicate reconciliation, posting-run audit rows, and account-page review surfaces in phases. Keep automatic interest posting opt-in, idempotent, and limited to unconnected manual accounts.
 
 **Tech Stack:** Rails 7.2, ActiveRecord, PostgreSQL JSONB, UUID foreign keys, Minitest, ERB, existing Sure account and transaction models.
 
@@ -12,14 +12,14 @@
 
 ## Spec Review
 
-The spec is implementable, but it is intentionally broad. The primary risk is creating a parallel balance ledger. The plan avoids that by requiring every balance-changing debt event to link to a real `Entry` + `Transaction`, while debt tables store terms, obligations, explanations, allocations, reconciliation state, and audit metadata.
+The spec is implementable, but phase 1 must stay focused on unconnected manual liability accounts. The primary risk is creating a parallel balance ledger or accidentally changing connected/provider accounts. The plan avoids that by requiring every balance-changing debt event to link to a real `Entry` + `Transaction`, while debt tables store terms, obligations, explanations, allocations, reconciliation state, and audit metadata.
 
 The migration should be additive and compatible:
 
 - Keep existing `Loan` and `CreditCard` columns.
 - Use string statuses/kinds with model validations, not database enums.
-- Use nullable provider/backfill fields.
-- Store provider-only data in `extra`.
+- Keep nullable `source`, `external_id`, and `extra` fields for future provider/backfill compatibility.
+- Do not modify provider import adapters or provider liability processors in this phase.
 - Default auto posting off.
 
 ## File Structure
@@ -29,10 +29,10 @@ Create:
 - `db/migrate/20260527001000_create_debt_mechanics_tables.rb`: all additive debt tables and indexes.
 - `app/models/debt_profile.rb`: account-level debt configuration and associations.
 - `app/models/debt_rate_period.rb`: dated interest-rate periods.
-- `app/models/debt_event.rb`: generated/provider-observed debt events linked to ledger entries.
+- `app/models/debt_event.rb`: generated/user-observed debt events linked to ledger entries.
 - `app/models/debt_obligation.rb`: statement-like due dates and payment obligations.
 - `app/models/debt_payment_allocation.rb`: principal/interest/fee split for one payment entry.
-- `app/models/debt_reconciliation_match.rb`: accepted/dismissed matches between generated events and provider entries.
+- `app/models/debt_reconciliation_match.rb`: accepted/dismissed matches between generated events and existing manual entries.
 - `app/models/debt_posting_run.rb`: audit rows for service runs.
 - `app/models/debt/account_terms.rb`: normalized read model for debt services.
 - `app/models/debt/projection.rb`: deterministic payoff projection.
@@ -40,7 +40,7 @@ Create:
 - `app/models/debt/interest_accrual_service.rb`: posts or matches interest events.
 - `app/models/debt/obligation_service.rb`: imports or generates obligations.
 - `app/models/debt/payment_allocation_service.rb`: allocates payment entries.
-- `app/models/debt/reconciliation_service.rb`: finds provider matches for generated events.
+- `app/models/debt/reconciliation_service.rb`: finds existing manual-entry matches for generated events.
 - `app/controllers/debt_profiles_controller.rb`: lets users configure terms and opt into automation.
 - `app/views/debt_profiles/edit.html.erb`: modal/edit surface for debt profile settings.
 - `test/models/debt_profile_test.rb`
@@ -63,7 +63,6 @@ Modify:
 - `app/models/account.rb`: add debt associations and helpers.
 - `app/models/loan.rb`: expose debt default terms without changing stored columns.
 - `app/models/credit_card.rb`: expose debt default terms without changing stored columns.
-- `app/models/account/provider_import_adapter.rb`: keep current behavior, add narrow hook for provider debt metadata once services exist.
 - `app/views/loans/tabs/_overview.html.erb`: render debt mechanics section.
 - `app/views/credit_cards/tabs/_overview.html.erb`: move existing credit-card overview partial into the tab path and render debt mechanics section.
 - `app/views/credit_cards/_overview.html.erb`: remove after moving to the tab path; it is not currently rendered elsewhere.
@@ -301,7 +300,7 @@ class DebtProfileTest < ActiveSupport::TestCase
     @asset_account = accounts(:depository)
   end
 
-  test "accepts liability account" do
+  test "accepts unconnected manual liability account" do
     profile = DebtProfile.new(account: @loan_account, status: "active")
 
     assert profile.valid?
@@ -312,6 +311,14 @@ class DebtProfileTest < ActiveSupport::TestCase
 
     assert_not profile.valid?
     assert_includes profile.errors[:account], "must be a liability account"
+  end
+
+  test "rejects connected liability account" do
+    @loan_account.update!(plaid_account: plaid_accounts(:one))
+    profile = DebtProfile.new(account: @loan_account, status: "active")
+
+    assert_not profile.valid?
+    assert_includes profile.errors[:account], "must be an unconnected manual liability account"
   end
 
   test "validates day fields" do
@@ -679,7 +686,7 @@ class DebtProfile < ApplicationRecord
   validates :minimum_payment_amount, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :minimum_payment_percent, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :grace_period_days, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
-  validate :account_must_be_liability
+  validate :account_must_be_manual_liability
   validate :day_fields_in_range
   validate :effective_dates_ordered
 
@@ -688,8 +695,13 @@ class DebtProfile < ApplicationRecord
   end
 
   private
-    def account_must_be_liability
-      return if account&.liability?
+    def account_must_be_manual_liability
+      return if account&.manual_debt_account?
+
+      if account&.liability?
+        errors.add(:account, "must be an unconnected manual liability account")
+        return
+      end
 
       errors.add(:account, "must be a liability account")
     end
@@ -760,7 +772,7 @@ Create `app/models/debt_event.rb`:
 
 ```ruby
 class DebtEvent < ApplicationRecord
-  EVENT_TYPES = %w[interest_accrual fee principal_adjustment rate_change manual_adjustment provider_observed].freeze
+  EVENT_TYPES = %w[interest_accrual fee principal_adjustment rate_change manual_adjustment user_observed].freeze
   STATUSES = %w[pending posted matched voided superseded].freeze
   BALANCE_CHANGING_TYPES = %w[interest_accrual fee principal_adjustment manual_adjustment].freeze
 
@@ -774,7 +786,7 @@ class DebtEvent < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :event_date, :currency, presence: true
   validates :amount, numericality: true
-  validate :account_must_be_liability
+  validate :account_must_be_manual_liability
   validate :entry_belongs_to_account
   validate :posted_or_matched_balance_changing_events_require_entry
 
@@ -783,8 +795,13 @@ class DebtEvent < ApplicationRecord
   end
 
   private
-    def account_must_be_liability
-      return if account&.liability?
+    def account_must_be_manual_liability
+      return if account&.manual_debt_account?
+
+      if account&.liability?
+        errors.add(:account, "must be an unconnected manual liability account")
+        return
+      end
 
       errors.add(:account, "must be a liability account")
     end
@@ -819,7 +836,7 @@ class DebtObligation < ApplicationRecord
   validates :statement_balance_amount, :minimum_payment_amount, :principal_due_amount,
             :interest_due_amount, :fee_due_amount, :paid_amount,
             numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
-  validate :account_must_be_liability
+  validate :account_must_be_manual_liability
   validate :period_dates_ordered
 
   def amount_due
@@ -827,8 +844,13 @@ class DebtObligation < ApplicationRecord
   end
 
   private
-    def account_must_be_liability
-      return if account&.liability?
+    def account_must_be_manual_liability
+      return if account&.manual_debt_account?
+
+      if account&.liability?
+        errors.add(:account, "must be an unconnected manual liability account")
+        return
+      end
 
       errors.add(:account, "must be a liability account")
     end
@@ -846,7 +868,7 @@ Create `app/models/debt_payment_allocation.rb`:
 
 ```ruby
 class DebtPaymentAllocation < ApplicationRecord
-  METHODS = %w[automatic provider manual].freeze
+  METHODS = %w[automatic manual].freeze
   STATUSES = %w[allocated estimated needs_review voided].freeze
 
   belongs_to :account
@@ -859,7 +881,7 @@ class DebtPaymentAllocation < ApplicationRecord
   validates :currency, presence: true
   validates :principal_amount, :interest_amount, :fee_amount, :unapplied_amount,
             numericality: { greater_than_or_equal_to: 0 }
-  validate :account_must_be_liability
+  validate :account_must_be_manual_liability
   validate :entry_belongs_to_account
   validate :entry_is_liability_payment
   validate :components_equal_payment_magnitude_unless_review
@@ -869,8 +891,13 @@ class DebtPaymentAllocation < ApplicationRecord
   end
 
   private
-    def account_must_be_liability
-      return if account&.liability?
+    def account_must_be_manual_liability
+      return if account&.manual_debt_account?
+
+      if account&.liability?
+        errors.add(:account, "must be an unconnected manual liability account")
+        return
+      end
 
       errors.add(:account, "must be a liability account")
     end
@@ -945,11 +972,16 @@ class DebtPostingRun < ApplicationRecord
 
   validates :run_type, presence: true, inclusion: { in: RUN_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
-  validate :account_must_be_liability
+  validate :account_must_be_manual_liability
 
   private
-    def account_must_be_liability
-      return if account&.liability?
+    def account_must_be_manual_liability
+      return if account&.manual_debt_account?
+
+      if account&.liability?
+        errors.add(:account, "must be an unconnected manual liability account")
+        return
+      end
 
       errors.add(:account, "must be a liability account")
     end
@@ -970,11 +1002,21 @@ Add helpers to `app/models/account.rb` near other instance helpers:
 
 ```ruby
   def debt_mechanics_supported?
-    liability?
+    manual_debt_account?
   end
 
   def debt_mechanics_enabled?
     debt_profile&.active? || false
+  end
+
+  def manual_debt_account?
+    liability? && !connected_account?
+  end
+
+  def connected_account?
+    plaid_account_id.present? ||
+      simplefin_account_id.present? ||
+      account_providers.exists?
   end
 ```
 
@@ -1407,14 +1449,12 @@ class Debt::ReconciliationServiceTest < ActiveSupport::TestCase
     )
   end
 
-  test "matches provider interest entry by date and amount" do
+  test "matches existing manual interest entry by date and amount" do
     entry = @account.entries.create!(
       date: Date.new(2026, 1, 31),
       name: "Interest Charge",
       amount: 100,
       currency: "USD",
-      source: "plaid",
-      external_id: "interest-1",
       entryable: Transaction.new
     )
 
@@ -1430,51 +1470,19 @@ class Debt::ReconciliationServiceTest < ActiveSupport::TestCase
     assert_nil Debt::ReconciliationService.new(@event).call
   end
 
-  test "does not auto-accept ambiguous provider matches" do
+  test "does not auto-accept ambiguous manual matches" do
     2.times do |index|
       @account.entries.create!(
         date: Date.new(2026, 1, 31),
         name: "Interest Charge #{index}",
         amount: 100,
         currency: "USD",
-        source: "plaid",
-        external_id: "interest-#{index}",
         entryable: Transaction.new
       )
     end
 
     assert_nil Debt::ReconciliationService.new(@event).call
     assert_equal "pending", @event.reload.status
-  end
-
-  test "late provider entry supersedes generated sure interest entry" do
-    generated_entry = @account.entries.create!(
-      date: Date.new(2026, 1, 31),
-      name: "Interest accrual",
-      amount: 100,
-      currency: "USD",
-      source: "sure",
-      external_id: "interest-generated-1",
-      entryable: Transaction.new
-    )
-    @event.update!(entry: generated_entry, status: "posted", source: "sure")
-    provider_entry = @account.entries.create!(
-      date: Date.new(2026, 1, 31),
-      name: "Interest Charge",
-      amount: 100,
-      currency: "USD",
-      source: "plaid",
-      external_id: "interest-provider-1",
-      entryable: Transaction.new
-    )
-
-    match = Debt::ReconciliationService.reconcile_provider_entry!(provider_entry)
-
-    assert_equal "accepted", match.status
-    assert generated_entry.reload.excluded?
-    assert_equal "matched", @event.reload.status
-    assert_equal provider_entry, @event.entry
-    assert_equal generated_entry.id, @event.extra["superseded_generated_entry_id"]
   end
 end
 ```
@@ -1522,7 +1530,7 @@ class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
     end
   end
 
-  test "matches provider entry instead of posting duplicate" do
+  test "matches existing manual entry instead of posting duplicate" do
     expected_interest = (500_000.to_d * 12.to_d / 100 / 365 * 31).round(4)
 
     @account.entries.create!(
@@ -1530,8 +1538,6 @@ class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
       name: "Interest Charge",
       amount: expected_interest,
       currency: "USD",
-      source: "plaid",
-      external_id: "interest-provider-1",
       entryable: Transaction.new
     )
 
@@ -1544,6 +1550,14 @@ class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
 
   test "does not post when auto accrual is disabled" do
     @profile.update!(auto_accrual_enabled: false)
+
+    assert_no_difference -> { Entry.count } do
+      assert_nil Debt::InterestAccrualService.new(@profile, through_on: Date.new(2026, 1, 31)).call
+    end
+  end
+
+  test "does not post for connected liability account" do
+    @account.update!(plaid_account: plaid_accounts(:one))
 
     assert_no_difference -> { Entry.count } do
       assert_nil Debt::InterestAccrualService.new(@profile, through_on: Date.new(2026, 1, 31)).call
@@ -1615,49 +1629,7 @@ Create `app/models/debt/reconciliation_service.rb`:
 ```ruby
 module Debt
   class ReconciliationService
-    PROVIDER_MATCH_TYPES = %w[interest_accrual fee].freeze
-
-    def self.reconcile_provider_entry!(entry)
-      return nil unless entry.account.liability?
-      return nil unless entry.source.present? && entry.source != "sure"
-      return nil unless entry.entryable.is_a?(Transaction)
-      return nil if entry.excluded? || entry.transaction.pending?
-
-      debt_event = DebtEvent
-        .joins(:entry)
-        .where(
-          account: entry.account,
-          event_type: PROVIDER_MATCH_TYPES,
-          status: "posted",
-          event_date: entry.date,
-          amount: entry.amount,
-          currency: entry.currency,
-          source: "sure",
-          entries: { source: "sure", excluded: false }
-        )
-        .first
-
-      return nil unless debt_event
-
-      generated_entry = debt_event.entry
-      match = DebtReconciliationMatch.create!(
-        account: entry.account,
-        debt_event: debt_event,
-        entry: entry,
-        match_type: "date_amount",
-        confidence: "high",
-        status: "accepted",
-        matched_on: Date.current
-      )
-
-      generated_entry.update!(excluded: true)
-      debt_event.update!(
-        entry: entry,
-        status: "matched",
-        extra: (debt_event.extra || {}).merge("superseded_generated_entry_id" => generated_entry.id)
-      )
-      match
-    end
+    MATCHABLE_EVENT_TYPES = %w[interest_accrual fee].freeze
 
     def initialize(debt_event)
       @debt_event = debt_event
@@ -1686,10 +1658,10 @@ module Debt
           .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
           .where(date: debt_event.event_date, amount: debt_event.amount, currency: debt_event.currency)
           .where(excluded: false)
-          .where.not(source: [ nil, "sure" ])
+          .where("entries.source IS NULL OR entries.source = ?", "manual")
           .merge(Transaction.excluding_pending)
 
-        scope = scope.where("entries.amount > 0") if PROVIDER_MATCH_TYPES.include?(debt_event.event_type)
+        scope = scope.where("entries.amount > 0") if MATCHABLE_EVENT_TYPES.include?(debt_event.event_type)
         scope.limit(2)
       end
   end
@@ -1709,6 +1681,7 @@ module Debt
     end
 
     def call
+      return nil unless account.manual_debt_account?
       return nil unless debt_profile.auto_accrual_enabled?
       return nil unless terms.projectable?
       return existing_event if existing_event.present?
@@ -1876,24 +1849,23 @@ class Debt::ObligationServiceTest < ActiveSupport::TestCase
     )
   end
 
-  test "imports provider obligation idempotently" do
+  test "saves user-entered obligation idempotently" do
     attributes = {
       due_on: Date.new(2026, 2, 15),
       minimum_payment_amount: 100,
       statement_balance_amount: 1_000,
       currency: "USD",
-      source: "plaid",
-      external_id: "statement-1"
+      external_id: "manual-statement-1"
     }
 
-    first = Debt::ObligationService.new(@profile).import_provider_obligation!(attributes)
-    second = Debt::ObligationService.new(@profile).import_provider_obligation!(attributes)
+    first = Debt::ObligationService.new(@profile).upsert_manual_obligation!(attributes)
+    second = Debt::ObligationService.new(@profile).upsert_manual_obligation!(attributes)
 
     assert_equal first, second
-    assert_equal 1, DebtObligation.where(source: "plaid", external_id: "statement-1").count
+    assert_equal 1, DebtObligation.where(source: "manual", external_id: "manual-statement-1").count
   end
 
-  test "generates local obligation when provider data is absent" do
+  test "generates local obligation from profile terms" do
     obligation = Debt::ObligationService.new(@profile, as_of: Date.new(2026, 2, 1)).generate_local_obligation!
 
     assert_equal Date.new(2026, 2, 15), obligation.due_on
@@ -1950,6 +1922,14 @@ class Debt::PaymentAllocationServiceTest < ActiveSupport::TestCase
     end
   end
 
+  test "does not allocate connected liability account payment" do
+    @account.update!(plaid_account: plaid_accounts(:one))
+
+    assert_no_difference -> { DebtPaymentAllocation.count } do
+      assert_nil Debt::PaymentAllocationService.new(@entry).call
+    end
+  end
+
   test "allocates late payment to overdue obligation" do
     @entry.update!(date: Date.new(2026, 2, 20))
 
@@ -1997,10 +1977,10 @@ module Debt
       @as_of = as_of.to_date
     end
 
-    def import_provider_obligation!(attributes)
+    def upsert_manual_obligation!(attributes)
       DebtObligation.find_or_initialize_by(
         account: account,
-        source: attributes.fetch(:source),
+        source: "manual",
         external_id: attributes.fetch(:external_id)
       ).tap do |obligation|
         obligation.assign_attributes(
@@ -2063,6 +2043,7 @@ module Debt
 
     def call
       return existing_allocation if existing_allocation
+      return nil unless account.manual_debt_account?
       return nil unless profile&.auto_payment_allocation_enabled?
       return nil unless eligible_payment_entry?
 
@@ -2224,6 +2205,15 @@ Add to `test/controllers/credit_cards_controller_test.rb`:
     assert_select "[data-testid='debt-mechanics']"
     assert_select "h3", text: I18n.t("accounts.show.debt_mechanics.title")
   end
+
+  test "does not show debt mechanics for connected credit card" do
+    @account.update!(plaid_account: plaid_accounts(:one))
+
+    get account_path(@account)
+
+    assert_response :success
+    assert_select "[data-testid='debt-mechanics']", count: 0
+  end
 ```
 
 - [ ] **Step 2: Run tests to verify missing UI**
@@ -2231,7 +2221,7 @@ Add to `test/controllers/credit_cards_controller_test.rb`:
 Run:
 
 ```bash
-bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb test/controllers/debt_profiles_controller_test.rb
+bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb
 ```
 
 Expected: credit-card overview test fails because `CreditCard` does not yet expose an overview tab or tab partial.
@@ -2265,7 +2255,7 @@ class DebtProfilesController < ApplicationController
   private
     def set_account
       @account = Current.family.accounts.find(params[:account_id])
-      return if @account.liability?
+      return if @account.debt_mechanics_supported?
 
       redirect_to account_path(@account)
     end
@@ -2369,15 +2359,16 @@ Create `app/views/accounts/show/_debt_mechanics.html.erb`:
 
 ```erb
 <%# locals: (account:) %>
-<% profile = account.debt_profile %>
-<% terms = Debt::AccountTerms.new(account).call %>
-<% projection = terms.projectable? ? Debt::AccountProjection.new(account).call : nil %>
-<% open_obligation = account.debt_obligations.where(status: %w[open partially_paid overdue]).order(:due_on).first %>
-<% last_event = account.debt_events.where(status: %w[posted matched]).order(event_date: :desc, created_at: :desc).first %>
-<% last_allocation = account.debt_payment_allocations.order(created_at: :desc).first %>
-<% pending_events = account.debt_events.where(status: "pending").order(:event_date).limit(5) %>
-<% review_matches = DebtReconciliationMatch.where(account: account, status: "needs_review").includes(:debt_event, :entry).limit(5) %>
-<% review_allocations = account.debt_payment_allocations.where(status: "needs_review").includes(:entry).limit(5) %>
+<% if account.debt_mechanics_supported? %>
+  <% profile = account.debt_profile %>
+  <% terms = Debt::AccountTerms.new(account).call %>
+  <% projection = terms.projectable? ? Debt::AccountProjection.new(account).call : nil %>
+  <% open_obligation = account.debt_obligations.where(status: %w[open partially_paid overdue]).order(:due_on).first %>
+  <% last_event = account.debt_events.where(status: %w[posted matched]).order(event_date: :desc, created_at: :desc).first %>
+  <% last_allocation = account.debt_payment_allocations.order(created_at: :desc).first %>
+  <% pending_events = account.debt_events.where(status: "pending").order(:event_date).limit(5) %>
+  <% review_matches = DebtReconciliationMatch.where(account: account, status: "needs_review").includes(:debt_event, :entry).limit(5) %>
+  <% review_allocations = account.debt_payment_allocations.where(status: "needs_review").includes(:entry).limit(5) %>
 
 <section data-testid="debt-mechanics" class="space-y-3">
   <div class="flex items-start justify-between gap-3">
@@ -2483,6 +2474,7 @@ Create `app/views/accounts/show/_debt_mechanics.html.erb`:
     </div>
   <% end %>
 </section>
+<% end %>
 ```
 
 - [ ] **Step 5: Wire overview tabs**
@@ -2491,7 +2483,11 @@ Modify `app/components/UI/account_page.rb`:
 
 ```ruby
     when "Property", "Vehicle", "Loan", "CreditCard"
-      [ :activity, :overview ]
+      if account.accountable_type == "CreditCard" && !account.debt_mechanics_supported?
+        [ :activity ]
+      else
+        [ :activity, :overview ]
+      end
 ```
 
 Also modify the overview render path in `app/components/UI/account_page.rb` so multi-word accountables use the same directory naming convention as their controllers:
@@ -2579,7 +2575,7 @@ Add under `accounts.show` in `config/locales/views/accounts/en.yml`:
         last_allocation: "Last payment allocation: %{principal} principal, %{interest} interest, %{fees} fees"
         review_title: Review needed
         pending_event: "%{type} for %{amount} on %{date}"
-        match_needs_review: "Possible provider match: %{name} %{amount}"
+        match_needs_review: "Possible manual match: %{name} %{amount}"
         allocation_needs_review: "Payment allocation needs review: %{name} %{amount}"
 ```
 
@@ -2626,7 +2622,7 @@ If `config/locales/views/credit_cards/en.yml` already has the overview keys at `
 Run:
 
 ```bash
-bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb
+bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb test/controllers/debt_profiles_controller_test.rb
 ```
 
 Expected: all tests pass.
@@ -2638,188 +2634,7 @@ git add app/components/UI/account_page.rb app/controllers/debt_profiles_controll
 git commit -m "Show debt mechanics on account overviews"
 ```
 
-## Task 7: Add Provider Debt Metadata Hook
-
-**Files:**
-
-- Modify: `app/models/account/provider_import_adapter.rb`
-- Modify: `app/models/plaid_account/liabilities/credit_processor.rb`
-- Test: `test/models/account/provider_import_adapter_test.rb`
-- Test: `test/models/plaid_account/liabilities/credit_processor_test.rb`
-- Test: existing Plaid student-loan and mortgage processor tests as regression coverage.
-
-- [ ] **Step 1: Add a narrow adapter method**
-
-Add this method to `app/models/account/provider_import_adapter.rb` near `update_accountable_attributes`:
-
-```ruby
-  def import_debt_obligation(attributes:, source:)
-    return false unless account.liability?
-    return false if attributes.blank?
-
-    profile = account.debt_profile || account.create_debt_profile!(source: source)
-    Debt::ObligationService.new(profile).import_provider_obligation!(
-      attributes.merge(source: source)
-    )
-    true
-  rescue => e
-    Rails.logger.error("Failed to import debt obligation from #{source}: #{e.message}")
-    false
-  end
-```
-
-- [ ] **Step 2: Reconcile provider transactions against generated debt events**
-
-Add this immediately after `entry.save!` and `entry.transaction.save! if entry.transaction.changed?` in `Account::ProviderImportAdapter#import_transaction`:
-
-```ruby
-      if account.liability? && entry.entryable.is_a?(Transaction) && !incoming_pending && entry.source != "sure"
-        Debt::ReconciliationService.reconcile_provider_entry!(entry)
-      end
-```
-
-Add to `test/models/account/provider_import_adapter_test.rb`:
-
-```ruby
-  test "provider import supersedes generated debt event" do
-    loan_account = accounts(:loan)
-    adapter = Account::ProviderImportAdapter.new(loan_account)
-    profile = DebtProfile.create!(account: loan_account)
-    generated_entry = loan_account.entries.create!(
-      date: Date.new(2026, 1, 31),
-      name: "Interest accrual",
-      amount: 100,
-      currency: "USD",
-      source: "sure",
-      external_id: "interest-generated-1",
-      entryable: Transaction.new
-    )
-    event = DebtEvent.create!(
-      account: loan_account,
-      debt_profile: profile,
-      entry: generated_entry,
-      event_type: "interest_accrual",
-      status: "posted",
-      event_date: Date.new(2026, 1, 31),
-      amount: 100,
-      currency: "USD",
-      source: "sure"
-    )
-
-    provider_entry = adapter.import_transaction(
-      external_id: "plaid-interest-1",
-      amount: 100,
-      currency: "USD",
-      date: Date.new(2026, 1, 31),
-      name: "Interest Charge",
-      source: "plaid"
-    )
-
-    assert generated_entry.reload.excluded?
-    assert_equal "matched", event.reload.status
-    assert_equal provider_entry, event.entry
-  end
-```
-
-- [ ] **Step 3: Route Plaid credit due-date data when present**
-
-Modify `app/models/plaid_account/liabilities/credit_processor.rb` after `update_accountable_attributes`:
-
-```ruby
-    due_on = parse_date(credit_data["next_payment_due_date"])
-
-    if due_on.present?
-      import_adapter.import_debt_obligation(
-        attributes: {
-          due_on: due_on,
-          minimum_payment_amount: credit_data["minimum_payment_amount"],
-          statement_balance_amount: credit_data["last_statement_balance"],
-          currency: account.currency,
-          external_id: "plaid-credit-#{plaid_account.plaid_id}-#{due_on}"
-        },
-        source: "plaid"
-      )
-    end
-```
-
-Add private date parser:
-
-```ruby
-    def parse_date(value)
-      return value if value.is_a?(Date)
-      return nil if value.blank?
-
-      Date.parse(value.to_s)
-    rescue ArgumentError
-      nil
-    end
-```
-
-- [ ] **Step 4: Extend Plaid liability tests**
-
-Replace the existing "updates credit card minimum payment and APR from Plaid data" test in `test/models/plaid_account/liabilities/credit_processor_test.rb` with:
-
-```ruby
-  test "updates credit card terms and imports due-date data from Plaid data" do
-    @plaid_account.update!(raw_liabilities_payload: {
-      credit: {
-        minimum_payment_amount: 100,
-        aprs: [ { apr_percentage: 15.0 } ],
-        next_payment_due_date: Date.new(2026, 2, 15).to_s,
-        last_statement_balance: 1200
-      }
-    })
-
-    processor = PlaidAccount::Liabilities::CreditProcessor.new(@plaid_account)
-    processor.process
-
-    account = @plaid_account.current_account
-    assert_equal 100, account.credit_card.minimum_payment
-    assert_equal 15.0, account.credit_card.apr
-
-    obligation = @plaid_account.current_account.debt_obligations.last
-    assert_equal Date.new(2026, 2, 15), obligation.due_on
-    assert_equal 100, obligation.minimum_payment_amount
-    assert_equal 1200, obligation.statement_balance_amount
-    assert_equal "plaid", obligation.source
-  end
-```
-
-Add a test that Plaid statement-balance data without a real due date does not create a fake obligation:
-
-```ruby
-  test "does not import credit obligation without due date" do
-    @plaid_account.update!(raw_liabilities_payload: {
-      credit: {
-        minimum_payment_amount: 100,
-        last_statement_balance: 1200
-      }
-    })
-
-    assert_no_difference -> { @plaid_account.current_account.debt_obligations.count } do
-      PlaidAccount::Liabilities::CreditProcessor.new(@plaid_account).process
-    end
-  end
-```
-
-- [ ] **Step 5: Run provider liability tests**
-
-Run:
-
-```bash
-bin/rails test test/models/account/provider_import_adapter_test.rb test/models/plaid_account/liabilities/credit_processor_test.rb test/models/plaid_account/liabilities/student_loan_processor_test.rb test/models/plaid_account/liabilities/mortgage_processor_test.rb
-```
-
-Expected: all tests pass.
-
-- [ ] **Step 6: Commit provider hook**
-
-```bash
-git add app/models/account/provider_import_adapter.rb app/models/plaid_account/liabilities/credit_processor.rb test/models/account/provider_import_adapter_test.rb test/models/plaid_account/liabilities/credit_processor_test.rb
-git commit -m "Import provider debt obligations"
-```
-
-## Task 8: Final Verification
+## Task 7: Final Verification
 
 **Files:**
 
@@ -2846,11 +2661,7 @@ bin/rails test \
   test/models/debt/payment_allocation_service_test.rb \
   test/controllers/loans_controller_test.rb \
   test/controllers/credit_cards_controller_test.rb \
-  test/controllers/debt_profiles_controller_test.rb \
-  test/models/account/provider_import_adapter_test.rb \
-  test/models/plaid_account/liabilities/credit_processor_test.rb \
-  test/models/plaid_account/liabilities/student_loan_processor_test.rb \
-  test/models/plaid_account/liabilities/mortgage_processor_test.rb
+  test/controllers/debt_profiles_controller_test.rb
 ```
 
 Expected: all targeted tests pass.
@@ -2866,15 +2677,16 @@ bin/rails test
 
 Expected: both commands exit 0. If full test runtime is too high, record the targeted test output and the reason full suite was not run.
 
-- [ ] **Step 3: Confirm forecast files were not touched**
+- [ ] **Step 3: Confirm forecast and provider files were not touched**
 
 Run:
 
 ```bash
 git diff --name-only main...HEAD | grep -i forecast || true
+git diff --name-only main...HEAD | grep -E 'provider_import_adapter|plaid_account/liabilities|simplefin|lunchflow|enable_banking|sophtron' || true
 ```
 
-Expected: no forecast files are listed, except pre-existing docs if this branch includes already committed spec history.
+Expected: no forecast or provider integration files are listed, except pre-existing docs if this branch includes already committed spec history.
 
 ## Plan Self-Review
 
@@ -2885,15 +2697,15 @@ Spec coverage:
 - Interest accrual persisted through entries: Task 4.
 - Payment allocation: Task 5.
 - Obligations and due dates: Task 5.
-- Reconciliation: Task 4 and Task 7.
-- Provider metadata compatibility: Task 7.
+- Reconciliation of generated debt events against existing manual entries: Task 4.
+- Manual-account boundary: Tasks 2, 4, 5, 6, and 7.
 - Posting-run audit rows: Tasks 2 and 4.
 - Account UI, settings, and review surfaces: Task 6.
-- Forecast pause: Task 8 confirms no forecast files.
+- Forecast pause and provider pause: Task 7 confirms no forecast or provider integration files.
 
 Known implementation sacrifices:
 
-- Provider support starts with Plaid credit obligations because current tests and payloads expose useful fields. Other providers can route through the same adapter method when payloads provide durable due-date or allocation metadata.
-- Payment allocation starts deterministic and conservative. Provider-supplied principal/interest splits can override it later through the same allocation table.
+- Provider support is deliberately deferred. The schema keeps `source`, `external_id`, and `extra` for future compatibility, but phase 1 does not modify provider import code.
+- Payment allocation starts deterministic and conservative. Manual overrides can adjust ambiguous splits through the same allocation table.
 - Auto accrual is opt-in. Existing accounts do not change balances until a profile enables posting.
-- Provider-imported interest can supersede a generated Sure interest entry; the generated entry is excluded and the debt event is re-linked to the provider entry to avoid duplicate balance impact.
+- Connected liability accounts are excluded from debt mechanics UI and posting services in phase 1.
