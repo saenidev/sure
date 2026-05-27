@@ -35,6 +35,20 @@ class DebtEventTest < ActiveSupport::TestCase
     assert event.valid?
   end
 
+  test "interest capitalization event does not require a ledger entry" do
+    event = DebtEvent.new(
+      account: @account,
+      debt_profile: @profile,
+      event_type: "interest_capitalization",
+      status: "posted",
+      event_date: Date.current,
+      amount: 100,
+      currency: @account.currency
+    )
+
+    assert event.valid?
+  end
+
   test "linked entry must belong to event account" do
     other_entry = accounts(:credit_card).entries.create!(
       date: Date.new(2026, 1, 31),

@@ -1,5 +1,5 @@
 class DebtEvent < ApplicationRecord
-  EVENT_TYPES = %w[interest_accrual fee principal_adjustment rate_change manual_adjustment user_observed].freeze
+  EVENT_TYPES = %w[interest_accrual interest_capitalization fee principal_adjustment rate_change manual_adjustment user_observed].freeze
   STATUSES = %w[pending posted matched voided superseded].freeze
   BALANCE_CHANGING_TYPES = %w[interest_accrual fee principal_adjustment manual_adjustment].freeze
 
