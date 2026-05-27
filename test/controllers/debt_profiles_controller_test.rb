@@ -12,6 +12,7 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "form[action='#{account_debt_profile_path(@account)}']"
+    assert_select "input[name='_method'][value='patch']"
   end
 
   test "update creates profile for manual debt account" do

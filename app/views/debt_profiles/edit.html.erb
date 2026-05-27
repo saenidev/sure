@@ -6,7 +6,7 @@
       <%= render DS::Alert.new(message: @error_message, variant: :error) %>
     <% end %>
 
-    <%= styled_form_with model: @debt_profile, url: account_debt_profile_path(@account), scope: :debt_profile, data: { turbo: false }, class: "flex flex-col gap-4 text-primary" do |form| %>
+    <%= styled_form_with model: @debt_profile, url: account_debt_profile_path(@account), scope: :debt_profile, method: :patch, data: { turbo: false }, class: "flex flex-col gap-4 text-primary" do |form| %>
       <div class="grid grid-cols-1 gap-3">
         <%= form.select :status,
               DebtProfile::STATUSES.map { |status| [t("debt_profiles.statuses.#{status}"), status] },
