@@ -79,6 +79,8 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_select "select[name='debt_profile[federal_student_loan][school_status]']"
     assert_select "input[name='debt_profile[federal_student_loan][principal_balance]']"
     assert_select "input[name='debt_profile[federal_student_loan][accrued_interest_balance]']"
+    assert_select "input[name='debt_profile[federal_student_loan][repayment_assumptions][annual_income]']"
+    assert_select "input[name='debt_profile[federal_student_loan][repayment_assumptions][poverty_guideline]']"
   end
 
   test "update saves federal student loan settings" do
@@ -93,7 +95,13 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
           accrued_interest_balance: "315.42",
           interest_bearing_principal_balance: "12500",
           weighted_average_rate: "6.12",
-          servicer_balance_as_of: "2026-05-28"
+          servicer_balance_as_of: "2026-05-28",
+          repayment_assumptions: {
+            annual_income: "65000",
+            poverty_guideline: "15650",
+            dependent_count: "0",
+            new_ibr_borrower: "1"
+          }
         }
       }
     }
@@ -103,6 +111,9 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     assert federal.enabled?
     assert_equal "unsubsidized", federal.subsidy_type
     assert_equal BigDecimal("12500.0"), federal.principal_balance
+    assert_equal "65000", federal.repayment_assumptions["annual_income"]
+    assert_equal "15650", federal.repayment_assumptions["poverty_guideline"]
+    assert_equal "1", federal.repayment_assumptions["new_ibr_borrower"]
     assert_equal BigDecimal("6.12"), @account.debt_profile.debt_rate_periods.first.annual_rate
   end
 

@@ -91,10 +91,16 @@ module Debt
       end
 
       def apply_payment!(interest_amount:, principal_amount:)
-        assign(
+        attributes = {
           accrued_interest_balance: [ accrued_interest_balance - interest_amount.to_d, 0.to_d ].max,
           principal_balance: [ principal_balance - principal_amount.to_d, 0.to_d ].max
-        )
+        }
+
+        if subsidy_type == "mixed"
+          attributes[:interest_bearing_principal_balance] = [ interest_bearing_principal_balance - principal_amount.to_d, 0.to_d ].max
+        end
+
+        assign(attributes)
       end
 
       def capitalize_interest!(amount)
@@ -123,6 +129,15 @@ module Debt
 
         if subsidy_type == "mixed" && debt_profile.auto_accrual_enabled? && data["interest_bearing_principal_balance"].blank?
           debt_profile.errors.add(:base, "Federal mixed loans require interest-bearing principal for automatic accrual")
+        end
+
+        if subsidy_type == "mixed"
+          interest_bearing_principal = decimal_for_comparison("interest_bearing_principal_balance")
+          principal = decimal_for_comparison("principal_balance")
+
+          if interest_bearing_principal.present? && principal.present? && interest_bearing_principal > principal
+            debt_profile.errors.add(:base, "Federal student loan interest-bearing principal cannot exceed principal balance")
+          end
         end
       end
 
@@ -160,6 +175,15 @@ module Debt
           debt_profile.errors.add(:base, "Federal student loan #{label} must be nonnegative") if value.negative?
         rescue ArgumentError
           debt_profile.errors.add(:base, "Federal student loan #{label} must be a number")
+        end
+
+        def decimal_for_comparison(key)
+          raw_value = data[key]
+          return nil if raw_value.blank?
+
+          BigDecimal(raw_value.to_s)
+        rescue ArgumentError
+          nil
         end
     end
   end

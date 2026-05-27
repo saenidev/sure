@@ -27,6 +27,12 @@ module Debt
                 currency: debt_profile.account.currency
               ).project
             when "ibr"
+              return unavailable_projection(
+                code: "ibr",
+                name: "IBR",
+                warning: "IBR requires income assumptions before an estimate can be shown."
+              ) unless ibr_assumptions_present?
+
               standard = Standard.new(
                 principal: federal_profile.principal_balance,
                 accrued_interest: federal_profile.accrued_interest_balance,
@@ -65,6 +71,14 @@ module Debt
 
           def assumptions
             federal_profile.repayment_assumptions
+          end
+
+          def ibr_assumptions_present?
+            assumption_present?("annual_income") && assumption_present?("poverty_guideline")
+          end
+
+          def assumption_present?(key)
+            assumptions.key?(key) && assumptions[key].present?
           end
 
           def annual_rate

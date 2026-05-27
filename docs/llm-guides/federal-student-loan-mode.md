@@ -6,4 +6,4 @@ It supports aggregate subsidized and unsubsidized accounts, tracks principal sep
 
 The servicer remains the source of truth. Users should periodically update principal and accrued-interest balances from the servicer.
 
-Repayment-plan projections are non-mutating. RAP and Tiered Standard output remains unavailable unless the app has explicit versioned rules with source/date metadata, because those policy details are current and sensitive.
+Repayment-plan projections are non-mutating. IBR estimates require supplied income and poverty-guideline assumptions. RAP and Tiered Standard output remains unavailable unless the app has explicit versioned rules with source/date metadata, because those policy details are current and sensitive.

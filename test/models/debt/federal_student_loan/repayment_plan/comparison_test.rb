@@ -60,4 +60,25 @@ class Debt::FederalStudentLoan::RepaymentPlan::ComparisonTest < ActiveSupport::T
     assert_not projection.available?
     assert_match(/Tiered Standard/, projection.warnings.join)
   end
+
+  test "returns unavailable IBR projection when income assumptions are missing" do
+    profile_record = DebtProfile.create!(account: accounts(:loan))
+    profile_record.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "10000",
+      accrued_interest_balance: "0",
+      repayment_assumptions: {
+        "selected_plan_codes" => [ "ibr" ]
+      }
+    )
+    profile_record.save!
+
+    projection = Debt::FederalStudentLoan::RepaymentPlan::Comparison.new(profile_record).call.first
+
+    assert_equal "ibr", projection.plan_code
+    assert_not projection.available?
+    assert_match(/income assumptions/, projection.warnings.join)
+  end
 end

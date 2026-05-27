@@ -48,6 +48,36 @@
               <%= federal_form.number_field :weighted_average_rate, label: t(".weighted_average_rate"), step: 0.001, min: 0 %>
               <%= federal_form.date_field :servicer_balance_as_of, label: t(".servicer_balance_as_of") %>
             </div>
+
+            <% assumptions = @debt_profile.federal_student_loan.repayment_assumptions %>
+            <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <%= federal_form.fields_for :repayment_assumptions do |assumptions_form| %>
+                <%= assumptions_form.number_field :annual_income,
+                      label: t(".annual_income"),
+                      value: assumptions["annual_income"],
+                      step: 1,
+                      min: 0 %>
+
+                <%= assumptions_form.number_field :poverty_guideline,
+                      label: t(".poverty_guideline"),
+                      value: assumptions["poverty_guideline"],
+                      step: 1,
+                      min: 0 %>
+
+                <%= assumptions_form.number_field :dependent_count,
+                      label: t(".dependent_count"),
+                      value: assumptions["dependent_count"],
+                      step: 1,
+                      min: 0 %>
+
+                <div class="flex items-center justify-between gap-3 rounded-lg border border-primary p-3">
+                  <div>
+                    <p class="text-sm font-medium text-primary"><%= t(".new_ibr_borrower") %></p>
+                  </div>
+                  <%= assumptions_form.toggle :new_ibr_borrower, checked: ActiveModel::Type::Boolean.new.cast(assumptions["new_ibr_borrower"]) %>
+                </div>
+              <% end %>
+            </div>
           <% end %>
         </div>
 

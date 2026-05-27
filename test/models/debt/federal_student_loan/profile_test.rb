@@ -78,6 +78,21 @@ class Debt::FederalStudentLoan::ProfileTest < ActiveSupport::TestCase
     assert_includes @debt_profile.errors[:base], "Federal student loan servicer balance date is invalid"
   end
 
+  test "mixed federal principal cap validation ignores nonnumeric fields already reported elsewhere" do
+    profile = Debt::FederalStudentLoan::Profile.new(@debt_profile)
+    profile.assign(
+      enabled: true,
+      subsidy_type: "mixed",
+      school_status: "in_school",
+      principal_balance: "not-a-number",
+      accrued_interest_balance: "0",
+      interest_bearing_principal_balance: "12000"
+    )
+
+    assert_not @debt_profile.valid?
+    assert_includes @debt_profile.errors[:base], "Federal student loan principal balance must be a number"
+  end
+
   test "mixed federal loans require interest-bearing principal for auto accrual" do
     @debt_profile.auto_accrual_enabled = true
     profile = Debt::FederalStudentLoan::Profile.new(@debt_profile)
@@ -91,5 +106,40 @@ class Debt::FederalStudentLoan::ProfileTest < ActiveSupport::TestCase
 
     assert_not @debt_profile.valid?
     assert_includes @debt_profile.errors[:base], "Federal mixed loans require interest-bearing principal for automatic accrual"
+  end
+
+  test "mixed federal loans reject interest-bearing principal above total principal" do
+    profile = Debt::FederalStudentLoan::Profile.new(@debt_profile)
+    profile.assign(
+      enabled: true,
+      subsidy_type: "mixed",
+      school_status: "in_school",
+      principal_balance: "10000",
+      accrued_interest_balance: "0",
+      interest_bearing_principal_balance: "12000"
+    )
+
+    assert_not @debt_profile.valid?
+    assert_includes @debt_profile.errors[:base], "Federal student loan interest-bearing principal cannot exceed principal balance"
+  end
+
+  test "mixed federal loan principal payments reduce interest-bearing principal first" do
+    profile = Debt::FederalStudentLoan::Profile.new(@debt_profile)
+    profile.assign(
+      enabled: true,
+      subsidy_type: "mixed",
+      school_status: "in_school",
+      principal_balance: "10000",
+      accrued_interest_balance: "300",
+      interest_bearing_principal_balance: "4000"
+    )
+    @debt_profile.save!
+
+    profile.apply_payment!(interest_amount: 300, principal_amount: 1000)
+    @debt_profile.save!
+
+    reloaded = @debt_profile.reload.federal_student_loan
+    assert_equal BigDecimal("9000.0"), reloaded.principal_balance
+    assert_equal BigDecimal("3000.0"), reloaded.interest_bearing_principal_balance
   end
 end
