@@ -31,6 +31,22 @@ en:
       grace_period_days: Grace period days
       effective_start_on: Effective start
       effective_end_on: Effective end
+      federal_student_loan: Federal student loan
+      subsidy_type: Subsidy type
+      school_status: School status
+      subsidized: Subsidized
+      unsubsidized: Unsubsidized
+      mixed: Mixed
+      in_school: In school
+      grace: Grace
+      repayment: Repayment
+      deferment: Deferment
+      forbearance: Forbearance
+      principal_balance: Principal balance
+      accrued_interest_balance: Accrued interest
+      interest_bearing_principal_balance: Interest-bearing principal
+      weighted_average_rate: Weighted average rate
+      servicer_balance_as_of: Servicer balance as of
       blank: Not set
       submit: Save debt tracking
     update:

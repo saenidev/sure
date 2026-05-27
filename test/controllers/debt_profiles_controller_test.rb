@@ -70,6 +70,42 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_equal BigDecimal("9.5"), terms.annual_rate
   end
 
+  test "edit renders federal student loan fields" do
+    get edit_account_debt_profile_path(@account)
+
+    assert_response :success
+    assert_select "input[name='debt_profile[federal_student_loan][enabled]']"
+    assert_select "select[name='debt_profile[federal_student_loan][subsidy_type]']"
+    assert_select "select[name='debt_profile[federal_student_loan][school_status]']"
+    assert_select "input[name='debt_profile[federal_student_loan][principal_balance]']"
+    assert_select "input[name='debt_profile[federal_student_loan][accrued_interest_balance]']"
+  end
+
+  test "update saves federal student loan settings" do
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        federal_student_loan: {
+          enabled: "1",
+          subsidy_type: "unsubsidized",
+          school_status: "in_school",
+          principal_balance: "12500",
+          accrued_interest_balance: "315.42",
+          interest_bearing_principal_balance: "12500",
+          weighted_average_rate: "6.12",
+          servicer_balance_as_of: "2026-05-28"
+        }
+      }
+    }
+
+    assert_redirected_to account_path(@account, tab: "overview")
+    federal = @account.reload.debt_profile.federal_student_loan
+    assert federal.enabled?
+    assert_equal "unsubsidized", federal.subsidy_type
+    assert_equal BigDecimal("12500.0"), federal.principal_balance
+    assert_equal BigDecimal("6.12"), @account.debt_profile.debt_rate_periods.first.annual_rate
+  end
+
   test "update does not create profile for connected debt account" do
     AccountProvider.create!(account: @account, provider: plaid_accounts(:one))
 

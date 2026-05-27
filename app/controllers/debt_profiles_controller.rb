@@ -48,10 +48,14 @@ class DebtProfilesController < ApplicationController
     end
 
     def update_debt_profile
-      annual_rate = debt_profile_params[:annual_rate]
+      attrs = debt_profile_params.to_h
+      federal_attributes = attrs.delete("federal_student_loan")
+      annual_rate = attrs.delete("annual_rate").presence || federal_attributes&.fetch("weighted_average_rate", nil).presence
 
       DebtProfile.transaction do
-        @debt_profile.update!(debt_profile_params.except(:annual_rate))
+        @debt_profile.assign_attributes(attrs)
+        @debt_profile.federal_student_loan.assign(federal_attributes.to_h) if federal_attributes.present?
+        @debt_profile.save!
         upsert_manual_rate_period!(annual_rate) if annual_rate.present?
       end
 
@@ -85,7 +89,28 @@ class DebtProfilesController < ApplicationController
         :statement_closing_day,
         :grace_period_days,
         :effective_start_on,
-        :effective_end_on
+        :effective_end_on,
+        federal_student_loan: [
+          :enabled,
+          :subsidy_type,
+          :school_status,
+          :principal_balance,
+          :accrued_interest_balance,
+          :capitalized_interest_total,
+          :interest_bearing_principal_balance,
+          :servicer_balance_as_of,
+          :weighted_average_rate,
+          repayment_assumptions: [
+            :annual_income,
+            :family_size,
+            :dependent_count,
+            :state,
+            :poverty_guideline,
+            :policy_year,
+            :new_ibr_borrower,
+            { selected_plan_codes: [] }
+          ]
+        ]
       )
     end
 end

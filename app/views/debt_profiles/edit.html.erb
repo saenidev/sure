@@ -26,6 +26,31 @@
           <%= form.toggle :auto_payment_allocation_enabled %>
         </div>
 
+        <div class="rounded-lg border border-primary p-3">
+          <%= form.fields_for :federal_student_loan, @debt_profile.federal_student_loan do |federal_form| %>
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <p class="text-sm font-medium text-primary"><%= t(".federal_student_loan") %></p>
+              <%= federal_form.toggle :enabled %>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <%= federal_form.select :subsidy_type,
+                    Debt::FederalStudentLoan::Profile::SUBSIDY_TYPES.map { |value| [t(".#{value}"), value] },
+                    { label: t(".subsidy_type"), include_blank: t(".blank") } %>
+
+              <%= federal_form.select :school_status,
+                    Debt::FederalStudentLoan::Profile::SCHOOL_STATUSES.map { |value| [t(".#{value}"), value] },
+                    { label: t(".school_status"), include_blank: t(".blank") } %>
+
+              <%= federal_form.number_field :principal_balance, label: t(".principal_balance"), step: 0.01, min: 0 %>
+              <%= federal_form.number_field :accrued_interest_balance, label: t(".accrued_interest_balance"), step: 0.01, min: 0 %>
+              <%= federal_form.number_field :interest_bearing_principal_balance, label: t(".interest_bearing_principal_balance"), step: 0.01, min: 0 %>
+              <%= federal_form.number_field :weighted_average_rate, label: t(".weighted_average_rate"), step: 0.001, min: 0 %>
+              <%= federal_form.date_field :servicer_balance_as_of, label: t(".servicer_balance_as_of") %>
+            </div>
+          <% end %>
+        </div>
+
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <%= form.select :rate_type,
                 DebtProfile::RATE_TYPES.map { |rate_type| [t("debt_profiles.rate_types.#{rate_type}"), rate_type] },
