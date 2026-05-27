@@ -172,6 +172,97 @@ class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
     assert_equal Date.new(2026, 1, 31), @profile.reload.last_accrued_on
   end
 
+  test "federal unsubsidized accrual uses principal balance rather than account balance" do
+    @account.update!(balance: 10_500)
+    @profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "in_school",
+      principal_balance: "10000",
+      accrued_interest_balance: "500",
+      weighted_average_rate: "7.3"
+    )
+    @profile.save!
+    @profile.debt_rate_periods.destroy_all
+    DebtRatePeriod.create!(
+      debt_profile: @profile,
+      rate_type: "fixed",
+      annual_rate: 7.3,
+      starts_on: Date.new(2026, 1, 1)
+    )
+
+    event = Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 31)).call
+
+    assert_equal BigDecimal("1.9986"), event.amount
+    assert_equal BigDecimal("501.9986"), @profile.reload.federal_student_loan.accrued_interest_balance
+    assert_equal BigDecimal("10000.0"), @profile.federal_student_loan.principal_balance
+    assert_equal "debt_interest", event.entry.transaction.kind
+  end
+
+  test "second federal accrual still uses principal after prior posted interest" do
+    @account.update!(balance: 10_500)
+    @profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "in_school",
+      principal_balance: "10000",
+      accrued_interest_balance: "500"
+    )
+    @profile.save!
+    @profile.debt_rate_periods.destroy_all
+    DebtRatePeriod.create!(
+      debt_profile: @profile,
+      rate_type: "fixed",
+      annual_rate: 7.3,
+      starts_on: Date.new(2026, 1, 1)
+    )
+
+    Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 31)).call
+    @account.update!(balance: 10_501.9986)
+    event = Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 2, 1)).call
+
+    assert_equal BigDecimal("1.9986"), event.amount
+    assert_equal BigDecimal("503.9972"), @profile.reload.federal_student_loan.accrued_interest_balance
+    assert_equal BigDecimal("10000.0"), @profile.federal_student_loan.principal_balance
+  end
+
+  test "federal subsidized in school advances last accrued without ledger interest" do
+    @profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "subsidized",
+      school_status: "in_school",
+      principal_balance: "10000",
+      accrued_interest_balance: "0",
+      weighted_average_rate: "7.3"
+    )
+    @profile.save!
+
+    assert_nil Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 31)).call
+    assert_equal 0, @account.debt_events.where(event_type: "interest_accrual").count
+    assert_equal Date.new(2026, 1, 31), @profile.reload.last_accrued_on
+  end
+
+  test "federal accrual rolls back event entry and accrued-interest JSON on posting failure" do
+    @profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "10000",
+      accrued_interest_balance: "500"
+    )
+    @profile.save!
+    Entry.any_instance.stubs(:sync_account_later).raises(StandardError, "forced failure")
+
+    assert_raises(StandardError) do
+      Debt::InterestAccrualService.new(account: @account, as_of: Date.new(2026, 1, 31)).call
+    end
+
+    assert_equal 0, @account.debt_events.where(event_type: "interest_accrual").count
+    assert_equal 0, @account.entries.where(source: "sure").count
+    assert_equal Date.new(2026, 1, 30), @profile.reload.last_accrued_on
+    assert_equal BigDecimal("500.0"), @profile.federal_student_loan.accrued_interest_balance
+  end
+
   test "skips accrual before the profile effective start date" do
     @profile.update!(
       effective_start_on: Date.new(2026, 2, 1),

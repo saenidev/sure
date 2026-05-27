@@ -19,10 +19,16 @@ module Debt
       return completed_event if completed_event.present?
       return nil unless schedule.due?
 
+      federal_handler = Debt::FederalStudentLoan::AccrualHandler.new(profile)
+      unless federal_handler.accrues_interest?
+        federal_handler.mark_non_accruing_period!(period_end)
+        return nil
+      end
+
       terms = AccountTerms.new(account, as_of: period_end).resolve
       return nil unless terms.accrual_ready?
 
-      amount = accrued_amount(terms, period_start, period_end)
+      amount = accrued_amount(terms, period_start, period_end, federal_handler: federal_handler)
       return nil unless amount.positive?
 
       create_posting_run(period_start, period_end)
@@ -48,6 +54,7 @@ module Debt
         end
 
         profile.update!(last_accrued_on: period_end)
+        federal_handler.after_post!(amount)
       end
 
       posting_run.update!(status: "succeeded", finished_at: Time.current)
@@ -93,9 +100,12 @@ module Debt
         account.debt_events.where(event_type: "interest_accrual", period_end_on: period_end)
       end
 
-      def accrued_amount(terms, period_start, period_end)
+      def accrued_amount(terms, period_start, period_end, federal_handler: nil)
         days = (period_end - period_start).to_i + 1
-        (terms.opening_balance * (terms.annual_rate / 100) / 365 * days).round(4)
+        basis = federal_handler&.interest_basis_amount(account_balance: terms.opening_balance) || terms.opening_balance
+        denominator = federal_handler&.day_count_denominator || 365.to_d
+
+        (basis * (terms.annual_rate / 100) / denominator * days).round(4)
       end
 
       def create_posting_run(period_start, period_end)

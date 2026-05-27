@@ -152,7 +152,10 @@ module Debt
         end
 
         def validate_decimal_field(key, label)
-          value = BigDecimal(data[key].to_s)
+          raw_value = data[key]
+          return if raw_value.blank?
+
+          value = BigDecimal(raw_value.to_s)
 
           debt_profile.errors.add(:base, "Federal student loan #{label} must be nonnegative") if value.negative?
         rescue ArgumentError
