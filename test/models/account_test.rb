@@ -382,4 +382,23 @@ class AccountTest < ActiveSupport::TestCase
     assert_equal [ provider_holding.id, second_provider_holding.id ].sort, account.current_holdings.pluck(:id).sort
     assert_equal %w[CHF EUR], account.current_holdings.pluck(:currency).sort
   end
+
+  test "manual debt account helper is true only for unlinked liabilities" do
+    loan_account = accounts(:loan)
+
+    assert loan_account.manual_debt_account?
+
+    loan_account.update!(plaid_account: plaid_accounts(:one))
+
+    assert_not loan_account.reload.manual_debt_account?
+    assert_not accounts(:depository).manual_debt_account?
+  end
+
+  test "manual debt account helper is false for generic provider link" do
+    loan_account = accounts(:loan)
+    plaid_account = plaid_accounts(:one)
+    AccountProvider.create!(account: loan_account, provider: plaid_account)
+
+    assert_not loan_account.reload.manual_debt_account?
+  end
 end

@@ -26,6 +26,18 @@ class Loan < ApplicationRecord
     Money.new(payment.round, account.currency)
   end
 
+  def debt_default_rate_type
+    rate_type
+  end
+
+  def debt_default_annual_rate
+    interest_rate
+  end
+
+  def debt_default_monthly_payment
+    monthly_payment&.amount
+  end
+
   def original_balance
     Money.new(account.first_valuation_amount, account.currency)
   end

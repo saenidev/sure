@@ -1,0 +1,51 @@
+---
+en:
+  debt_profiles:
+    unsupported: Debt tracking is only available for manual debt accounts.
+    statuses:
+      active: Active
+      disabled: Disabled
+      archived: Archived
+    rate_types:
+      fixed: Fixed
+      variable: Variable
+      adjustable: Adjustable
+      promotional: Promotional
+    cadences:
+      daily: Daily
+      monthly: Monthly
+    edit:
+      title: Debt tracking for %{account}
+      status: Status
+      auto_accrual_enabled: Interest accrual
+      auto_payment_allocation_enabled: Payment allocation
+      rate_type: Rate type
+      annual_rate: Annual rate
+      accrual_cadence: Accrual cadence
+      compounding_cadence: Compounding cadence
+      minimum_payment_amount: Minimum payment amount
+      minimum_payment_percent: Minimum payment percent
+      payment_due_day: Payment due day
+      statement_closing_day: Statement closing day
+      grace_period_days: Grace period days
+      effective_start_on: Effective start
+      effective_end_on: Effective end
+      blank: Not set
+      submit: Save debt tracking
+    update:
+      success: Debt tracking updated
+    overview:
+      title: Debt tracking
+      configure: Configure
+      edit: Edit
+      status: Status
+      interest_rate: Interest rate
+      minimum_payment: Minimum payment
+      next_due: Next due
+      not_configured: Not configured
+      not_scheduled: Not scheduled
+      unknown: Unknown
+      interest: Interest
+      payment_allocation: Payment allocation
+      on: "On"
+      off: "Off"

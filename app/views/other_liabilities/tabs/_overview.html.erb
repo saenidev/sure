@@ -1,0 +1,22 @@
+<%# locals: (account:) %>
+
+<div class="grid grid-cols-2 gap-2">
+  <%= summary_card title: t(".amount_owed") do %>
+    <%= format_money(account.balance_money) %>
+  <% end %>
+
+  <%= summary_card title: t(".account_type") do %>
+    <%= account.accountable_class.display_name %>
+  <% end %>
+</div>
+
+<%= render "accounts/show/debt_mechanics", account: account %>
+
+<div class="flex justify-center py-8">
+  <%= render DS::Link.new(
+    text: t(".edit_account_details"),
+    variant: "ghost",
+    href: edit_other_liability_path(account),
+    frame: :modal
+  ) %>
+</div>

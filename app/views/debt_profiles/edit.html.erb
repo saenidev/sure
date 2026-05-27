@@ -1,0 +1,83 @@
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t(".title", account: @account.name)) %>
+
+  <% dialog.with_body do %>
+    <% if @error_message.present? %>
+      <%= render DS::Alert.new(message: @error_message, variant: :error) %>
+    <% end %>
+
+    <%= styled_form_with model: @debt_profile, url: account_debt_profile_path(@account), scope: :debt_profile, data: { turbo: false }, class: "flex flex-col gap-4 text-primary" do |form| %>
+      <div class="grid grid-cols-1 gap-3">
+        <%= form.select :status,
+              DebtProfile::STATUSES.map { |status| [t("debt_profiles.statuses.#{status}"), status] },
+              { label: t(".status") } %>
+
+        <div class="flex items-center justify-between gap-3 rounded-lg border border-primary p-3">
+          <div>
+            <p class="text-sm font-medium text-primary"><%= t(".auto_accrual_enabled") %></p>
+          </div>
+          <%= form.toggle :auto_accrual_enabled %>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 rounded-lg border border-primary p-3">
+          <div>
+            <p class="text-sm font-medium text-primary"><%= t(".auto_payment_allocation_enabled") %></p>
+          </div>
+          <%= form.toggle :auto_payment_allocation_enabled %>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <%= form.select :rate_type,
+                DebtProfile::RATE_TYPES.map { |rate_type| [t("debt_profiles.rate_types.#{rate_type}"), rate_type] },
+                { label: t(".rate_type"), include_blank: t(".blank") } %>
+
+          <%= form.number_field :annual_rate,
+                label: t(".annual_rate"),
+                min: 0,
+                step: 0.001 %>
+
+          <%= form.select :accrual_cadence,
+                DebtProfile::CADENCES.map { |cadence| [t("debt_profiles.cadences.#{cadence}"), cadence] },
+                { label: t(".accrual_cadence"), include_blank: t(".blank") } %>
+
+          <%= form.select :compounding_cadence,
+                DebtProfile::CADENCES.map { |cadence| [t("debt_profiles.cadences.#{cadence}"), cadence] },
+                { label: t(".compounding_cadence"), include_blank: t(".blank") } %>
+
+          <%= form.number_field :minimum_payment_percent,
+                label: t(".minimum_payment_percent"),
+                min: 0,
+                step: 0.01 %>
+        </div>
+
+        <%= form.money_field :minimum_payment_amount,
+              label: t(".minimum_payment_amount"),
+              hide_currency: true,
+              min: 0 %>
+
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <%= form.number_field :payment_due_day,
+                label: t(".payment_due_day"),
+                min: 1,
+                max: 31 %>
+
+          <%= form.number_field :statement_closing_day,
+                label: t(".statement_closing_day"),
+                min: 1,
+                max: 31 %>
+
+          <%= form.number_field :grace_period_days,
+                label: t(".grace_period_days"),
+                min: 0 %>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <%= form.date_field :effective_start_on, label: t(".effective_start_on") %>
+          <%= form.date_field :effective_end_on, label: t(".effective_end_on") %>
+        </div>
+      </div>
+
+      <%= form.submit t(".submit") %>
+    <% end %>
+  <% end %>
+<% end %>

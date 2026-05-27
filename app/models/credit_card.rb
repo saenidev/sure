@@ -32,4 +32,16 @@ class CreditCard < ApplicationRecord
   def annual_fee_money
     annual_fee ? Money.new(annual_fee, account.currency) : nil
   end
+
+  def debt_default_rate_type
+    "variable"
+  end
+
+  def debt_default_annual_rate
+    apr
+  end
+
+  def debt_default_monthly_payment
+    minimum_payment
+  end
 end

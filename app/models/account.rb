@@ -22,6 +22,12 @@ class Account < ApplicationRecord
   has_many :holdings, dependent: :destroy
   has_many :balances, dependent: :destroy
   has_many :recurring_transactions, dependent: :destroy
+  has_one :debt_profile, dependent: :destroy
+  has_many :debt_events, dependent: :destroy
+  has_many :debt_obligations, dependent: :destroy
+  has_many :debt_payment_allocations, dependent: :destroy
+  has_many :debt_reconciliation_matches, dependent: :destroy
+  has_many :debt_posting_runs, dependent: :destroy
   # Inverse for recurring transfers where this account is the destination.
   # Account#recurring_transactions only matches account_id; without this
   # association, destroying the destination account would hit the FK
@@ -433,6 +439,18 @@ class Account < ApplicationRecord
 
   def eligible_for_transaction_default?
     supports_default? && active? && !linked?
+  end
+
+  def debt_mechanics_supported?
+    manual_debt_account? && accountable_type.in?(%w[Loan CreditCard OtherLiability])
+  end
+
+  def debt_mechanics_enabled?
+    debt_profile&.active? || false
+  end
+
+  def manual_debt_account?
+    liability? && unlinked?
   end
 
   # Determines if this account supports manual trade entry

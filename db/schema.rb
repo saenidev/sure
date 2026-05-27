@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_05_19_092118) do
+ActiveRecord::Schema[7.2].define(version: 2026_05_27_001000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -472,6 +472,173 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_19_092118) do
     t.datetime "updated_at", null: false
     t.index ["enrichable_id", "enrichable_type", "source", "attribute_name"], name: "idx_on_enrichable_id_enrichable_type_source_attribu_5be5f63e08", unique: true
     t.index ["enrichable_type", "enrichable_id"], name: "index_data_enrichments_on_enrichable"
+  end
+
+  create_table "debt_events", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "account_id", null: false
+    t.uuid "debt_profile_id"
+    t.uuid "entry_id"
+    t.string "event_type", null: false
+    t.string "status", null: false
+    t.date "event_date", null: false
+    t.date "period_start_on"
+    t.date "period_end_on"
+    t.decimal "amount", precision: 19, scale: 4, null: false
+    t.string "currency", null: false
+    t.string "source"
+    t.string "external_id"
+    t.string "idempotency_key"
+    t.jsonb "extra", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "event_date"], name: "index_debt_events_on_account_id_and_event_date"
+    t.index ["account_id", "event_type", "status"], name: "index_debt_events_on_account_id_and_event_type_and_status"
+    t.index ["account_id", "idempotency_key"], name: "index_debt_events_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "source", "external_id"], name: "index_debt_events_on_account_id_and_source_and_external_id", unique: true, where: "((source IS NOT NULL) AND (external_id IS NOT NULL))"
+    t.index ["account_id"], name: "index_debt_events_on_account_id"
+    t.index ["debt_profile_id"], name: "index_debt_events_on_debt_profile_id"
+    t.index ["entry_id"], name: "index_debt_events_on_entry_id"
+    t.index ["extra"], name: "index_debt_events_on_extra", using: :gin
+  end
+
+  create_table "debt_obligations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "account_id", null: false
+    t.uuid "debt_profile_id"
+    t.date "statement_on"
+    t.date "period_start_on"
+    t.date "period_end_on"
+    t.date "due_on", null: false
+    t.string "status", null: false
+    t.decimal "statement_balance_amount", precision: 19, scale: 4
+    t.decimal "minimum_payment_amount", precision: 19, scale: 4
+    t.decimal "principal_due_amount", precision: 19, scale: 4
+    t.decimal "interest_due_amount", precision: 19, scale: 4
+    t.decimal "fee_due_amount", precision: 19, scale: 4
+    t.decimal "paid_amount", precision: 19, scale: 4, default: "0.0", null: false
+    t.string "currency", null: false
+    t.string "source"
+    t.string "external_id"
+    t.jsonb "extra", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "due_on", "source", "external_id"], name: "idx_on_account_id_due_on_source_external_id_8f3efadef8", unique: true, where: "((source IS NOT NULL) AND (external_id IS NOT NULL))"
+    t.index ["account_id", "due_on"], name: "index_debt_obligations_on_account_id_and_due_on"
+    t.index ["account_id", "status"], name: "index_debt_obligations_on_account_id_and_status"
+    t.index ["account_id"], name: "index_debt_obligations_on_account_id"
+    t.index ["debt_profile_id"], name: "index_debt_obligations_on_debt_profile_id"
+    t.index ["extra"], name: "index_debt_obligations_on_extra", using: :gin
+  end
+
+  create_table "debt_payment_allocations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "account_id", null: false
+    t.uuid "entry_id", null: false
+    t.uuid "debt_profile_id"
+    t.uuid "debt_obligation_id"
+    t.string "allocation_method", null: false
+    t.string "status", null: false
+    t.decimal "principal_amount", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "interest_amount", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "fee_amount", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "unapplied_amount", precision: 19, scale: 4, default: "0.0", null: false
+    t.string "currency", null: false
+    t.string "source"
+    t.string "external_id"
+    t.jsonb "extra", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "source", "external_id"], name: "idx_on_account_id_source_external_id_95c0ca0204", unique: true, where: "((source IS NOT NULL) AND (external_id IS NOT NULL))"
+    t.index ["account_id", "status"], name: "index_debt_payment_allocations_on_account_id_and_status"
+    t.index ["account_id"], name: "index_debt_payment_allocations_on_account_id"
+    t.index ["debt_obligation_id"], name: "index_debt_payment_allocations_on_debt_obligation_id"
+    t.index ["debt_profile_id"], name: "index_debt_payment_allocations_on_debt_profile_id"
+    t.index ["entry_id"], name: "index_debt_payment_allocations_on_entry_id", unique: true
+    t.index ["extra"], name: "index_debt_payment_allocations_on_extra", using: :gin
+  end
+
+  create_table "debt_posting_runs", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "account_id", null: false
+    t.uuid "debt_profile_id"
+    t.string "run_type", null: false
+    t.date "period_start_on"
+    t.date "period_end_on"
+    t.string "status", null: false
+    t.datetime "started_at"
+    t.datetime "finished_at"
+    t.string "error_class"
+    t.text "error_message"
+    t.jsonb "extra", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "run_type", "period_start_on", "period_end_on"], name: "index_debt_posting_runs_on_account_run_type_period"
+    t.index ["account_id"], name: "index_debt_posting_runs_on_account_id"
+    t.index ["debt_profile_id"], name: "index_debt_posting_runs_on_debt_profile_id"
+    t.index ["extra"], name: "index_debt_posting_runs_on_extra", using: :gin
+  end
+
+  create_table "debt_profiles", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "account_id", null: false
+    t.string "status", default: "active", null: false
+    t.boolean "auto_accrual_enabled", default: false, null: false
+    t.boolean "auto_payment_allocation_enabled", default: false, null: false
+    t.string "rate_type"
+    t.string "accrual_cadence"
+    t.string "compounding_cadence"
+    t.decimal "minimum_payment_amount", precision: 19, scale: 4
+    t.decimal "minimum_payment_percent", precision: 10, scale: 4
+    t.integer "payment_due_day"
+    t.integer "statement_closing_day"
+    t.integer "grace_period_days"
+    t.date "effective_start_on"
+    t.date "effective_end_on"
+    t.date "last_accrued_on"
+    t.date "next_due_on"
+    t.string "source"
+    t.jsonb "extra", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_debt_profiles_on_account_id", unique: true
+    t.index ["extra"], name: "index_debt_profiles_on_extra", using: :gin
+    t.index ["next_due_on"], name: "index_debt_profiles_on_next_due_on"
+    t.index ["status"], name: "index_debt_profiles_on_status"
+  end
+
+  create_table "debt_rate_periods", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "debt_profile_id", null: false
+    t.string "rate_type", null: false
+    t.decimal "annual_rate", precision: 10, scale: 4, null: false
+    t.date "starts_on", null: false
+    t.date "ends_on"
+    t.integer "priority", default: 0, null: false
+    t.string "source"
+    t.string "external_id"
+    t.jsonb "extra", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["debt_profile_id", "source", "external_id"], name: "idx_on_debt_profile_id_source_external_id_e0f0e727b2", unique: true, where: "((source IS NOT NULL) AND (external_id IS NOT NULL))"
+    t.index ["debt_profile_id", "starts_on"], name: "index_debt_rate_periods_on_debt_profile_id_and_starts_on"
+    t.index ["debt_profile_id"], name: "index_debt_rate_periods_on_debt_profile_id"
+    t.index ["extra"], name: "index_debt_rate_periods_on_extra", using: :gin
+  end
+
+  create_table "debt_reconciliation_matches", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "account_id", null: false
+    t.uuid "debt_event_id", null: false
+    t.uuid "entry_id", null: false
+    t.string "match_type", null: false
+    t.string "confidence", null: false
+    t.string "status", null: false
+    t.date "matched_on"
+    t.jsonb "extra", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "status"], name: "index_debt_reconciliation_matches_on_account_id_and_status"
+    t.index ["account_id"], name: "index_debt_reconciliation_matches_on_account_id"
+    t.index ["debt_event_id", "entry_id"], name: "idx_on_debt_event_id_entry_id_5fbc07254c", unique: true
+    t.index ["debt_event_id"], name: "idx_debt_matches_one_accepted_per_event", unique: true, where: "((status)::text = 'accepted'::text)"
+    t.index ["debt_event_id"], name: "index_debt_reconciliation_matches_on_debt_event_id"
+    t.index ["entry_id"], name: "idx_debt_matches_one_accepted_per_entry", unique: true, where: "((status)::text = 'accepted'::text)"
+    t.index ["entry_id"], name: "index_debt_reconciliation_matches_on_entry_id"
+    t.index ["extra"], name: "index_debt_reconciliation_matches_on_extra", using: :gin
   end
 
   create_table "debug_log_entries", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1901,6 +2068,22 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_19_092118) do
   add_foreign_key "coinbase_items", "families"
   add_foreign_key "coinstats_accounts", "coinstats_items"
   add_foreign_key "coinstats_items", "families"
+  add_foreign_key "debt_events", "accounts", on_delete: :cascade
+  add_foreign_key "debt_events", "debt_profiles", on_delete: :nullify
+  add_foreign_key "debt_events", "entries", on_delete: :nullify
+  add_foreign_key "debt_obligations", "accounts", on_delete: :cascade
+  add_foreign_key "debt_obligations", "debt_profiles", on_delete: :nullify
+  add_foreign_key "debt_payment_allocations", "accounts", on_delete: :cascade
+  add_foreign_key "debt_payment_allocations", "debt_obligations", on_delete: :nullify
+  add_foreign_key "debt_payment_allocations", "debt_profiles", on_delete: :nullify
+  add_foreign_key "debt_payment_allocations", "entries", on_delete: :cascade
+  add_foreign_key "debt_posting_runs", "accounts", on_delete: :cascade
+  add_foreign_key "debt_posting_runs", "debt_profiles", on_delete: :nullify
+  add_foreign_key "debt_profiles", "accounts", on_delete: :cascade
+  add_foreign_key "debt_rate_periods", "debt_profiles", on_delete: :cascade
+  add_foreign_key "debt_reconciliation_matches", "accounts", on_delete: :cascade
+  add_foreign_key "debt_reconciliation_matches", "debt_events", on_delete: :cascade
+  add_foreign_key "debt_reconciliation_matches", "entries", on_delete: :cascade
   add_foreign_key "debug_log_entries", "account_providers", on_delete: :nullify
   add_foreign_key "debug_log_entries", "accounts", on_delete: :nullify
   add_foreign_key "debug_log_entries", "families", on_delete: :nullify

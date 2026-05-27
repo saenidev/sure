@@ -399,44 +399,42 @@ class Balance::ForwardCalculatorTest < ActiveSupport::TestCase
     )
   end
 
-  # A loan is a special case where despite being a "non-cash" account, it is typical to have "payment" transactions that reduce the loan principal (non cash balance)
-  test "loan payment transactions affect non cash balance" do
-    account = create_account_with_ledger(
-      account: { type: Loan, currency: "USD" },
-      entries: [
-        { type: "opening_anchor", date: 2.days.ago.to_date, balance: 20000 },
-        # "Loan payment" of $2000, which reduces the principal
-        # TODO: We'll eventually need to calculate which portion of the txn was "interest" vs. "principal", but for now we'll just assume it's all principal
-        # since we don't have a first-class way to track interest payments yet.
-        { type: "transaction", date: 1.day.ago.to_date, amount: -2000 }
-      ]
-    )
+  test "manual debt transactions affect non cash balance" do
+    [ Loan, OtherLiability ].each do |account_type|
+      account = create_account_with_ledger(
+        account: { type: account_type, currency: "USD" },
+        entries: [
+          { type: "opening_anchor", date: 2.days.ago.to_date, balance: 20000 },
+          { type: "transaction", date: 1.day.ago.to_date, amount: -2000 }
+        ]
+      )
 
-    calculated = Balance::ForwardCalculator.new(account).calculate
+      calculated = Balance::ForwardCalculator.new(account).calculate
 
-    assert_calculated_ledger_balances(
-      calculated_data: calculated,
-      expected_data: [
-        {
-          date: 2.days.ago.to_date,
-          legacy_balances: { balance: 20000, cash_balance: 0 },
-          balances: { start: 20000, start_cash: 0, start_non_cash: 20000, end_cash: 0, end_non_cash: 20000, end: 20000 },
-          flows: 0,
-          adjustments: 0
-        },
-        {
-          date: 1.day.ago.to_date,
-          legacy_balances: { balance: 18000, cash_balance: 0 },
-          balances: { start: 20000, start_cash: 0, start_non_cash: 20000, end_cash: 0, end_non_cash: 18000, end: 18000 },
-          flows: { non_cash_inflows: 2000, non_cash_outflows: 0, cash_inflows: 0, cash_outflows: 0 }, # Loans are "special cases" where transactions do affect non-cash balance
-          adjustments: 0
-        }
-      ]
-    )
+      assert_calculated_ledger_balances(
+        calculated_data: calculated,
+        expected_data: [
+          {
+            date: 2.days.ago.to_date,
+            legacy_balances: { balance: 20000, cash_balance: 0 },
+            balances: { start: 20000, start_cash: 0, start_non_cash: 20000, end_cash: 0, end_non_cash: 20000, end: 20000 },
+            flows: 0,
+            adjustments: 0
+          },
+          {
+            date: 1.day.ago.to_date,
+            legacy_balances: { balance: 18000, cash_balance: 0 },
+            balances: { start: 20000, start_cash: 0, start_non_cash: 20000, end_cash: 0, end_non_cash: 18000, end: 18000 },
+            flows: { non_cash_inflows: 2000, non_cash_outflows: 0, cash_inflows: 0, cash_outflows: 0 },
+            adjustments: 0
+          }
+        ]
+      )
+    end
   end
 
   test "non cash accounts can only use valuations and transactions will be recorded but ignored for balance calculation" do
-    [ Property, Vehicle, OtherAsset, OtherLiability ].each do |account_type|
+    [ Property, Vehicle, OtherAsset ].each do |account_type|
       account = create_account_with_ledger(
         account: { type: account_type, currency: "USD" },
         entries: [
@@ -469,6 +467,39 @@ class Balance::ForwardCalculatorTest < ActiveSupport::TestCase
         ]
       )
     end
+  end
+
+  test "connected other liability transactions are ignored for balance calculation" do
+    account = create_account_with_ledger(
+      account: { type: OtherLiability, currency: "USD" },
+      entries: [
+        { type: "opening_anchor", date: 2.days.ago.to_date, balance: 20000 },
+        { type: "transaction", date: 1.day.ago.to_date, amount: -2000 }
+      ]
+    )
+    AccountProvider.create!(account: account, provider: plaid_accounts(:one))
+
+    calculated = Balance::ForwardCalculator.new(account).calculate
+
+    assert_calculated_ledger_balances(
+      calculated_data: calculated,
+      expected_data: [
+        {
+          date: 2.days.ago.to_date,
+          legacy_balances: { balance: 20000, cash_balance: 0 },
+          balances: { start: 20000, start_cash: 0, start_non_cash: 20000, end_cash: 0, end_non_cash: 20000, end: 20000 },
+          flows: 0,
+          adjustments: 0
+        },
+        {
+          date: 1.day.ago.to_date,
+          legacy_balances: { balance: 20000, cash_balance: 0 },
+          balances: { start: 20000, start_cash: 0, start_non_cash: 20000, end_cash: 0, end_non_cash: 20000, end: 20000 },
+          flows: 0,
+          adjustments: 0
+        }
+      ]
+    )
   end
 
   # ------------------------------------------------------------------------------------------------

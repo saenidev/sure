@@ -44,6 +44,8 @@
   <% end %>
 </div>
 
+<%= render "accounts/show/debt_mechanics", account: account %>
+
 <div class="flex justify-center py-8">
   <%= render DS::Link.new(
     text: t(".edit_loan_details"),

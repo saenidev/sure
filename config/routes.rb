@@ -436,6 +436,7 @@ Rails.application.routes.draw do
     end
 
     resource :sharing, only: [ :show, :update ], controller: "account_sharings"
+    resource :debt_profile, only: [ :edit, :update ]
   end
 
   resources :account_statements, only: %i[index show create update destroy] do

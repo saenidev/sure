@@ -69,7 +69,7 @@ class Balance::BaseCalculator
       trade_cash_inflow_sum = entries.select { |e| e.amount < 0 && e.trade? }.sum(&:amount)
       trade_cash_outflow_sum = entries.select { |e| e.amount >= 0 && e.trade? }.sum(&:amount)
 
-      if account.balance_type == :non_cash && account.accountable_type == "Loan"
+      if debt_non_cash_flow_account?
         non_cash_inflows = txn_inflow_sum.abs
         non_cash_outflows = txn_outflow_sum
       elsif account.balance_type != :non_cash
@@ -101,8 +101,7 @@ class Balance::BaseCalculator
 
     def derive_non_cash_balance(non_cash_balance, date, direction: :forward)
       entries = sync_cache.get_entries(date)
-      # Loans are a special case (loan payment reducing principal, which is non-cash)
-      if account.balance_type == :non_cash && account.accountable_type == "Loan"
+      if debt_non_cash_flow_account?
         non_cash_balance + signed_entry_flows(entries)
       elsif account.balance_type == :investment
         # For reverse calculations, we need the previous day's holdings
@@ -115,6 +114,13 @@ class Balance::BaseCalculator
 
     def signed_entry_flows(entries)
       raise NotImplementedError, "Directional calculators must implement this method"
+    end
+
+    def debt_non_cash_flow_account?
+      return false unless account.balance_type == :non_cash
+      return true if account.accountable_type == "Loan"
+
+      account.accountable_type == "OtherLiability" && account.manual_debt_account?
     end
 
     def build_balance(date:, **args)
