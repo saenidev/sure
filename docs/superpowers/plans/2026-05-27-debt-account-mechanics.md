@@ -41,6 +41,8 @@ Create:
 - `app/models/debt/obligation_service.rb`: imports or generates obligations.
 - `app/models/debt/payment_allocation_service.rb`: allocates payment entries.
 - `app/models/debt/reconciliation_service.rb`: finds provider matches for generated events.
+- `app/controllers/debt_profiles_controller.rb`: lets users configure terms and opt into automation.
+- `app/views/debt_profiles/edit.html.erb`: modal/edit surface for debt profile settings.
 - `test/models/debt_profile_test.rb`
 - `test/models/debt_rate_period_test.rb`
 - `test/models/debt_event_test.rb`
@@ -63,9 +65,12 @@ Modify:
 - `app/models/credit_card.rb`: expose debt default terms without changing stored columns.
 - `app/models/account/provider_import_adapter.rb`: keep current behavior, add narrow hook for provider debt metadata once services exist.
 - `app/views/loans/tabs/_overview.html.erb`: render debt mechanics section.
-- `app/views/credit_cards/tabs/_overview.html.erb`: create tab path and render debt mechanics section.
+- `app/views/credit_cards/tabs/_overview.html.erb`: move existing credit-card overview partial into the tab path and render debt mechanics section.
+- `app/views/credit_cards/_overview.html.erb`: remove after moving to the tab path; it is not currently rendered elsewhere.
 - `app/components/UI/account_page.rb`: give credit cards an overview tab.
+- `config/routes.rb`: add nested singular `debt_profile` edit/update routes.
 - `config/locales/views/accounts/en.yml`: debt mechanics strings.
+- `config/locales/views/debt_profiles/en.yml`: debt profile form strings.
 - `config/locales/views/loans/en.yml`: any loan overview labels needed.
 - `config/locales/views/credit_cards/en.yml`: any credit-card overview labels needed.
 
@@ -220,6 +225,8 @@ class CreateDebtMechanicsTables < ActiveRecord::Migration[7.2]
 
     add_index :debt_reconciliation_matches, [ :account_id, :status ]
     add_index :debt_reconciliation_matches, [ :debt_event_id, :entry_id ], unique: true
+    add_index :debt_reconciliation_matches, :debt_event_id, unique: true, where: "status = 'accepted'", name: "idx_debt_matches_one_accepted_per_event"
+    add_index :debt_reconciliation_matches, :entry_id, unique: true, where: "status = 'accepted'", name: "idx_debt_matches_one_accepted_per_entry"
     add_index :debt_reconciliation_matches, :extra, using: :gin
 
     create_table :debt_posting_runs, id: :uuid do |t|
@@ -411,7 +418,7 @@ class DebtEventTest < ActiveSupport::TestCase
     )
 
     assert_not event.valid?
-    assert_includes event.errors[:entry], "must be present for posted balance-changing events"
+    assert_includes event.errors[:entry], "must be present for posted or matched balance-changing events"
   end
 
   test "pending interest event can exist without entry" do
@@ -599,6 +606,7 @@ class DebtReconciliationMatchTest < ActiveSupport::TestCase
 
     assert_equal "accepted", match.status
     assert_equal "matched", @event.reload.status
+    assert_equal @entry, @event.entry
   end
 end
 ```
@@ -768,7 +776,7 @@ class DebtEvent < ApplicationRecord
   validates :amount, numericality: true
   validate :account_must_be_liability
   validate :entry_belongs_to_account
-  validate :posted_balance_changing_events_require_entry
+  validate :posted_or_matched_balance_changing_events_require_entry
 
   def balance_changing?
     BALANCE_CHANGING_TYPES.include?(event_type)
@@ -787,11 +795,11 @@ class DebtEvent < ApplicationRecord
       errors.add(:entry, "must belong to account")
     end
 
-    def posted_balance_changing_events_require_entry
-      return unless status == "posted" && balance_changing?
+    def posted_or_matched_balance_changing_events_require_entry
+      return unless status.in?(%w[posted matched]) && balance_changing?
       return if entry.present?
 
-      errors.add(:entry, "must be present for posted balance-changing events")
+      errors.add(:entry, "must be present for posted or matched balance-changing events")
     end
 end
 ```
@@ -920,7 +928,7 @@ class DebtReconciliationMatch < ApplicationRecord
     end
 
     def mark_event_matched
-      debt_event.update!(status: "matched")
+      debt_event.update!(entry: entry, status: "matched")
     end
 end
 ```
@@ -1415,10 +1423,58 @@ class Debt::ReconciliationServiceTest < ActiveSupport::TestCase
     assert_equal entry, match.entry
     assert_equal "accepted", match.status
     assert_equal "matched", @event.reload.status
+    assert_equal entry, @event.entry
   end
 
   test "returns nil when no match is found" do
     assert_nil Debt::ReconciliationService.new(@event).call
+  end
+
+  test "does not auto-accept ambiguous provider matches" do
+    2.times do |index|
+      @account.entries.create!(
+        date: Date.new(2026, 1, 31),
+        name: "Interest Charge #{index}",
+        amount: 100,
+        currency: "USD",
+        source: "plaid",
+        external_id: "interest-#{index}",
+        entryable: Transaction.new
+      )
+    end
+
+    assert_nil Debt::ReconciliationService.new(@event).call
+    assert_equal "pending", @event.reload.status
+  end
+
+  test "late provider entry supersedes generated sure interest entry" do
+    generated_entry = @account.entries.create!(
+      date: Date.new(2026, 1, 31),
+      name: "Interest accrual",
+      amount: 100,
+      currency: "USD",
+      source: "sure",
+      external_id: "interest-generated-1",
+      entryable: Transaction.new
+    )
+    @event.update!(entry: generated_entry, status: "posted", source: "sure")
+    provider_entry = @account.entries.create!(
+      date: Date.new(2026, 1, 31),
+      name: "Interest Charge",
+      amount: 100,
+      currency: "USD",
+      source: "plaid",
+      external_id: "interest-provider-1",
+      entryable: Transaction.new
+    )
+
+    match = Debt::ReconciliationService.reconcile_provider_entry!(provider_entry)
+
+    assert_equal "accepted", match.status
+    assert generated_entry.reload.excluded?
+    assert_equal "matched", @event.reload.status
+    assert_equal provider_entry, @event.entry
+    assert_equal generated_entry.id, @event.extra["superseded_generated_entry_id"]
   end
 end
 ```
@@ -1467,10 +1523,12 @@ class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
   end
 
   test "matches provider entry instead of posting duplicate" do
+    expected_interest = (500_000.to_d * 12.to_d / 100 / 365 * 31).round(4)
+
     @account.entries.create!(
       date: Date.new(2026, 1, 31),
       name: "Interest Charge",
-      amount: 5_000,
+      amount: expected_interest,
       currency: "USD",
       source: "plaid",
       external_id: "interest-provider-1",
@@ -1507,6 +1565,36 @@ class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
     assert run.started_at.present?
     assert run.finished_at.present?
   end
+
+  test "accrues daily interest across the actual period" do
+    @account.update!(balance: 36_500)
+
+    Debt::InterestAccrualService.new(@profile, through_on: Date.new(2026, 1, 31)).call
+
+    event = DebtEvent.order(:created_at).last
+    assert_equal 372.to_d, event.amount
+  end
+
+  test "splits accrual across mid-period rate changes" do
+    @account.update!(balance: 36_500)
+    @profile.debt_rate_periods.destroy_all
+    @profile.debt_rate_periods.create!(
+      rate_type: "fixed",
+      annual_rate: 12,
+      starts_on: Date.new(2026, 1, 1),
+      ends_on: Date.new(2026, 1, 15)
+    )
+    @profile.debt_rate_periods.create!(
+      rate_type: "promotional",
+      annual_rate: 24,
+      starts_on: Date.new(2026, 1, 16)
+    )
+
+    Debt::InterestAccrualService.new(@profile, through_on: Date.new(2026, 1, 31)).call
+
+    event = DebtEvent.order(:created_at).last
+    assert_equal 564.to_d, event.amount
+  end
 end
 ```
 
@@ -1527,18 +1615,62 @@ Create `app/models/debt/reconciliation_service.rb`:
 ```ruby
 module Debt
   class ReconciliationService
+    PROVIDER_MATCH_TYPES = %w[interest_accrual fee].freeze
+
+    def self.reconcile_provider_entry!(entry)
+      return nil unless entry.account.liability?
+      return nil unless entry.source.present? && entry.source != "sure"
+      return nil unless entry.entryable.is_a?(Transaction)
+      return nil if entry.excluded? || entry.transaction.pending?
+
+      debt_event = DebtEvent
+        .joins(:entry)
+        .where(
+          account: entry.account,
+          event_type: PROVIDER_MATCH_TYPES,
+          status: "posted",
+          event_date: entry.date,
+          amount: entry.amount,
+          currency: entry.currency,
+          source: "sure",
+          entries: { source: "sure", excluded: false }
+        )
+        .first
+
+      return nil unless debt_event
+
+      generated_entry = debt_event.entry
+      match = DebtReconciliationMatch.create!(
+        account: entry.account,
+        debt_event: debt_event,
+        entry: entry,
+        match_type: "date_amount",
+        confidence: "high",
+        status: "accepted",
+        matched_on: Date.current
+      )
+
+      generated_entry.update!(excluded: true)
+      debt_event.update!(
+        entry: entry,
+        status: "matched",
+        extra: (debt_event.extra || {}).merge("superseded_generated_entry_id" => generated_entry.id)
+      )
+      match
+    end
+
     def initialize(debt_event)
       @debt_event = debt_event
     end
 
     def call
-      entry = matching_entry
-      return nil unless entry
+      entries = matching_entries.to_a
+      return nil unless entries.one?
 
       DebtReconciliationMatch.create!(
         account: debt_event.account,
         debt_event: debt_event,
-        entry: entry,
+        entry: entries.first,
         match_type: "date_amount",
         confidence: "high",
         status: "accepted",
@@ -1549,11 +1681,16 @@ module Debt
     private
       attr_reader :debt_event
 
-      def matching_entry
-        debt_event.account.entries
+      def matching_entries
+        scope = debt_event.account.entries
+          .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
           .where(date: debt_event.event_date, amount: debt_event.amount, currency: debt_event.currency)
-          .where.not(source: nil)
-          .first
+          .where(excluded: false)
+          .where.not(source: [ nil, "sure" ])
+          .merge(Transaction.excluding_pending)
+
+        scope = scope.where("entries.amount > 0") if PROVIDER_MATCH_TYPES.include?(debt_event.event_type)
+        scope.limit(2)
       end
   end
 end
@@ -1645,7 +1782,24 @@ module Debt
       end
 
       def amount
-        (terms.opening_balance * terms.annual_rate / 100 / 12).round(4)
+        rate_segments.sum do |date_range, annual_rate|
+          (terms.opening_balance * annual_rate.to_d / 100 / 365 * date_range.count).round(4)
+        end.round(4)
+      end
+
+      def rate_segments
+        segments = []
+        cursor = period_start
+
+        while cursor <= through_on
+          period = debt_profile.debt_rate_periods.for_date(cursor).first
+          annual_rate = period&.annual_rate || terms.annual_rate
+          segment_end = [ through_on, period&.ends_on || through_on ].min
+          segments << [ cursor..segment_end, annual_rate ]
+          cursor = segment_end + 1.day
+        end
+
+        segments
       end
 
       def build_event
@@ -1795,6 +1949,29 @@ class Debt::PaymentAllocationServiceTest < ActiveSupport::TestCase
       assert_nil Debt::PaymentAllocationService.new(@entry).call
     end
   end
+
+  test "allocates late payment to overdue obligation" do
+    @entry.update!(date: Date.new(2026, 2, 20))
+
+    allocation = Debt::PaymentAllocationService.new(@entry).call
+
+    assert_equal @obligation, allocation.debt_obligation
+    assert_equal "paid", @obligation.reload.status
+  end
+
+  test "does not allocate non-payment liability entry" do
+    interest_entry = @account.entries.create!(
+      date: Date.new(2026, 2, 10),
+      name: "Interest Charge",
+      amount: 100,
+      currency: "USD",
+      entryable: Transaction.new(kind: "standard")
+    )
+
+    assert_no_difference -> { DebtPaymentAllocation.count } do
+      assert_nil Debt::PaymentAllocationService.new(interest_entry).call
+    end
+  end
 end
 ```
 
@@ -1887,7 +2064,7 @@ module Debt
     def call
       return existing_allocation if existing_allocation
       return nil unless profile&.auto_payment_allocation_enabled?
-      return nil unless entry.amount.negative?
+      return nil unless eligible_payment_entry?
 
       DebtPaymentAllocation.transaction do
         allocation = DebtPaymentAllocation.create!(
@@ -1920,11 +2097,32 @@ module Debt
       end
 
       def obligation
-        @obligation ||= account.debt_obligations
+        @obligation ||= due_or_overdue_obligation || early_payment_obligation
+      end
+
+      def due_or_overdue_obligation
+        account.debt_obligations
           .where(status: %w[open partially_paid overdue])
-          .where("due_on >= ?", entry.date)
+          .where("due_on <= ?", entry.date)
           .order(:due_on)
           .first
+      end
+
+      def early_payment_obligation
+        account.debt_obligations
+          .where(status: %w[open partially_paid overdue])
+          .where(due_on: entry.date..(entry.date + 7.days))
+          .order(:due_on)
+          .first
+      end
+
+      def eligible_payment_entry?
+        return false if entry.excluded?
+        return false unless entry.amount.negative?
+        return false unless entry.entryable.is_a?(Transaction)
+        return false if entry.transaction.pending?
+
+        entry.transaction.kind.in?(%w[loan_payment cc_payment])
       end
 
       def fee_amount
@@ -1973,13 +2171,18 @@ git commit -m "Add debt obligations and payment allocation"
 **Files:**
 
 - Create: `app/views/accounts/show/_debt_mechanics.html.erb`
-- Create: `app/views/credit_cards/tabs/_overview.html.erb`
+- Move: `app/views/credit_cards/_overview.html.erb` to `app/views/credit_cards/tabs/_overview.html.erb`
+- Create: `app/controllers/debt_profiles_controller.rb`
+- Create: `app/views/debt_profiles/edit.html.erb`
 - Modify: `app/components/UI/account_page.rb`
 - Modify: `app/views/loans/tabs/_overview.html.erb`
+- Modify: `config/routes.rb`
 - Modify: `config/locales/views/accounts/en.yml`
+- Create: `config/locales/views/debt_profiles/en.yml`
 - Modify: `config/locales/views/credit_cards/en.yml`
 - Test: `test/controllers/loans_controller_test.rb`
 - Test: `test/controllers/credit_cards_controller_test.rb`
+- Test: `test/controllers/debt_profiles_controller_test.rb`
 
 - [ ] **Step 1: Write failing overview tests**
 
@@ -2028,12 +2231,139 @@ Add to `test/controllers/credit_cards_controller_test.rb`:
 Run:
 
 ```bash
-bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb
+bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb test/controllers/debt_profiles_controller_test.rb
 ```
 
 Expected: credit-card overview test fails because `CreditCard` does not yet expose an overview tab or tab partial.
 
-- [ ] **Step 3: Add debt mechanics partial**
+- [ ] **Step 3: Add debt profile settings surface**
+
+Add a nested singular route in `config/routes.rb` inside the existing `resources :accounts` block:
+
+```ruby
+    resource :debt_profile, only: [ :edit, :update ]
+```
+
+Create `app/controllers/debt_profiles_controller.rb`:
+
+```ruby
+class DebtProfilesController < ApplicationController
+  before_action :set_account
+  before_action :set_profile
+
+  def edit
+  end
+
+  def update
+    if @profile.update(debt_profile_params)
+      redirect_to account_path(@account, tab: "overview"), notice: t(".success")
+    else
+      render :edit, status: :unprocessable_entity
+    end
+  end
+
+  private
+    def set_account
+      @account = Current.family.accounts.find(params[:account_id])
+      return if @account.liability?
+
+      redirect_to account_path(@account)
+    end
+
+    def set_profile
+      @profile = @account.debt_profile || @account.build_debt_profile(status: "active")
+    end
+
+    def debt_profile_params
+      params.require(:debt_profile).permit(
+        :status,
+        :auto_accrual_enabled,
+        :auto_payment_allocation_enabled,
+        :rate_type,
+        :accrual_cadence,
+        :compounding_cadence,
+        :minimum_payment_amount,
+        :minimum_payment_percent,
+        :payment_due_day,
+        :statement_closing_day,
+        :grace_period_days,
+        :next_due_on
+      )
+    end
+end
+```
+
+Create `app/views/debt_profiles/edit.html.erb`:
+
+```erb
+<%# locals: () %>
+
+<%= styled_form_with model: @profile, url: account_debt_profile_path(@account), method: :patch, class: "space-y-4" do |form| %>
+  <section class="space-y-3">
+    <h2 class="text-primary font-medium"><%= t(".title") %></h2>
+
+    <div class="grid grid-cols-2 gap-3">
+      <%= form.select :rate_type, DebtProfile::RATE_TYPES.map { |type| [ type.titleize, type ] }, { include_blank: t(".unknown") }, label: t(".rate_type") %>
+      <%= form.select :accrual_cadence, DebtProfile::CADENCES.map { |cadence| [ cadence.titleize, cadence ] }, { include_blank: t(".unknown") }, label: t(".accrual_cadence") %>
+      <%= form.money_field :minimum_payment_amount, label: t(".minimum_payment_amount"), default_currency: @account.currency, hide_currency: true %>
+      <%= form.number_field :minimum_payment_percent, step: 0.0001, min: 0, label: t(".minimum_payment_percent") %>
+      <%= form.number_field :payment_due_day, min: 1, max: 31, label: t(".payment_due_day") %>
+      <%= form.number_field :statement_closing_day, min: 1, max: 31, label: t(".statement_closing_day") %>
+      <%= form.number_field :grace_period_days, min: 0, label: t(".grace_period_days") %>
+      <%= form.date_field :next_due_on, label: t(".next_due_on") %>
+    </div>
+
+    <label class="flex items-center gap-2 text-sm text-primary">
+      <%= form.check_box :auto_accrual_enabled %>
+      <%= t(".auto_accrual_enabled") %>
+    </label>
+
+    <label class="flex items-center gap-2 text-sm text-primary">
+      <%= form.check_box :auto_payment_allocation_enabled %>
+      <%= t(".auto_payment_allocation_enabled") %>
+    </label>
+  </section>
+
+  <%= form.submit t(".submit") %>
+<% end %>
+```
+
+Create `test/controllers/debt_profiles_controller_test.rb`:
+
+```ruby
+require "test_helper"
+
+class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
+  setup do
+    sign_in users(:family_admin)
+    @account = accounts(:loan)
+  end
+
+  test "updates debt profile settings" do
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        rate_type: "fixed",
+        accrual_cadence: "daily",
+        minimum_payment_amount: 1_250,
+        payment_due_day: 15,
+        auto_accrual_enabled: "1",
+        auto_payment_allocation_enabled: "1"
+      }
+    }
+
+    assert_redirected_to account_path(@account, tab: "overview")
+    profile = @account.reload.debt_profile
+    assert_equal "fixed", profile.rate_type
+    assert_equal "daily", profile.accrual_cadence
+    assert_equal 1_250.to_d, profile.minimum_payment_amount
+    assert_equal 15, profile.payment_due_day
+    assert profile.auto_accrual_enabled?
+    assert profile.auto_payment_allocation_enabled?
+  end
+end
+```
+
+- [ ] **Step 4: Add debt mechanics partial**
 
 Create `app/views/accounts/show/_debt_mechanics.html.erb`:
 
@@ -2045,11 +2375,23 @@ Create `app/views/accounts/show/_debt_mechanics.html.erb`:
 <% open_obligation = account.debt_obligations.where(status: %w[open partially_paid overdue]).order(:due_on).first %>
 <% last_event = account.debt_events.where(status: %w[posted matched]).order(event_date: :desc, created_at: :desc).first %>
 <% last_allocation = account.debt_payment_allocations.order(created_at: :desc).first %>
+<% pending_events = account.debt_events.where(status: "pending").order(:event_date).limit(5) %>
+<% review_matches = DebtReconciliationMatch.where(account: account, status: "needs_review").includes(:debt_event, :entry).limit(5) %>
+<% review_allocations = account.debt_payment_allocations.where(status: "needs_review").includes(:entry).limit(5) %>
 
 <section data-testid="debt-mechanics" class="space-y-3">
-  <div>
-    <h3 class="text-primary font-medium"><%= t("accounts.show.debt_mechanics.title") %></h3>
-    <p class="text-secondary text-sm"><%= t("accounts.show.debt_mechanics.subtitle") %></p>
+  <div class="flex items-start justify-between gap-3">
+    <div>
+      <h3 class="text-primary font-medium"><%= t("accounts.show.debt_mechanics.title") %></h3>
+      <p class="text-secondary text-sm"><%= t("accounts.show.debt_mechanics.subtitle") %></p>
+    </div>
+
+    <%= render DS::Link.new(
+      text: t("accounts.show.debt_mechanics.configure"),
+      variant: "ghost",
+      href: edit_account_debt_profile_path(account),
+      frame: :modal
+    ) %>
   </div>
 
   <div class="grid grid-cols-3 gap-2">
@@ -2116,10 +2458,34 @@ Create `app/views/accounts/show/_debt_mechanics.html.erb`:
       ) %>
     </p>
   <% end %>
+
+  <% if pending_events.any? || review_matches.any? || review_allocations.any? %>
+    <div class="space-y-2 border-t border-primary pt-3">
+      <h4 class="text-primary text-sm font-medium"><%= t("accounts.show.debt_mechanics.review_title") %></h4>
+
+      <% pending_events.each do |event| %>
+        <p class="text-secondary text-sm">
+          <%= t("accounts.show.debt_mechanics.pending_event", type: event.event_type.humanize, amount: format_money(Money.new(event.amount, event.currency)), date: l(event.event_date, format: :long)) %>
+        </p>
+      <% end %>
+
+      <% review_matches.each do |match| %>
+        <p class="text-secondary text-sm">
+          <%= t("accounts.show.debt_mechanics.match_needs_review", name: match.entry.name, amount: format_money(match.entry.amount_money)) %>
+        </p>
+      <% end %>
+
+      <% review_allocations.each do |allocation| %>
+        <p class="text-secondary text-sm">
+          <%= t("accounts.show.debt_mechanics.allocation_needs_review", name: allocation.entry.name, amount: format_money(allocation.entry.amount_money)) %>
+        </p>
+      <% end %>
+    </div>
+  <% end %>
 </section>
 ```
 
-- [ ] **Step 4: Wire overview tabs**
+- [ ] **Step 5: Wire overview tabs**
 
 Modify `app/components/UI/account_page.rb`:
 
@@ -2128,13 +2494,27 @@ Modify `app/components/UI/account_page.rb`:
       [ :activity, :overview ]
 ```
 
+Also modify the overview render path in `app/components/UI/account_page.rb` so multi-word accountables use the same directory naming convention as their controllers:
+
+```ruby
+    when :holdings, :overview
+      render "#{account.accountable_type.underscore.pluralize}/tabs/#{tab}", account: account
+```
+
 Append to `app/views/loans/tabs/_overview.html.erb` after the edit link:
 
 ```erb
 <%= render "accounts/show/debt_mechanics", account: account %>
 ```
 
-Create `app/views/credit_cards/tabs/_overview.html.erb`:
+Move the existing partial and then append the debt mechanics render:
+
+```bash
+mkdir -p app/views/credit_cards/tabs
+git mv app/views/credit_cards/_overview.html.erb app/views/credit_cards/tabs/_overview.html.erb
+```
+
+After moving, `app/views/credit_cards/tabs/_overview.html.erb` should be:
 
 ```erb
 <%# locals: (account:) %>
@@ -2177,7 +2557,7 @@ Create `app/views/credit_cards/tabs/_overview.html.erb`:
 <%= render "accounts/show/debt_mechanics", account: account %>
 ```
 
-- [ ] **Step 5: Add locale strings**
+- [ ] **Step 6: Add locale strings**
 
 Add under `accounts.show` in `config/locales/views/accounts/en.yml`:
 
@@ -2185,6 +2565,7 @@ Add under `accounts.show` in `config/locales/views/accounts/en.yml`:
       debt_mechanics:
         title: Debt mechanics
         subtitle: Interest, due dates, payment allocation, and payoff estimates.
+        configure: Configure
         current_rate: Current rate
         minimum_payment: Minimum payment
         next_due: Next due
@@ -2196,6 +2577,34 @@ Add under `accounts.show` in `config/locales/views/accounts/en.yml`:
         unavailable: Unavailable
         not_within_horizon: Not within 30 years
         last_allocation: "Last payment allocation: %{principal} principal, %{interest} interest, %{fees} fees"
+        review_title: Review needed
+        pending_event: "%{type} for %{amount} on %{date}"
+        match_needs_review: "Possible provider match: %{name} %{amount}"
+        allocation_needs_review: "Payment allocation needs review: %{name} %{amount}"
+```
+
+Create `config/locales/views/debt_profiles/en.yml`:
+
+```yaml
+---
+en:
+  debt_profiles:
+    edit:
+      title: Debt settings
+      unknown: Unknown
+      rate_type: Rate type
+      accrual_cadence: Accrual cadence
+      minimum_payment_amount: Minimum payment amount
+      minimum_payment_percent: Minimum payment percent
+      payment_due_day: Payment due day
+      statement_closing_day: Statement closing day
+      grace_period_days: Grace period days
+      next_due_on: Next due date
+      auto_accrual_enabled: Automatically post interest accruals
+      auto_payment_allocation_enabled: Automatically allocate debt payments
+      submit: Save debt settings
+    update:
+      success: Debt settings updated
 ```
 
 If `config/locales/views/credit_cards/en.yml` already has the overview keys at `credit_cards.overview`, keep them. If it does not, add:
@@ -2212,7 +2621,7 @@ If `config/locales/views/credit_cards/en.yml` already has the overview keys at `
       unknown: Unknown
 ```
 
-- [ ] **Step 6: Run controller tests**
+- [ ] **Step 7: Run controller tests**
 
 Run:
 
@@ -2222,10 +2631,10 @@ bin/rails test test/controllers/loans_controller_test.rb test/controllers/credit
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit UI**
+- [ ] **Step 8: Commit UI**
 
 ```bash
-git add app/components/UI/account_page.rb app/views/accounts/show/_debt_mechanics.html.erb app/views/loans/tabs/_overview.html.erb app/views/credit_cards/tabs/_overview.html.erb config/locales/views/accounts/en.yml config/locales/views/credit_cards/en.yml test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb
+git add app/components/UI/account_page.rb app/controllers/debt_profiles_controller.rb app/views/accounts/show/_debt_mechanics.html.erb app/views/loans/tabs/_overview.html.erb app/views/credit_cards/tabs/_overview.html.erb app/views/credit_cards/_overview.html.erb app/views/debt_profiles/edit.html.erb config/routes.rb config/locales/views/accounts/en.yml config/locales/views/credit_cards/en.yml config/locales/views/debt_profiles/en.yml test/controllers/loans_controller_test.rb test/controllers/credit_cards_controller_test.rb test/controllers/debt_profiles_controller_test.rb
 git commit -m "Show debt mechanics on account overviews"
 ```
 
@@ -2235,6 +2644,7 @@ git commit -m "Show debt mechanics on account overviews"
 
 - Modify: `app/models/account/provider_import_adapter.rb`
 - Modify: `app/models/plaid_account/liabilities/credit_processor.rb`
+- Test: `test/models/account/provider_import_adapter_test.rb`
 - Test: `test/models/plaid_account/liabilities/credit_processor_test.rb`
 - Test: existing Plaid student-loan and mortgage processor tests as regression coverage.
 
@@ -2258,19 +2668,74 @@ Add this method to `app/models/account/provider_import_adapter.rb` near `update_
   end
 ```
 
-- [ ] **Step 2: Route Plaid credit due-date data when present**
+- [ ] **Step 2: Reconcile provider transactions against generated debt events**
+
+Add this immediately after `entry.save!` and `entry.transaction.save! if entry.transaction.changed?` in `Account::ProviderImportAdapter#import_transaction`:
+
+```ruby
+      if account.liability? && entry.entryable.is_a?(Transaction) && !incoming_pending && entry.source != "sure"
+        Debt::ReconciliationService.reconcile_provider_entry!(entry)
+      end
+```
+
+Add to `test/models/account/provider_import_adapter_test.rb`:
+
+```ruby
+  test "provider import supersedes generated debt event" do
+    loan_account = accounts(:loan)
+    adapter = Account::ProviderImportAdapter.new(loan_account)
+    profile = DebtProfile.create!(account: loan_account)
+    generated_entry = loan_account.entries.create!(
+      date: Date.new(2026, 1, 31),
+      name: "Interest accrual",
+      amount: 100,
+      currency: "USD",
+      source: "sure",
+      external_id: "interest-generated-1",
+      entryable: Transaction.new
+    )
+    event = DebtEvent.create!(
+      account: loan_account,
+      debt_profile: profile,
+      entry: generated_entry,
+      event_type: "interest_accrual",
+      status: "posted",
+      event_date: Date.new(2026, 1, 31),
+      amount: 100,
+      currency: "USD",
+      source: "sure"
+    )
+
+    provider_entry = adapter.import_transaction(
+      external_id: "plaid-interest-1",
+      amount: 100,
+      currency: "USD",
+      date: Date.new(2026, 1, 31),
+      name: "Interest Charge",
+      source: "plaid"
+    )
+
+    assert generated_entry.reload.excluded?
+    assert_equal "matched", event.reload.status
+    assert_equal provider_entry, event.entry
+  end
+```
+
+- [ ] **Step 3: Route Plaid credit due-date data when present**
 
 Modify `app/models/plaid_account/liabilities/credit_processor.rb` after `update_accountable_attributes`:
 
 ```ruby
-    if credit_data["next_payment_due_date"].present? || credit_data["last_statement_balance"].present?
+    due_on = parse_date(credit_data["next_payment_due_date"])
+
+    if due_on.present?
       import_adapter.import_debt_obligation(
         attributes: {
-          due_on: parse_date(credit_data["next_payment_due_date"]) || Date.current,
+          due_on: due_on,
           minimum_payment_amount: credit_data["minimum_payment_amount"],
           statement_balance_amount: credit_data["last_statement_balance"],
           currency: account.currency,
-          external_id: "plaid-credit-#{plaid_account.plaid_id}-#{credit_data["next_payment_due_date"]}"
+          external_id: "plaid-credit-#{plaid_account.plaid_id}-#{due_on}"
         },
         source: "plaid"
       )
@@ -2290,7 +2755,7 @@ Add private date parser:
     end
 ```
 
-- [ ] **Step 3: Extend Plaid liability tests**
+- [ ] **Step 4: Extend Plaid liability tests**
 
 Replace the existing "updates credit card minimum payment and APR from Plaid data" test in `test/models/plaid_account/liabilities/credit_processor_test.rb` with:
 
@@ -2320,20 +2785,37 @@ Replace the existing "updates credit card minimum payment and APR from Plaid dat
   end
 ```
 
-- [ ] **Step 4: Run provider liability tests**
+Add a test that Plaid statement-balance data without a real due date does not create a fake obligation:
+
+```ruby
+  test "does not import credit obligation without due date" do
+    @plaid_account.update!(raw_liabilities_payload: {
+      credit: {
+        minimum_payment_amount: 100,
+        last_statement_balance: 1200
+      }
+    })
+
+    assert_no_difference -> { @plaid_account.current_account.debt_obligations.count } do
+      PlaidAccount::Liabilities::CreditProcessor.new(@plaid_account).process
+    end
+  end
+```
+
+- [ ] **Step 5: Run provider liability tests**
 
 Run:
 
 ```bash
-bin/rails test test/models/plaid_account/liabilities/credit_processor_test.rb test/models/plaid_account/liabilities/student_loan_processor_test.rb test/models/plaid_account/liabilities/mortgage_processor_test.rb
+bin/rails test test/models/account/provider_import_adapter_test.rb test/models/plaid_account/liabilities/credit_processor_test.rb test/models/plaid_account/liabilities/student_loan_processor_test.rb test/models/plaid_account/liabilities/mortgage_processor_test.rb
 ```
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit provider hook**
+- [ ] **Step 6: Commit provider hook**
 
 ```bash
-git add app/models/account/provider_import_adapter.rb app/models/plaid_account/liabilities/credit_processor.rb test/models/plaid_account/liabilities/credit_processor_test.rb
+git add app/models/account/provider_import_adapter.rb app/models/plaid_account/liabilities/credit_processor.rb test/models/account/provider_import_adapter_test.rb test/models/plaid_account/liabilities/credit_processor_test.rb
 git commit -m "Import provider debt obligations"
 ```
 
@@ -2364,6 +2846,8 @@ bin/rails test \
   test/models/debt/payment_allocation_service_test.rb \
   test/controllers/loans_controller_test.rb \
   test/controllers/credit_cards_controller_test.rb \
+  test/controllers/debt_profiles_controller_test.rb \
+  test/models/account/provider_import_adapter_test.rb \
   test/models/plaid_account/liabilities/credit_processor_test.rb \
   test/models/plaid_account/liabilities/student_loan_processor_test.rb \
   test/models/plaid_account/liabilities/mortgage_processor_test.rb
@@ -2404,7 +2888,7 @@ Spec coverage:
 - Reconciliation: Task 4 and Task 7.
 - Provider metadata compatibility: Task 7.
 - Posting-run audit rows: Tasks 2 and 4.
-- Account UI: Task 6.
+- Account UI, settings, and review surfaces: Task 6.
 - Forecast pause: Task 8 confirms no forecast files.
 
 Known implementation sacrifices:
@@ -2412,3 +2896,4 @@ Known implementation sacrifices:
 - Provider support starts with Plaid credit obligations because current tests and payloads expose useful fields. Other providers can route through the same adapter method when payloads provide durable due-date or allocation metadata.
 - Payment allocation starts deterministic and conservative. Provider-supplied principal/interest splits can override it later through the same allocation table.
 - Auto accrual is opt-in. Existing accounts do not change balances until a profile enables posting.
+- Provider-imported interest can supersede a generated Sure interest entry; the generated entry is excluded and the debt event is re-linked to the provider entry to avoid duplicate balance impact.
