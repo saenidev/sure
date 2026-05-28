@@ -1,0 +1,127 @@
+require "test_helper"
+
+class ForecastEventTest < ActiveSupport::TestCase
+  setup do
+    @family = families(:dylan_family)
+    @user = users(:family_admin)
+    @account = accounts(:depository)
+    @category = categories(:food_and_drink)
+  end
+
+  test "validates account belongs to family" do
+    other_account = accounts(:other_asset)
+    other_account.update!(family: families(:empty), owner: users(:empty))
+
+    event = @family.forecast_events.build(
+      name: "Rent increase",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 250,
+      currency: "USD",
+      starts_on: Date.current,
+      account: other_account
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:account], "must belong to the forecast family"
+  end
+
+  test "stores recurrence metadata without expanding occurrences" do
+    event = @family.forecast_events.build(
+      name: "Temporary housing",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 1800,
+      currency: "USD",
+      starts_on: Date.current,
+      ends_on: 6.months.from_now.to_date,
+      recurrence_rule: { "frequency" => "monthly", "day_of_month" => 15 }
+    )
+
+    assert event.valid?
+  end
+
+  test "rejects unsupported recurrence metadata" do
+    event = @family.forecast_events.build(
+      name: "Odd cadence",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 100,
+      currency: "USD",
+      starts_on: Date.current,
+      recurrence_rule: { "frequency" => "daily" }
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:recurrence_rule], "frequency must be weekly or monthly"
+  end
+
+  test "amount based events require an amount and currency" do
+    event = @family.forecast_events.build(
+      name: "Potential loan draw",
+      effect_type: "debt_drawdown",
+      behavior: "additive",
+      starts_on: Date.current
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:amount], "must be present for amount-based forecast events"
+  end
+
+  test "directional cash flow events require positive amounts" do
+    event = @family.forecast_events.build(
+      name: "Negative rent",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: -100,
+      currency: "USD",
+      starts_on: Date.current
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:amount], "must be greater than 0 for directional forecast events"
+  end
+
+  test "market shock can be signed" do
+    event = @family.forecast_events.build(
+      name: "Market drawdown",
+      effect_type: "market_shock",
+      behavior: "additive",
+      amount: -1000,
+      currency: "USD",
+      starts_on: Date.current
+    )
+
+    assert event.valid?
+  end
+
+  test "transfer events require both accounts" do
+    event = @family.forecast_events.build(
+      name: "Move funds",
+      effect_type: "transfer",
+      behavior: "additive",
+      amount: 500,
+      currency: "USD",
+      starts_on: Date.current,
+      account: @account
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:destination_account], "must be present for transfer events"
+  end
+
+  test "event level linked status is not allowed" do
+    event = @family.forecast_events.build(
+      name: "Recurring bill",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 100,
+      currency: "USD",
+      starts_on: Date.current,
+      status: "linked"
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:status], "is not included in the list"
+  end
+end

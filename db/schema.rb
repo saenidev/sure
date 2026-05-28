@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_05_27_001000) do
+ActiveRecord::Schema[7.2].define(version: 2026_05_27_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -665,7 +665,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_001000) do
     t.index ["provider_key"], name: "index_debug_log_entries_on_provider_key"
     t.index ["source"], name: "index_debug_log_entries_on_source"
     t.index ["user_id"], name: "index_debug_log_entries_on_user_id"
-    t.check_constraint "level::text = ANY (ARRAY['debug'::character varying, 'info'::character varying, 'warn'::character varying, 'error'::character varying]::text[])", name: "chk_debug_log_entries_level"
+    t.check_constraint "level::text = ANY (ARRAY['debug'::character varying::text, 'info'::character varying::text, 'warn'::character varying::text, 'error'::character varying::text])", name: "chk_debug_log_entries_level"
   end
 
   create_table "depositories", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -920,6 +920,141 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_001000) do
     t.index ["family_id", "merchant_id"], name: "idx_on_family_id_merchant_id_23e883e08f", unique: true
     t.index ["family_id"], name: "index_family_merchant_associations_on_family_id"
     t.index ["merchant_id"], name: "index_family_merchant_associations_on_merchant_id"
+  end
+
+  create_table "forecast_account_liquidity_settings", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "forecast_scenario_id"
+    t.uuid "account_id", null: false
+    t.string "liquidity_class", null: false
+    t.date "starts_on"
+    t.date "ends_on"
+    t.jsonb "constraints", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_forecast_account_liquidity_settings_on_account_id"
+    t.index ["family_id", "account_id", "starts_on", "ends_on"], name: "idx_forecast_liquidity_baseline_window", where: "(forecast_scenario_id IS NULL)"
+    t.index ["family_id", "forecast_scenario_id", "account_id", "starts_on", "ends_on"], name: "idx_forecast_liquidity_scenario_window", where: "(forecast_scenario_id IS NOT NULL)"
+    t.index ["family_id"], name: "index_forecast_account_liquidity_settings_on_family_id"
+    t.index ["forecast_scenario_id"], name: "idx_on_forecast_scenario_id_0b376e70e4"
+  end
+
+  create_table "forecast_budget_overrides", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "forecast_scenario_id"
+    t.uuid "category_id"
+    t.date "period_start_on", null: false
+    t.string "override_type", null: false
+    t.decimal "amount", precision: 19, scale: 4, null: false
+    t.string "currency", null: false
+    t.string "status", default: "active", null: false
+    t.text "note"
+    t.jsonb "source_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "family_id, COALESCE(forecast_scenario_id, '00000000-0000-0000-0000-000000000000'::uuid), period_start_on, override_type, COALESCE(category_id, '00000000-0000-0000-0000-000000000000'::uuid)", name: "idx_budget_overrides_unique_active", unique: true, where: "((status)::text = 'active'::text)"
+    t.index ["category_id"], name: "index_forecast_budget_overrides_on_category_id"
+    t.index ["family_id", "period_start_on", "status"], name: "idx_budget_overrides_period_status"
+    t.index ["family_id"], name: "index_forecast_budget_overrides_on_family_id"
+    t.index ["forecast_scenario_id"], name: "index_forecast_budget_overrides_on_forecast_scenario_id"
+  end
+
+  create_table "forecast_event_links", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "forecast_event_id"
+    t.uuid "entry_id"
+    t.date "occurrence_on"
+    t.string "link_type", null: false
+    t.string "status", default: "candidate", null: false
+    t.decimal "confidence", precision: 8, scale: 4
+    t.jsonb "event_snapshot", default: {}, null: false
+    t.jsonb "entry_snapshot", default: {}, null: false
+    t.jsonb "match_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["entry_id"], name: "idx_event_links_unique_accepted_entry", unique: true, where: "(((status)::text = 'accepted'::text) AND (entry_id IS NOT NULL))"
+    t.index ["entry_id"], name: "index_forecast_event_links_on_entry_id"
+    t.index ["family_id", "status"], name: "index_forecast_event_links_on_family_id_and_status"
+    t.index ["family_id"], name: "index_forecast_event_links_on_family_id"
+    t.index ["forecast_event_id", "entry_id"], name: "index_forecast_event_links_on_forecast_event_id_and_entry_id", unique: true, where: "(entry_id IS NOT NULL)"
+    t.index ["forecast_event_id", "occurrence_on"], name: "idx_event_links_accepted_occurrence", unique: true, where: "(((status)::text = 'accepted'::text) AND (forecast_event_id IS NOT NULL) AND (occurrence_on IS NOT NULL))"
+    t.index ["forecast_event_id", "occurrence_on"], name: "idx_event_links_event_occurrence"
+    t.index ["forecast_event_id"], name: "index_forecast_event_links_on_forecast_event_id"
+  end
+
+  create_table "forecast_events", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "forecast_scenario_id"
+    t.uuid "account_id"
+    t.uuid "destination_account_id"
+    t.uuid "category_id"
+    t.string "name", null: false
+    t.text "description"
+    t.string "effect_type", null: false
+    t.string "behavior", default: "additive", null: false
+    t.decimal "amount", precision: 19, scale: 4
+    t.string "currency"
+    t.date "starts_on", null: false
+    t.date "ends_on"
+    t.jsonb "recurrence_rule", default: {}, null: false
+    t.string "status", default: "planned", null: false
+    t.decimal "probability_weight", precision: 8, scale: 4, default: "1.0", null: false
+    t.integer "apply_order", default: 0, null: false
+    t.jsonb "source_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_forecast_events_on_account_id"
+    t.index ["category_id"], name: "index_forecast_events_on_category_id"
+    t.index ["destination_account_id"], name: "index_forecast_events_on_destination_account_id"
+    t.index ["family_id", "starts_on"], name: "index_forecast_events_on_family_id_and_starts_on"
+    t.index ["family_id"], name: "index_forecast_events_on_family_id"
+    t.index ["forecast_scenario_id", "starts_on"], name: "index_forecast_events_on_forecast_scenario_id_and_starts_on"
+    t.index ["forecast_scenario_id"], name: "index_forecast_events_on_forecast_scenario_id"
+  end
+
+  create_table "forecast_goals", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "forecast_scenario_id"
+    t.string "name", null: false
+    t.string "goal_type", null: false
+    t.decimal "target_amount", precision: 19, scale: 4
+    t.string "currency"
+    t.integer "target_duration_days"
+    t.date "target_date"
+    t.date "starts_on"
+    t.date "ends_on"
+    t.boolean "required", default: false, null: false
+    t.string "blocking_behavior", default: "warn", null: false
+    t.string "status", default: "active", null: false
+    t.jsonb "condition_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "status"], name: "index_forecast_goals_on_family_id_and_status"
+    t.index ["family_id"], name: "index_forecast_goals_on_family_id"
+    t.index ["forecast_scenario_id", "status"], name: "index_forecast_goals_on_forecast_scenario_id_and_status"
+    t.index ["forecast_scenario_id"], name: "index_forecast_goals_on_forecast_scenario_id"
+  end
+
+  create_table "forecast_scenarios", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "created_by_user_id"
+    t.uuid "parent_scenario_id"
+    t.string "name", null: false
+    t.text "description"
+    t.string "status", default: "active", null: false
+    t.string "approval_status", default: "manual", null: false
+    t.integer "position", default: 0, null: false
+    t.date "starts_on"
+    t.date "ends_on"
+    t.string "color"
+    t.jsonb "assumptions", default: {}, null: false
+    t.jsonb "source_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_user_id"], name: "index_forecast_scenarios_on_created_by_user_id"
+    t.index ["family_id", "status", "position"], name: "index_forecast_scenarios_on_family_id_and_status_and_position"
+    t.index ["family_id"], name: "index_forecast_scenarios_on_family_id"
+    t.index ["parent_scenario_id"], name: "index_forecast_scenarios_on_parent_scenario_id"
   end
 
   create_table "holdings", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -2101,6 +2236,25 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_001000) do
   add_foreign_key "family_exports", "families"
   add_foreign_key "family_merchant_associations", "families"
   add_foreign_key "family_merchant_associations", "merchants"
+  add_foreign_key "forecast_account_liquidity_settings", "accounts", on_delete: :cascade
+  add_foreign_key "forecast_account_liquidity_settings", "families"
+  add_foreign_key "forecast_account_liquidity_settings", "forecast_scenarios"
+  add_foreign_key "forecast_budget_overrides", "categories", on_delete: :cascade
+  add_foreign_key "forecast_budget_overrides", "families"
+  add_foreign_key "forecast_budget_overrides", "forecast_scenarios", on_delete: :cascade
+  add_foreign_key "forecast_event_links", "entries", on_delete: :nullify
+  add_foreign_key "forecast_event_links", "families"
+  add_foreign_key "forecast_event_links", "forecast_events", on_delete: :nullify
+  add_foreign_key "forecast_events", "accounts", column: "destination_account_id", on_delete: :nullify
+  add_foreign_key "forecast_events", "accounts", on_delete: :nullify
+  add_foreign_key "forecast_events", "categories", on_delete: :nullify
+  add_foreign_key "forecast_events", "families", on_delete: :cascade
+  add_foreign_key "forecast_events", "forecast_scenarios"
+  add_foreign_key "forecast_goals", "families"
+  add_foreign_key "forecast_goals", "forecast_scenarios"
+  add_foreign_key "forecast_scenarios", "families", on_delete: :cascade
+  add_foreign_key "forecast_scenarios", "forecast_scenarios", column: "parent_scenario_id", on_delete: :nullify
+  add_foreign_key "forecast_scenarios", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "holdings", "account_providers"
   add_foreign_key "holdings", "accounts", on_delete: :cascade
   add_foreign_key "holdings", "securities"
