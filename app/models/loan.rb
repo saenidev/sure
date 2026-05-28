@@ -7,8 +7,12 @@ class Loan < ApplicationRecord
     "auto" => { short: "Auto Loan", long: "Auto Loan" },
     "other" => { short: "Other Loan", long: "Other Loan" }
   }.freeze
+  RATE_TYPES = %w[fixed variable adjustable].freeze
 
   validates :subtype, inclusion: { in: SUBTYPES.keys }, allow_blank: true
+  validates :rate_type, inclusion: { in: RATE_TYPES }, allow_blank: true
+  validates :initial_balance, :interest_rate, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :term_months, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
 
   def monthly_payment
     return nil if term_months.nil? || interest_rate.nil? || rate_type.nil? || rate_type != "fixed"
@@ -39,7 +43,9 @@ class Loan < ApplicationRecord
   end
 
   def original_balance
-    Money.new(account.first_valuation_amount, account.currency)
+    return Money.new(initial_balance, account.currency) unless initial_balance.nil?
+
+    account.first_valuation_amount
   end
 
   class << self

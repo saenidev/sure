@@ -52,6 +52,67 @@ class LoansControllerTest < ActionDispatch::IntegrationTest
     assert_enqueued_with(job: SyncJob)
   end
 
+  test "create with invalid original principal does not create loan" do
+    assert_no_difference [ "Account.count", "Loan.count", "Valuation.count", "Entry.count" ] do
+      post loans_path, params: {
+        account: {
+          name: "Bad Loan",
+          balance: 50000,
+          currency: "USD",
+          accountable_type: "Loan",
+          accountable_attributes: {
+            subtype: "student",
+            initial_balance: "not-a-number"
+          }
+        }
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "create with invalid current balance does not create loan" do
+    assert_no_difference [ "Account.count", "Loan.count", "Valuation.count", "Entry.count" ] do
+      post loans_path, params: {
+        account: {
+          name: "Bad Loan",
+          balance: "not-a-number",
+          currency: "USD",
+          accountable_type: "Loan",
+          accountable_attributes: {
+            subtype: "student",
+            initial_balance: 50000
+          }
+        }
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "create with blank original principal uses current balance for opening anchor" do
+    post loans_path, params: {
+      account: {
+        name: "Blank Principal Loan",
+        balance: 48000,
+        currency: "USD",
+        accountable_type: "Loan",
+        accountable_attributes: {
+          subtype: "student",
+          initial_balance: ""
+        }
+      }
+    }
+
+    created_account = Account.order(:created_at).last
+    opening_anchor = created_account.valuations.opening_anchor.includes(:entry).first
+
+    assert_redirected_to created_account
+    assert_nil created_account.loan.initial_balance
+    assert_equal BigDecimal("48000"), opening_anchor.entry.amount
+    assert_equal BigDecimal("48000"), created_account.loan.original_balance.amount
+  end
+
   test "updates with loan details" do
     assert_no_difference [ "Account.count", "Loan.count" ] do
       patch loan_path(@account), params: {
@@ -91,5 +152,129 @@ class LoansControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to @account
     assert_equal "Loan account updated", flash[:notice]
     assert_enqueued_with(job: SyncJob)
+  end
+
+  test "updates original principal from initial balance on existing manual loan" do
+    patch loan_path(@account), params: {
+      account: {
+        name: @account.name,
+        balance: 45000,
+        currency: "USD",
+        accountable_type: "Loan",
+        accountable_attributes: {
+          id: @account.accountable_id,
+          initial_balance: 48000
+        }
+      }
+    }
+
+    @account.reload
+
+    opening_anchor = @account.valuations.opening_anchor.includes(:entry).first
+    current_update = @account.valuations.reconciliation.includes(:entry).find { |valuation| valuation.entry.date == Date.current }
+
+    assert_equal BigDecimal("48000"), opening_anchor.entry.amount
+    assert_equal BigDecimal("48000"), @account.loan.original_balance.amount
+    assert_equal BigDecimal("45000"), current_update.entry.amount
+    assert_equal BigDecimal("45000"), @account.balance
+  end
+
+  test "invalid original principal does not update opening anchor" do
+    @account.set_opening_anchor_balance(balance: 50000.to_d)
+
+    patch loan_path(@account), params: {
+      account: {
+        name: @account.name,
+        balance: @account.balance,
+        currency: @account.currency,
+        accountable_type: "Loan",
+        accountable_attributes: {
+          id: @account.accountable_id,
+          initial_balance: "not-a-number"
+        }
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal 50000.to_d, @account.reload.opening_anchor_balance
+  end
+
+  test "non-finite original principal does not update opening anchor" do
+    @account.set_opening_anchor_balance(balance: 50000.to_d)
+
+    patch loan_path(@account), params: {
+      account: {
+        name: @account.name,
+        balance: @account.balance,
+        currency: @account.currency,
+        accountable_type: "Loan",
+        accountable_attributes: {
+          id: @account.accountable_id,
+          initial_balance: "NaN"
+        }
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal 50000.to_d, @account.reload.opening_anchor_balance
+  end
+
+  test "invalid current balance does not update loan balance" do
+    original_balance = @account.balance
+
+    patch loan_path(@account), params: {
+      account: {
+        name: @account.name,
+        balance: "not-a-number",
+        currency: @account.currency,
+        accountable_type: "Loan",
+        accountable_attributes: {
+          id: @account.accountable_id
+        }
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal original_balance, @account.reload.balance
+  end
+
+  test "non-finite current balance does not update loan balance" do
+    original_balance = @account.balance
+
+    patch loan_path(@account), params: {
+      account: {
+        name: @account.name,
+        balance: "NaN",
+        currency: @account.currency,
+        accountable_type: "Loan",
+        accountable_attributes: {
+          id: @account.accountable_id
+        }
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal original_balance, @account.reload.balance
+  end
+
+  test "current balance manager failure renders error" do
+    Account.any_instance.stubs(:set_current_balance).returns(
+      Account::CurrentBalanceManager::Result.new(success?: false, changes_made?: false, error: "forced balance failure")
+    )
+
+    patch loan_path(@account), params: {
+      account: {
+        name: @account.name,
+        balance: @account.balance + 1,
+        currency: @account.currency,
+        accountable_type: "Loan",
+        accountable_attributes: {
+          id: @account.accountable_id
+        }
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "forced balance failure"
   end
 end

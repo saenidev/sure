@@ -35,6 +35,15 @@ module AccountableResource
   end
 
   def create
+    if invalid_current_balance_submitted?
+      @account = Current.family.accounts.build(
+        account_params.except(:return_to, :opening_balance_date).merge(owner: Current.user)
+      )
+      @error_message = "Balance must be a number"
+      render :new, status: :unprocessable_entity
+      return
+    end
+
     opening_balance_date = begin
       account_params[:opening_balance_date].presence&.to_date
     rescue Date::Error
@@ -52,11 +61,26 @@ module AccountableResource
   end
 
   def update
-    # Handle balance update if the value actually changed
-    if account_params[:balance].present? && account_params[:balance].to_d != @account.balance
-      result = @account.set_current_balance(account_params[:balance].to_d)
+    if opening_anchor_balance_submitted?
+      result = @account.set_opening_anchor_balance(balance: opening_anchor_balance_value)
       unless result.success?
-        @error_message = result.error_message
+        @error_message = result.error
+        render :edit, status: :unprocessable_entity
+        return
+      end
+    end
+
+    if invalid_current_balance_submitted?
+      @error_message = "Balance must be a number"
+      render :edit, status: :unprocessable_entity
+      return
+    end
+
+    # Handle balance update if the value actually changed
+    if current_balance_submitted? && current_balance_value != @account.balance
+      result = @account.set_current_balance(current_balance_value)
+      unless result.success?
+        @error_message = result_error_message(result)
         render :edit, status: :unprocessable_entity
         return
       end
@@ -107,5 +131,52 @@ module AccountableResource
         :institution_name, :institution_domain, :notes,
         accountable_attributes: self.class.permitted_accountable_attributes
       )
+    end
+
+    def opening_anchor_balance_submitted?
+      return false unless @account.loan?
+      return false if @account.linked?
+      return false unless account_params.dig(:accountable_attributes, :initial_balance).present?
+      return false if opening_anchor_balance_value.nil?
+
+      opening_anchor_balance_value != @account.opening_anchor_balance
+    end
+
+    def opening_anchor_balance_param
+      account_params.dig(:accountable_attributes, :initial_balance)
+    end
+
+    def opening_anchor_balance_value
+      return @opening_anchor_balance_value if defined?(@opening_anchor_balance_value)
+
+      @opening_anchor_balance_value = parsed_decimal(opening_anchor_balance_param)
+    end
+
+    def current_balance_submitted?
+      account_params[:balance].present?
+    end
+
+    def invalid_current_balance_submitted?
+      current_balance_submitted? && current_balance_value.nil?
+    end
+
+    def current_balance_value
+      return @current_balance_value if defined?(@current_balance_value)
+
+      @current_balance_value = parsed_decimal(account_params[:balance])
+    end
+
+    def parsed_decimal(value)
+      parsed = BigDecimal(value.to_s)
+      parsed if parsed.finite?
+    rescue ArgumentError
+      nil
+    end
+
+    def result_error_message(result)
+      return result.error if result.respond_to?(:error)
+      return result.error_message if result.respond_to?(:error_message)
+
+      "Unable to update balance"
     end
 end

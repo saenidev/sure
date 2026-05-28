@@ -135,7 +135,7 @@ class Account < ApplicationRecord
       attrs = attributes.dup
       attrs[:cash_balance] = attrs[:balance] unless attrs.key?(:cash_balance)
       account = new(attrs)
-      initial_balance = attributes.dig(:accountable_attributes, :initial_balance)&.to_d
+      initial_balance = optional_decimal(attributes.dig(:accountable_attributes, :initial_balance))
 
       transaction do
         account.save!
@@ -297,6 +297,15 @@ class Account < ApplicationRecord
     end
 
     private
+
+      def optional_decimal(value)
+        return nil if value.blank?
+
+        parsed = BigDecimal(value.to_s)
+        parsed if parsed.finite?
+      rescue ArgumentError
+        nil
+      end
 
       def create_from_crypto_exchange_account(provider_account, family:)
         attributes = {

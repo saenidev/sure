@@ -77,6 +77,50 @@ class Account::CurrentBalanceManagerTest < ActiveSupport::TestCase
     end
   end
 
+  test "manual reconciliation failure does not update cached balance" do
+    account = @family.accounts.create!(
+      name: "Test",
+      balance: 1000,
+      cash_balance: 1000,
+      currency: "USD",
+      accountable: Loan.new
+    )
+    failed_result = Struct.new(:success?, :error_message, keyword_init: true).new(success?: false, error_message: "forced failure")
+    Account::ReconciliationManager.any_instance.stubs(:reconcile_balance).returns(failed_result)
+
+    result = Account::CurrentBalanceManager.new(account).set_current_balance(1400)
+
+    assert_not result.success?
+    assert_not result.changes_made?
+    assert_equal "forced failure", result.error
+    assert_equal BigDecimal("1000"), account.reload.balance
+  end
+
+  test "cash account same balance update reports no changes" do
+    account = @family.accounts.create!(
+      name: "Test",
+      balance: 1000,
+      cash_balance: 1000,
+      currency: "USD",
+      accountable: Depository.new
+    )
+    account.entries.create!(
+      date: 1.year.ago.to_date,
+      name: "Test opening valuation",
+      amount: 1000,
+      currency: "USD",
+      entryable: Valuation.new(kind: "opening_anchor")
+    )
+
+    assert_no_difference "account.entries.count" do
+      result = Account::CurrentBalanceManager.new(account).set_current_balance(1000)
+
+      assert result.success?
+      assert_not result.changes_made?
+      assert_nil result.error
+    end
+  end
+
   # Scope: Depository, CreditCard only (i.e. all-cash accounts)
   #
   # If a user has an opening balance (valuation) for their manual *Depository* or *CreditCard* account and has 1+ transactions, the intent of

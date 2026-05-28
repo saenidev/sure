@@ -38,7 +38,7 @@ class Account::CurrentBalanceManager
     end
 
     # Update cache field so changes appear immediately to the user
-    account.update!(balance: balance)
+    account.update!(balance: balance) if result.success?
 
     result
   rescue => e
@@ -76,7 +76,7 @@ class Account::CurrentBalanceManager
         result = reconciliation_manager.reconcile_balance(balance: balance, date: Date.current, existing_valuation_entry: existing_reconciliation)
 
         # Normalize to expected result format
-        Result.new(success?: result.success?, changes_made?: true, error: result.error_message)
+        Result.new(success?: result.success?, changes_made?: result.success?, error: result.error_message)
       end
     end
 
@@ -86,7 +86,7 @@ class Account::CurrentBalanceManager
       result = opening_balance_manager.set_opening_balance(balance: account.opening_anchor_balance + delta)
 
       # Normalize to expected result format
-      Result.new(success?: result.success?, changes_made?: true, error: result.error)
+      Result.new(success?: result.success?, changes_made?: result.changes_made?, error: result.error)
     end
 
     # Linked accounts manage "current balance" via the special `current_anchor` valuation.
