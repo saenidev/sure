@@ -53,6 +53,26 @@ class PlaidAccount::Liabilities::StudentLoanProcessorTest < ActiveSupport::TestC
     assert_equal 15000, loan.initial_balance
   end
 
+  test "handles payoff date before origination date gracefully" do
+    @plaid_account.update!(raw_liabilities_payload: {
+      student: {
+        interest_rate_percentage: 4.8,
+        origination_principal_amount: 15000,
+        origination_date: Date.new(2026, 1, 1),
+        expected_payoff_date: Date.new(2025, 1, 1)
+      }
+    })
+
+    processor = PlaidAccount::Liabilities::StudentLoanProcessor.new(@plaid_account)
+    processor.process
+
+    loan = @plaid_account.current_account.loan
+
+    assert_nil loan.term_months
+    assert_equal 4.8, loan.interest_rate
+    assert_equal 15000, loan.initial_balance
+  end
+
   test "does nothing when loan data absent" do
     @plaid_account.update!(raw_liabilities_payload: {})
 

@@ -57,6 +57,28 @@ class Debt::PaymentAllocationServiceTest < ActiveSupport::TestCase
     assert_equal "allocated", allocation.status
   end
 
+  test "allocates late payments to oldest overdue obligation before future obligations" do
+    overdue = DebtObligation.create!(
+      account: @account,
+      debt_profile: @profile,
+      due_on: Date.new(2026, 1, 15),
+      status: "overdue",
+      statement_balance_amount: 10_000,
+      minimum_payment_amount: 100,
+      principal_due_amount: 90,
+      interest_due_amount: 10,
+      fee_due_amount: 0,
+      currency: "USD"
+    )
+    @payment_entry.update!(date: Date.new(2026, 1, 20), amount: -100)
+
+    allocation = Debt::PaymentAllocationService.new(entry: @payment_entry).call
+
+    assert_equal overdue, allocation.debt_obligation
+    assert_equal BigDecimal("100"), overdue.reload.paid_amount
+    assert_equal BigDecimal("0.0"), @obligation.reload.paid_amount
+  end
+
   test "is idempotent for a payment entry" do
     first = Debt::PaymentAllocationService.new(entry: @payment_entry).call
     second = Debt::PaymentAllocationService.new(entry: @payment_entry).call

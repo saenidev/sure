@@ -24,7 +24,11 @@ class PlaidAccount::Liabilities::StudentLoanProcessor
     def term_months
       return nil unless origination_date && expected_payoff_date
 
-      ((expected_payoff_date - origination_date).to_i / 30).to_i
+      days = (expected_payoff_date - origination_date).to_i
+      return nil unless days.positive?
+
+      months = (days / 30).to_i
+      months.positive? ? months : nil
     end
 
     def origination_date

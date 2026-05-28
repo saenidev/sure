@@ -79,13 +79,8 @@ module Debt
       def next_obligation
         account.debt_obligations
           .where(status: %w[open partially_paid overdue])
-          .where("due_on >= ?", entry.date)
           .order(:due_on)
-          .first ||
-          account.debt_obligations
-            .where(status: %w[open partially_paid overdue])
-            .order(:due_on)
-            .first
+          .first
       end
 
       def allocate_amounts(obligation)
