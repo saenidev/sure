@@ -286,6 +286,8 @@ Rails.application.routes.draw do
     delete :destroy_all, on: :collection
   end
 
+  resource :forecast, only: :show
+
   resources :reports, only: %i[index] do
     patch :update_preferences, on: :collection
     get :export_transactions, on: :collection

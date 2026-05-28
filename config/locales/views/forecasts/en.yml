@@ -1,0 +1,7 @@
+en:
+  forecasts:
+    show:
+      title: "Forecast"
+      preview: "Preview"
+      description: "Model monthly budget, cash runway, goals, debt, portfolio movement, and life scenarios across the next 36 months."
+      empty_state: "Forecast data will appear here after the foundation engine creates the first run."
