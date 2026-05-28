@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_05_27_120000) do
+ActiveRecord::Schema[7.2].define(version: 2026_05_27_121000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -959,6 +959,82 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_120000) do
     t.index ["forecast_scenario_id"], name: "index_forecast_budget_overrides_on_forecast_scenario_id"
   end
 
+  create_table "forecast_category_projections", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_month_id", null: false
+    t.uuid "category_id"
+    t.uuid "parent_category_id"
+    t.string "projection_key", null: false
+    t.string "source", null: false
+    t.string "currency", null: false
+    t.decimal "budgeted_spending", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "actual_spending", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "pending_spending", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "planned_spending", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "projected_spending_low", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "projected_spending_expected", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "projected_spending_high", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "projected_spending", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "available_to_spend", precision: 19, scale: 4, default: "0.0", null: false
+    t.boolean "inherits_parent_budget", default: false, null: false
+    t.jsonb "source_snapshot", default: {}, null: false
+    t.jsonb "source_breakdown", default: {}, null: false
+    t.jsonb "risk_flags", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["category_id"], name: "index_forecast_category_projections_on_category_id"
+    t.index ["forecast_month_id", "projection_key", "source"], name: "idx_forecast_category_projection_key", unique: true
+    t.index ["forecast_month_id"], name: "index_forecast_category_projections_on_forecast_month_id"
+    t.index ["parent_category_id"], name: "index_forecast_category_projections_on_parent_category_id"
+  end
+
+  create_table "forecast_days", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_run_id", null: false
+    t.date "date", null: false
+    t.string "scenario_stack_key", null: false
+    t.string "currency", null: false
+    t.decimal "expected_income", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "expected_spending", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "pending_income", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "pending_spending", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "cash_balance", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "liquid_balance", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "portfolio_value", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "debt_balance", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "net_worth", precision: 19, scale: 4, default: "0.0", null: false
+    t.integer "cash_runway_days"
+    t.integer "liquid_runway_days"
+    t.jsonb "source_breakdown", default: {}, null: false
+    t.jsonb "risk_flags", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["forecast_run_id", "date", "scenario_stack_key"], name: "idx_forecast_days_run_date_stack", unique: true
+    t.index ["forecast_run_id"], name: "index_forecast_days_on_forecast_run_id"
+  end
+
+  create_table "forecast_debt_projections", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_month_id", null: false
+    t.uuid "account_id"
+    t.uuid "debt_profile_id"
+    t.string "projection_key", null: false
+    t.string "currency", null: false
+    t.decimal "opening_balance", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "projected_interest", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "projected_payment", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "cash_payment_gap", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "projected_drawdown", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "ending_balance", precision: 19, scale: 4, default: "0.0", null: false
+    t.string "source", null: false
+    t.jsonb "risk_flags", default: [], null: false
+    t.jsonb "source_snapshot", default: {}, null: false
+    t.jsonb "source_breakdown", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_forecast_debt_projections_on_account_id"
+    t.index ["debt_profile_id"], name: "index_forecast_debt_projections_on_debt_profile_id"
+    t.index ["forecast_month_id", "projection_key"], name: "idx_on_forecast_month_id_projection_key_bbad24dfb3", unique: true
+    t.index ["forecast_month_id"], name: "index_forecast_debt_projections_on_forecast_month_id"
+  end
+
   create_table "forecast_event_links", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "family_id", null: false
     t.uuid "forecast_event_id"
@@ -1012,6 +1088,25 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_120000) do
     t.index ["forecast_scenario_id"], name: "index_forecast_events_on_forecast_scenario_id"
   end
 
+  create_table "forecast_goal_evaluations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_run_id", null: false
+    t.uuid "forecast_goal_id"
+    t.string "goal_key", null: false
+    t.string "scenario_stack_key", null: false
+    t.string "status", null: false
+    t.string "currency"
+    t.decimal "metric_value", precision: 19, scale: 4
+    t.decimal "target_value", precision: 19, scale: 4
+    t.date "evaluated_on"
+    t.jsonb "goal_snapshot", default: {}, null: false
+    t.jsonb "details", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["forecast_goal_id"], name: "index_forecast_goal_evaluations_on_forecast_goal_id"
+    t.index ["forecast_run_id", "goal_key", "scenario_stack_key"], name: "idx_forecast_goal_eval_unique", unique: true
+    t.index ["forecast_run_id"], name: "index_forecast_goal_evaluations_on_forecast_run_id"
+  end
+
   create_table "forecast_goals", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "family_id", null: false
     t.uuid "forecast_scenario_id"
@@ -1033,6 +1128,105 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_120000) do
     t.index ["family_id"], name: "index_forecast_goals_on_family_id"
     t.index ["forecast_scenario_id", "status"], name: "index_forecast_goals_on_forecast_scenario_id_and_status"
     t.index ["forecast_scenario_id"], name: "index_forecast_goals_on_forecast_scenario_id"
+  end
+
+  create_table "forecast_months", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_run_id", null: false
+    t.date "period_start_on", null: false
+    t.date "period_end_on", null: false
+    t.string "scenario_stack_key", null: false
+    t.string "precision", null: false
+    t.string "currency", null: false
+    t.decimal "expected_income", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "expected_spending", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "net_cash_flow", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "cash_balance", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "liquid_balance", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "portfolio_value", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "debt_balance", precision: 19, scale: 4, default: "0.0", null: false
+    t.decimal "net_worth", precision: 19, scale: 4, default: "0.0", null: false
+    t.integer "cash_runway_days"
+    t.integer "liquid_runway_days"
+    t.jsonb "source_breakdown", default: {}, null: false
+    t.jsonb "risk_flags", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["forecast_run_id", "period_start_on", "scenario_stack_key"], name: "idx_forecast_months_run_period_stack", unique: true
+    t.index ["forecast_run_id"], name: "index_forecast_months_on_forecast_run_id"
+  end
+
+  create_table "forecast_reviews", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_run_group_id", null: false
+    t.uuid "family_id", null: false
+    t.uuid "user_id"
+    t.string "source", null: false
+    t.string "status", default: "draft", null: false
+    t.jsonb "user_snapshot", default: {}, null: false
+    t.jsonb "request_packet", default: {}, null: false
+    t.jsonb "response_packet", default: {}, null: false
+    t.datetime "approved_at"
+    t.datetime "rejected_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "source", "status"], name: "index_forecast_reviews_on_family_id_and_source_and_status"
+    t.index ["family_id"], name: "index_forecast_reviews_on_family_id"
+    t.index ["forecast_run_group_id"], name: "index_forecast_reviews_on_forecast_run_group_id", unique: true
+    t.index ["user_id"], name: "index_forecast_reviews_on_user_id"
+  end
+
+  create_table "forecast_run_groups", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "user_id"
+    t.uuid "supersedes_forecast_run_group_id"
+    t.string "name", null: false
+    t.string "run_type", null: false
+    t.string "status", default: "pending", null: false
+    t.string "currency", null: false
+    t.date "horizon_start_on", null: false
+    t.date "horizon_end_on", null: false
+    t.date "daily_until_on", null: false
+    t.string "engine_version", default: "forecast-engine-v1", null: false
+    t.string "input_schema_version", default: "forecast-input-v1", null: false
+    t.jsonb "user_snapshot", default: {}, null: false
+    t.jsonb "currency_snapshot", default: {}, null: false
+    t.jsonb "trigger_metadata", default: {}, null: false
+    t.jsonb "source_data_versions", default: {}, null: false
+    t.jsonb "risk_flags", default: [], null: false
+    t.datetime "started_at"
+    t.datetime "finished_at"
+    t.text "error_message"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "created_at"], name: "index_forecast_run_groups_on_family_id_and_created_at"
+    t.index ["family_id", "run_type", "status"], name: "index_forecast_run_groups_on_family_id_and_run_type_and_status"
+    t.index ["family_id"], name: "index_forecast_run_groups_on_family_id"
+    t.index ["supersedes_forecast_run_group_id"], name: "index_forecast_run_groups_on_supersedes_forecast_run_group_id"
+    t.index ["user_id"], name: "index_forecast_run_groups_on_user_id"
+  end
+
+  create_table "forecast_runs", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_run_group_id", null: false
+    t.uuid "family_id", null: false
+    t.uuid "user_id"
+    t.string "scenario_stack_key", null: false
+    t.jsonb "scenario_stack_snapshot", default: {}, null: false
+    t.string "status", default: "pending", null: false
+    t.string "feasibility_status", default: "unknown", null: false
+    t.string "currency", null: false
+    t.jsonb "user_snapshot", default: {}, null: false
+    t.jsonb "input_snapshot", default: {}, null: false
+    t.jsonb "source_contributions", default: {}, null: false
+    t.jsonb "risk_flags", default: [], null: false
+    t.datetime "started_at"
+    t.datetime "finished_at"
+    t.text "error_message"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "created_at"], name: "index_forecast_runs_on_family_id_and_created_at"
+    t.index ["family_id"], name: "index_forecast_runs_on_family_id"
+    t.index ["forecast_run_group_id", "scenario_stack_key"], name: "idx_forecast_runs_group_stack", unique: true
+    t.index ["forecast_run_group_id"], name: "index_forecast_runs_on_forecast_run_group_id"
+    t.index ["user_id"], name: "index_forecast_runs_on_user_id"
   end
 
   create_table "forecast_scenarios", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -2242,6 +2436,13 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_120000) do
   add_foreign_key "forecast_budget_overrides", "categories", on_delete: :cascade
   add_foreign_key "forecast_budget_overrides", "families"
   add_foreign_key "forecast_budget_overrides", "forecast_scenarios", on_delete: :cascade
+  add_foreign_key "forecast_category_projections", "categories", column: "parent_category_id", on_delete: :nullify
+  add_foreign_key "forecast_category_projections", "categories", on_delete: :nullify
+  add_foreign_key "forecast_category_projections", "forecast_months", on_delete: :cascade
+  add_foreign_key "forecast_days", "forecast_runs", on_delete: :cascade
+  add_foreign_key "forecast_debt_projections", "accounts", on_delete: :nullify
+  add_foreign_key "forecast_debt_projections", "debt_profiles", on_delete: :nullify
+  add_foreign_key "forecast_debt_projections", "forecast_months", on_delete: :cascade
   add_foreign_key "forecast_event_links", "entries", on_delete: :nullify
   add_foreign_key "forecast_event_links", "families"
   add_foreign_key "forecast_event_links", "forecast_events", on_delete: :nullify
@@ -2250,8 +2451,20 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_120000) do
   add_foreign_key "forecast_events", "categories", on_delete: :nullify
   add_foreign_key "forecast_events", "families", on_delete: :cascade
   add_foreign_key "forecast_events", "forecast_scenarios"
+  add_foreign_key "forecast_goal_evaluations", "forecast_goals", on_delete: :nullify
+  add_foreign_key "forecast_goal_evaluations", "forecast_runs", on_delete: :cascade
   add_foreign_key "forecast_goals", "families"
   add_foreign_key "forecast_goals", "forecast_scenarios"
+  add_foreign_key "forecast_months", "forecast_runs", on_delete: :cascade
+  add_foreign_key "forecast_reviews", "families", on_delete: :cascade
+  add_foreign_key "forecast_reviews", "forecast_run_groups", on_delete: :cascade
+  add_foreign_key "forecast_reviews", "users", on_delete: :nullify
+  add_foreign_key "forecast_run_groups", "families"
+  add_foreign_key "forecast_run_groups", "forecast_run_groups", column: "supersedes_forecast_run_group_id", on_delete: :nullify
+  add_foreign_key "forecast_run_groups", "users", on_delete: :nullify
+  add_foreign_key "forecast_runs", "families", on_delete: :cascade
+  add_foreign_key "forecast_runs", "forecast_run_groups", on_delete: :cascade
+  add_foreign_key "forecast_runs", "users", on_delete: :nullify
   add_foreign_key "forecast_scenarios", "families", on_delete: :cascade
   add_foreign_key "forecast_scenarios", "forecast_scenarios", column: "parent_scenario_id", on_delete: :nullify
   add_foreign_key "forecast_scenarios", "users", column: "created_by_user_id", on_delete: :nullify

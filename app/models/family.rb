@@ -53,6 +53,10 @@ class Family < ApplicationRecord
   has_many :forecast_goals, dependent: :destroy
   has_many :forecast_account_liquidity_settings, dependent: :destroy
 
+  has_many :forecast_run_groups, dependent: :delete_all
+  has_many :forecast_runs
+  has_many :forecast_reviews
+
   validates :locale, inclusion: { in: I18n.available_locales.map(&:to_s) }
   validates :date_format, inclusion: { in: DATE_FORMATS.map(&:last) }
   validates :month_start_day, inclusion: { in: 1..28 }
