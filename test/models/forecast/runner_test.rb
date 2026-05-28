@@ -73,6 +73,55 @@ class Forecast::RunnerTest < ActiveSupport::TestCase
     assert_equal 300.to_d, projection.planned_spending
   end
 
+  test "fails the run group loudly when a nonzero amount cannot be converted to family currency" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    scenario = family.forecast_scenarios.create!(
+      created_by_user: user,
+      name: "Foreign expense",
+      starts_on: Date.current,
+      position: 1
+    )
+    family.forecast_events.create!(
+      forecast_scenario: scenario,
+      name: "Unconvertible cost",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 500,
+      currency: "EUR",
+      starts_on: Date.current
+    )
+
+    # The forecast must fail loudly rather than silently treating EUR as USD.
+    ExchangeRate.stubs(:find_or_fetch_rate).with(from: "EUR", to: family.currency, date: anything, cache: false).returns(nil)
+
+    runner = Forecast::Runner.new(
+      family: family,
+      user: user,
+      scenario_stacks: [ [ scenario.id ] ],
+      run_type: "manual",
+      name: "FX failure"
+    )
+
+    error = assert_raises Forecast::MoneyConverter::MissingRate do
+      runner.call
+    end
+
+    assert_match(/Missing FX rate EUR->#{family.currency}/, error.message)
+
+    group = family.forecast_run_groups.order(:created_at).last
+    group.reload
+    assert_equal "failed", group.status
+    assert group.error_message.present?
+    assert_match(/Missing FX rate EUR->#{family.currency}/, group.error_message)
+
+    # The persistence transaction must roll back: no generated rows survive a failed run.
+    persisted_runs = group.forecast_runs.reload
+    persisted_runs.each { |run| assert_equal "failed", run.status }
+    assert_equal 0, ForecastDay.where(forecast_run: persisted_runs).count
+    assert_equal 0, ForecastMonth.where(forecast_run: persisted_runs).count
+  end
+
   test "rejects empty scenario stack lists" do
     error = assert_raises ArgumentError do
       Forecast::Runner.new(
