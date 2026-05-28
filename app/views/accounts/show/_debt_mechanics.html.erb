@@ -7,13 +7,15 @@
   <div class="mt-4 space-y-3">
     <div class="flex items-center justify-between gap-3">
       <h3 class="text-sm font-medium text-primary"><%= t("debt_profiles.overview.title") %></h3>
-      <%= render DS::Link.new(
-        text: profile.present? ? t("debt_profiles.overview.edit") : t("debt_profiles.overview.configure"),
-        variant: "ghost",
-        icon: "settings",
-        href: edit_account_debt_profile_path(account),
-        frame: :modal
-      ) %>
+      <% unless account.loan? %>
+        <%= render DS::Link.new(
+          text: profile.present? ? t("debt_profiles.overview.edit") : t("debt_profiles.overview.configure"),
+          variant: "ghost",
+          icon: "settings",
+          href: edit_account_debt_profile_path(account),
+          frame: :modal
+        ) %>
+      <% end %>
     </div>
 
     <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -59,7 +61,7 @@
         </div>
       </div>
 
-      <% if account.loan? && profile.federal_student_loan.enabled? %>
+      <% if account.student_loan? && profile.federal_student_loan.enabled? %>
         <% federal = profile.federal_student_loan %>
         <% repayment_scenarios = Debt::FederalStudentLoan::RepaymentPlan::Comparison.new(profile).call %>
 

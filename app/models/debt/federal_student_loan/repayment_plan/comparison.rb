@@ -8,6 +8,7 @@ module Debt
         end
 
         def call
+          return [] unless debt_profile.account.student_loan?
           return [] unless federal_profile.enabled?
 
           federal_profile.selected_plan_codes.filter_map { |code| project(code) }

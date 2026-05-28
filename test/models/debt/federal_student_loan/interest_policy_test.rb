@@ -2,7 +2,9 @@ require "test_helper"
 
 class Debt::FederalStudentLoan::InterestPolicyTest < ActiveSupport::TestCase
   setup do
-    @profile_record = DebtProfile.create!(account: accounts(:loan))
+    @account = accounts(:loan)
+    @account.loan.update!(subtype: "student")
+    @profile_record = DebtProfile.create!(account: @account)
     @profile = @profile_record.federal_student_loan
   end
 
@@ -46,6 +48,15 @@ class Debt::FederalStudentLoan::InterestPolicyTest < ActiveSupport::TestCase
   end
 
   test "disabled federal mode falls back to account balance basis" do
+    policy = Debt::FederalStudentLoan::InterestPolicy.new(@profile_record)
+
+    assert policy.generic_debt_mode?
+    assert_equal BigDecimal("12000"), policy.interest_basis_amount(account_balance: 12000.to_d)
+  end
+
+  test "non student loans use generic debt mode even with federal data" do
+    @account.loan.update!(subtype: "mortgage")
+    @profile.assign(enabled: true, subsidy_type: "unsubsidized", school_status: "in_school", principal_balance: "10000")
     policy = Debt::FederalStudentLoan::InterestPolicy.new(@profile_record)
 
     assert policy.generic_debt_mode?

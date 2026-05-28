@@ -458,6 +458,10 @@ class Account < ApplicationRecord
     debt_profile&.active? || false
   end
 
+  def student_loan?
+    loan? && loan.student_loan?
+  end
+
   def manual_debt_account?
     liability? && unlinked?
   end

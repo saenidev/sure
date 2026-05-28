@@ -9,7 +9,7 @@ module Debt
       end
 
       def enabled?
-        federal_profile.enabled?
+        profile.account.student_loan? && federal_profile.enabled?
       end
 
       def allocate(fee_due_amount: 0.to_d)

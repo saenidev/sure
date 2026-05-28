@@ -135,8 +135,8 @@ module Debt
       def validate
         return unless enabled?
 
-        unless debt_profile.account&.loan?
-          debt_profile.errors.add(:base, "Federal student loan mode is only available for loan accounts")
+        unless debt_profile.account&.student_loan?
+          debt_profile.errors.add(:base, "Federal student loan mode is only available for student loan accounts")
           return
         end
 

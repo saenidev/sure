@@ -3,6 +3,7 @@ require "test_helper"
 class Debt::FederalStudentLoan::CapitalizationServiceTest < ActiveSupport::TestCase
   setup do
     @account = accounts(:loan)
+    @account.loan.update!(subtype: "student")
     @profile = DebtProfile.create!(account: @account)
     @profile.federal_student_loan.assign(
       enabled: true,

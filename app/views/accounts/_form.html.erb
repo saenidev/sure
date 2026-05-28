@@ -1,4 +1,4 @@
-<%# locals: (account:, url:) %>
+<%# locals: (account:, url:, submit_text: nil) %>
 
 <% if @error_message.present? %>
   <%= render DS::Alert.new(message: @error_message, variant: :error) %>
@@ -47,5 +47,5 @@
     </details>
   </div>
 
-  <%= form.submit %>
+  <%= form.submit submit_text %>
 <% end %>

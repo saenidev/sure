@@ -2,7 +2,9 @@ require "test_helper"
 
 class Debt::FederalStudentLoan::RepaymentPlan::ComparisonTest < ActiveSupport::TestCase
   test "returns projections for selected plans without mutating records" do
-    profile_record = DebtProfile.create!(account: accounts(:loan))
+    account = accounts(:loan)
+    account.loan.update!(subtype: "student")
+    profile_record = DebtProfile.create!(account: account)
     profile_record.federal_student_loan.assign(
       enabled: true,
       subsidy_type: "unsubsidized",
@@ -41,7 +43,9 @@ class Debt::FederalStudentLoan::RepaymentPlan::ComparisonTest < ActiveSupport::T
   end
 
   test "returns unavailable projection for tiered standard until versioned rules exist" do
-    profile_record = DebtProfile.create!(account: accounts(:loan))
+    account = accounts(:loan)
+    account.loan.update!(subtype: "student")
+    profile_record = DebtProfile.create!(account: account)
     profile_record.federal_student_loan.assign(
       enabled: true,
       subsidy_type: "unsubsidized",
@@ -62,7 +66,9 @@ class Debt::FederalStudentLoan::RepaymentPlan::ComparisonTest < ActiveSupport::T
   end
 
   test "returns unavailable IBR projection when income assumptions are missing" do
-    profile_record = DebtProfile.create!(account: accounts(:loan))
+    account = accounts(:loan)
+    account.loan.update!(subtype: "student")
+    profile_record = DebtProfile.create!(account: account)
     profile_record.federal_student_loan.assign(
       enabled: true,
       subsidy_type: "unsubsidized",

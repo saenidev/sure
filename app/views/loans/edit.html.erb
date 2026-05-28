@@ -1,6 +1,26 @@
-<%= render DS::Dialog.new do |dialog| %>
+<%= render DS::Dialog.new(width: "lg") do |dialog| %>
   <% dialog.with_header(title: t(".edit", account: @account.name)) %>
   <% dialog.with_body do %>
-    <%= render "form", account: @account, url: loan_path(@account) %>
+    <div class="space-y-6">
+      <section class="space-y-3">
+        <h3 class="text-sm font-medium text-primary"><%= t(".loan_details") %></h3>
+        <%= render "form",
+              account: @account,
+              url: loan_path(@account),
+              submit_text: t(".save_loan") %>
+      </section>
+
+      <% if @account.debt_mechanics_supported? %>
+        <section class="space-y-3 border-t border-primary pt-4">
+          <h3 class="text-sm font-medium text-primary"><%= t(".debt_tracking") %></h3>
+          <%= render "debt_profiles/form",
+                account: @account,
+                debt_profile: @debt_profile,
+                url: account_debt_profile_path(@account),
+                show_federal_student_loan: @account.student_loan?,
+                submit_text: t(".save_tracking") %>
+        </section>
+      <% end %>
+    </div>
   <% end %>
 <% end %>

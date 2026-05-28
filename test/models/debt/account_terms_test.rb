@@ -3,6 +3,7 @@ require "test_helper"
 class Debt::AccountTermsTest < ActiveSupport::TestCase
   setup do
     @loan_account = accounts(:loan)
+    @loan_account.loan.update!(subtype: "student")
     @credit_card_account = accounts(:credit_card)
   end
 
@@ -67,6 +68,30 @@ class Debt::AccountTermsTest < ActiveSupport::TestCase
       accrued_interest_balance: "0"
     )
     profile.save!
+
+    terms = Debt::AccountTerms.new(@loan_account, as_of: Date.new(2026, 5, 1)).resolve
+
+    assert terms.accrual_ready?
+    assert_equal BigDecimal("3.5"), terms.annual_rate
+    assert_equal "account", terms.source
+  end
+
+  test "ignores federal weighted average rate for non student loans" do
+    @loan_account.loan.update!(subtype: "mortgage")
+    profile = DebtProfile.create!(account: @loan_account)
+    profile.update_column(
+      :extra,
+      {
+        "federal_student_loan" => {
+          "enabled" => true,
+          "subsidy_type" => "unsubsidized",
+          "school_status" => "repayment",
+          "principal_balance" => "10000",
+          "accrued_interest_balance" => "0",
+          "weighted_average_rate" => "6.12"
+        }
+      }
+    )
 
     terms = Debt::AccountTerms.new(@loan_account, as_of: Date.new(2026, 5, 1)).resolve
 

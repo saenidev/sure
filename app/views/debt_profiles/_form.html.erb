@@ -1,0 +1,78 @@
+<%# locals: (account:, debt_profile:, url:, show_federal_student_loan: false, submit_text: nil) %>
+
+<%= styled_form_with model: debt_profile, url: url, scope: :debt_profile, method: :patch, data: { turbo: false }, class: "flex flex-col gap-4 text-primary" do |form| %>
+  <div class="grid grid-cols-1 gap-3">
+    <%= form.select :status,
+          DebtProfile::STATUSES.map { |status| [t("debt_profiles.statuses.#{status}"), status] },
+          { label: t("debt_profiles.edit.status") } %>
+
+    <div class="flex items-center justify-between gap-3 rounded-lg border border-primary p-3">
+      <div>
+        <p class="text-sm font-medium text-primary"><%= t("debt_profiles.edit.auto_accrual_enabled") %></p>
+      </div>
+      <%= form.toggle :auto_accrual_enabled %>
+    </div>
+
+    <div class="flex items-center justify-between gap-3 rounded-lg border border-primary p-3">
+      <div>
+        <p class="text-sm font-medium text-primary"><%= t("debt_profiles.edit.auto_payment_allocation_enabled") %></p>
+      </div>
+      <%= form.toggle :auto_payment_allocation_enabled %>
+    </div>
+
+    <% if show_federal_student_loan %>
+      <%= render "debt_profiles/federal_student_loan_fields", form: form, debt_profile: debt_profile %>
+    <% end %>
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <%= form.select :rate_type,
+            DebtProfile::RATE_TYPES.map { |rate_type| [t("debt_profiles.rate_types.#{rate_type}"), rate_type] },
+            { label: t("debt_profiles.edit.rate_type"), include_blank: t("debt_profiles.edit.blank") } %>
+
+      <%= form.number_field :annual_rate,
+            label: t("debt_profiles.edit.annual_rate"),
+            min: 0,
+            step: 0.001 %>
+
+      <div class="flex flex-col gap-1">
+        <%= form.select :accrual_cadence,
+              DebtProfile::CADENCES.map { |cadence| [t("debt_profiles.cadences.#{cadence}"), cadence] },
+              { label: t("debt_profiles.edit.accrual_cadence"), include_blank: t("debt_profiles.edit.blank") } %>
+        <p class="text-xs text-secondary"><%= t("debt_profiles.edit.accrual_cadence_description") %></p>
+      </div>
+
+      <%= form.number_field :minimum_payment_percent,
+            label: t("debt_profiles.edit.minimum_payment_percent"),
+            min: 0,
+            step: 0.01 %>
+    </div>
+
+    <%= form.money_field :minimum_payment_amount,
+          label: t("debt_profiles.edit.minimum_payment_amount"),
+          hide_currency: true,
+          min: 0 %>
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <%= form.number_field :payment_due_day,
+            label: t("debt_profiles.edit.payment_due_day"),
+            min: 1,
+            max: 31 %>
+
+      <%= form.number_field :statement_closing_day,
+            label: t("debt_profiles.edit.statement_closing_day"),
+            min: 1,
+            max: 31 %>
+
+      <%= form.number_field :grace_period_days,
+            label: t("debt_profiles.edit.grace_period_days"),
+            min: 0 %>
+    </div>
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <%= form.date_field :effective_start_on, label: t("debt_profiles.edit.effective_start_on") %>
+      <%= form.date_field :effective_end_on, label: t("debt_profiles.edit.effective_end_on") %>
+    </div>
+  </div>
+
+  <%= form.submit submit_text || t("debt_profiles.edit.submit") %>
+<% end %>

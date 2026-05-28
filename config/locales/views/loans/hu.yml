@@ -2,7 +2,11 @@
 hu:
   loans:
     edit:
-      edit: '%{account} szerkesztése'
+      edit: '%{account} kezelése'
+      debt_tracking: Adósságkövetés
+      loan_details: Hitel adatai
+      save_loan: Hiteladatok mentése
+      save_tracking: Adósságkövetés mentése
     form:
       interest_rate: Kamatláb
       interest_rate_placeholder: '5.25'
@@ -35,3 +39,4 @@ hu:
         type: Típus
         unknown: Ismeretlen
         edit_loan_details: "Hitel adatainak szerkesztése"
+        manage_loan: Hitel kezelése

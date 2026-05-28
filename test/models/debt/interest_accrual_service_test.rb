@@ -3,6 +3,7 @@ require "test_helper"
 class Debt::InterestAccrualServiceTest < ActiveSupport::TestCase
   setup do
     @account = accounts(:loan)
+    @account.loan.update!(subtype: "student")
     @account.update!(balance: 1200)
     @profile = DebtProfile.create!(
       account: @account,

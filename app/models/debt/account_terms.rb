@@ -57,6 +57,7 @@ module Debt
       end
 
       def federal_student_loan_weighted_rate
+        return nil unless account.student_loan?
         return nil unless profile&.federal_student_loan&.enabled?
         return nil if profile.federal_student_loan.input_value(:weighted_average_rate).blank?
 

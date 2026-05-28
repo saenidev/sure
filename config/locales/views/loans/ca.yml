@@ -2,7 +2,11 @@
 ca:
   loans:
     edit:
-      edit: Edita %{account}
+      edit: Gestiona %{account}
+      debt_tracking: Seguiment del deute
+      loan_details: Dades del préstec
+      save_loan: Desa les dades del préstec
+      save_tracking: Desa el seguiment del deute
     form:
       initial_balance: Saldo inicial del préstec
       interest_rate: Tipus d'interès
@@ -27,6 +31,7 @@ ca:
     tabs:
       overview:
         edit_loan_details: Edita els detalls del préstec
+        manage_loan: Gestiona el préstec
         interest_rate: Tipus d'interès
         monthly_payment: Quota mensual
         not_applicable: No aplicable

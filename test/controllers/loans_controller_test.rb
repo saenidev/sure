@@ -179,6 +179,68 @@ class LoansControllerTest < ActionDispatch::IntegrationTest
     assert_equal BigDecimal("45000"), @account.balance
   end
 
+  test "edit manages loan details and debt tracking in one modal" do
+    @account.loan.update!(subtype: "student")
+
+    get edit_loan_path(@account)
+
+    assert_response :success
+    assert_select "form[action='#{loan_path(@account)}']"
+    assert_select "form[action='#{account_debt_profile_path(@account)}']"
+    assert_select "input[name='debt_profile[federal_student_loan][enabled]']"
+    assert_select "input[name='debt_profile[federal_student_loan][principal_balance]']"
+  end
+
+  test "edit hides federal student loan options for non student loans" do
+    @account.loan.update!(subtype: "mortgage")
+
+    get edit_loan_path(@account)
+
+    assert_response :success
+    assert_select "form[action='#{loan_path(@account)}']"
+    assert_select "form[action='#{account_debt_profile_path(@account)}']"
+    assert_select "input[name='debt_profile[federal_student_loan][enabled]']", count: 0
+    assert_select "input[name='debt_profile[federal_student_loan][principal_balance]']", count: 0
+  end
+
+  test "overview does not show a separate debt tracking action for loans" do
+    get account_path(@account, tab: "overview")
+
+    assert_response :success
+    assert_select "a[href='#{edit_loan_path(@account)}']", minimum: 1
+    assert_select "a[href='#{edit_account_debt_profile_path(@account)}']", count: 0
+  end
+
+  test "changing loan away from student clears federal student loan settings" do
+    @account.loan.update!(subtype: "student")
+    profile = DebtProfile.create!(account: @account, status: "active")
+    profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "1000",
+      accrued_interest_balance: "0"
+    )
+    profile.save!
+
+    patch loan_path(@account), params: {
+      account: {
+        name: @account.name,
+        balance: @account.balance,
+        currency: @account.currency,
+        accountable_type: "Loan",
+        accountable_attributes: {
+          id: @account.accountable_id,
+          subtype: "mortgage"
+        }
+      }
+    }
+
+    assert_redirected_to @account
+    assert_equal "mortgage", @account.reload.loan.subtype
+    assert_not @account.debt_profile.extra.key?("federal_student_loan")
+  end
+
   test "invalid original principal does not update opening anchor" do
     @account.set_opening_anchor_balance(balance: 50000.to_d)
 

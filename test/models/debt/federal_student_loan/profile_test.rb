@@ -2,7 +2,9 @@ require "test_helper"
 
 class Debt::FederalStudentLoan::ProfileTest < ActiveSupport::TestCase
   setup do
-    @debt_profile = DebtProfile.create!(account: accounts(:loan))
+    account = accounts(:loan)
+    account.loan.update!(subtype: "student")
+    @debt_profile = DebtProfile.create!(account: account)
   end
 
   test "defaults to disabled federal mode" do

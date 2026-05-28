@@ -3,6 +3,7 @@ require "test_helper"
 class Debt::PaymentAllocationServiceTest < ActiveSupport::TestCase
   setup do
     @account = accounts(:loan)
+    @account.loan.update!(subtype: "student")
     @profile = DebtProfile.create!(account: @account, auto_payment_allocation_enabled: true)
     @obligation = DebtObligation.create!(
       account: @account,

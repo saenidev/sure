@@ -12,6 +12,7 @@ module Debt
 
       def call
         return nil unless account.manual_debt_account?
+        return nil unless account.student_loan?
         return nil unless profile&.active?
         return nil unless federal_profile.enabled?
         return existing_event if existing_event.present?

@@ -3,6 +3,7 @@ require "test_helper"
 class DebtProfileTest < ActiveSupport::TestCase
   setup do
     @loan_account = accounts(:loan)
+    @loan_account.loan.update!(subtype: "student")
     @asset_account = accounts(:depository)
   end
 
@@ -100,6 +101,21 @@ class DebtProfileTest < ActiveSupport::TestCase
     )
 
     assert_not profile.valid?
-    assert_includes profile.errors[:base], "Federal student loan mode is only available for loan accounts"
+    assert_includes profile.errors[:base], "Federal student loan mode is only available for student loan accounts"
+  end
+
+  test "rejects federal student loan mode on non student loans" do
+    @loan_account.loan.update!(subtype: "mortgage")
+    profile = DebtProfile.new(account: @loan_account, status: "active")
+    profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "1000",
+      accrued_interest_balance: "0"
+    )
+
+    assert_not profile.valid?
+    assert_includes profile.errors[:base], "Federal student loan mode is only available for student loan accounts"
   end
 end

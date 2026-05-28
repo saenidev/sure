@@ -9,7 +9,7 @@ module Debt
       end
 
       def generic_debt_mode?
-        !federal_profile.enabled?
+        !debt_profile.account.student_loan? || !federal_profile.enabled?
       end
 
       def accrues_interest?

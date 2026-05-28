@@ -50,7 +50,7 @@ class DebtProfilesController < ApplicationController
     def update_debt_profile
       attrs = debt_profile_params.to_h
       federal_attributes = attrs.delete("federal_student_loan")
-      federal_attributes = nil unless @account.loan?
+      federal_attributes = nil unless @account.student_loan?
       submitted_annual_rate = attrs.delete("annual_rate").presence
       annual_rate = federal_rate_param(federal_attributes) || submitted_annual_rate
       @debt_profile.annual_rate = annual_rate if annual_rate.present?

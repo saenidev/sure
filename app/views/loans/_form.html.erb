@@ -1,6 +1,6 @@
-<%# locals: (account:, url:) %>
+<%# locals: (account:, url:, submit_text: nil) %>
 
-<%= render "accounts/form", account: account, url: url do |form| %>
+<%= render "accounts/form", account: account, url: url, submit_text: submit_text do |form| %>
   <%= render "shared/ruler", classes: "my-4" %>
 
   <div class="space-y-2">

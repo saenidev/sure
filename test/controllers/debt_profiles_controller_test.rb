@@ -5,6 +5,7 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     ensure_tailwind_build
     sign_in @user = users(:family_admin)
     @account = accounts(:loan)
+    @account.loan.update!(subtype: "student")
   end
 
   test "edit renders for manual debt account" do
@@ -95,6 +96,16 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[name='debt_profile[federal_student_loan][principal_balance]']", count: 0
   end
 
+  test "edit hides federal student loan fields for non student loans" do
+    @account.loan.update!(subtype: "mortgage")
+
+    get edit_account_debt_profile_path(@account)
+
+    assert_response :success
+    assert_select "input[name='debt_profile[federal_student_loan][enabled]']", count: 0
+    assert_select "input[name='debt_profile[federal_student_loan][principal_balance]']", count: 0
+  end
+
   test "update ignores federal student loan params for non loan debt accounts" do
     credit_card = accounts(:credit_card)
 
@@ -110,6 +121,26 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to account_path(credit_card, tab: "overview")
     assert_empty credit_card.reload.debt_profile.extra
+  end
+
+  test "update ignores federal student loan params for non student loans" do
+    @account.loan.update!(subtype: "mortgage")
+
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        federal_student_loan: {
+          enabled: "1",
+          principal_balance: "999",
+          accrued_interest_balance: "50",
+          weighted_average_rate: "6.12"
+        }
+      }
+    }
+
+    assert_redirected_to account_path(@account, tab: "overview")
+    assert_empty @account.reload.debt_profile.extra
+    assert_empty @account.debt_profile.debt_rate_periods
   end
 
   test "update saves federal student loan settings" do

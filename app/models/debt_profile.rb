@@ -45,6 +45,15 @@ class DebtProfile < ApplicationRecord
     @federal_student_loan ||= Debt::FederalStudentLoan::Profile.new(self)
   end
 
+  def clear_federal_student_loan!
+    return if extra.blank?
+    return unless extra.key?(Debt::FederalStudentLoan::Profile::ROOT_KEY)
+
+    self.extra = extra.except(Debt::FederalStudentLoan::Profile::ROOT_KEY)
+    @federal_student_loan = nil
+    save!
+  end
+
   private
     def federal_student_loan_settings_valid
       federal_student_loan.validate

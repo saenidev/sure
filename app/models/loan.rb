@@ -1,6 +1,8 @@
 class Loan < ApplicationRecord
   include Accountable
 
+  after_save :clear_federal_student_loan_profile, if: -> { saved_change_to_subtype? && !student_loan? }
+
   SUBTYPES = {
     "mortgage" => { short: "Mortgage", long: "Mortgage" },
     "student" => { short: "Student Loan", long: "Student Loan" },
@@ -46,6 +48,14 @@ class Loan < ApplicationRecord
     return Money.new(initial_balance, account.currency) unless initial_balance.nil?
 
     account.first_valuation_amount
+  end
+
+  def student_loan?
+    subtype == "student"
+  end
+
+  def clear_federal_student_loan_profile
+    account&.debt_profile&.clear_federal_student_loan!
   end
 
   class << self
