@@ -123,7 +123,7 @@ class ForecastEventLink < ApplicationRecord
     def transfer_role_for(entry, transfer)
       return nil if transfer.blank?
       return "outflow" if transfer.outflow_transaction_id == entry.entryable_id
-      return "inflow" if transfer.inflow_transaction_id == entry.entryable_id
+      "inflow" if transfer.inflow_transaction_id == entry.entryable_id
     end
 
     def category_snapshot(category)
