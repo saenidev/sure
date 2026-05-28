@@ -51,6 +51,11 @@ en:
       poverty_guideline: Poverty guideline
       dependent_count: Dependents
       new_ibr_borrower: New IBR borrower
+      repayment_plans: Repayment plans
+      standard_10_year: Standard 10-year
+      ibr: IBR
+      rap_estimated_2026: RAP estimate
+      tiered_standard_estimated_2026: Tiered Standard estimate
       blank: Not set
       submit: Save debt tracking
     update:

@@ -26,60 +26,78 @@
           <%= form.toggle :auto_payment_allocation_enabled %>
         </div>
 
-        <div class="rounded-lg border border-primary p-3">
-          <%= form.fields_for :federal_student_loan, @debt_profile.federal_student_loan do |federal_form| %>
-            <div class="mb-3 flex items-center justify-between gap-3">
-              <p class="text-sm font-medium text-primary"><%= t(".federal_student_loan") %></p>
-              <%= federal_form.toggle :enabled %>
-            </div>
+        <% if @account.loan? %>
+          <div class="rounded-lg border border-primary p-3">
+            <%= form.fields_for :federal_student_loan, @debt_profile.federal_student_loan do |federal_form| %>
+              <div class="mb-3 flex items-center justify-between gap-3">
+                <p class="text-sm font-medium text-primary"><%= t(".federal_student_loan") %></p>
+                <%= federal_form.toggle :enabled %>
+              </div>
 
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <%= federal_form.select :subsidy_type,
-                    Debt::FederalStudentLoan::Profile::SUBSIDY_TYPES.map { |value| [t(".#{value}"), value] },
-                    { label: t(".subsidy_type"), include_blank: t(".blank") } %>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <%= federal_form.select :subsidy_type,
+                      Debt::FederalStudentLoan::Profile::SUBSIDY_TYPES.map { |value| [t(".#{value}"), value] },
+                      { label: t(".subsidy_type"), include_blank: t(".blank") } %>
 
-              <%= federal_form.select :school_status,
-                    Debt::FederalStudentLoan::Profile::SCHOOL_STATUSES.map { |value| [t(".#{value}"), value] },
-                    { label: t(".school_status"), include_blank: t(".blank") } %>
+                <%= federal_form.select :school_status,
+                      Debt::FederalStudentLoan::Profile::SCHOOL_STATUSES.map { |value| [t(".#{value}"), value] },
+                      { label: t(".school_status"), include_blank: t(".blank") } %>
 
-              <%= federal_form.number_field :principal_balance, label: t(".principal_balance"), step: 0.01, min: 0 %>
-              <%= federal_form.number_field :accrued_interest_balance, label: t(".accrued_interest_balance"), step: 0.01, min: 0 %>
-              <%= federal_form.number_field :interest_bearing_principal_balance, label: t(".interest_bearing_principal_balance"), step: 0.01, min: 0 %>
-              <%= federal_form.number_field :weighted_average_rate, label: t(".weighted_average_rate"), step: 0.001, min: 0 %>
-              <%= federal_form.date_field :servicer_balance_as_of, label: t(".servicer_balance_as_of") %>
-            </div>
+                <%= federal_form.number_field :principal_balance, label: t(".principal_balance"), step: 0.01, min: 0, value: federal_form.object.input_value(:principal_balance) %>
+                <%= federal_form.number_field :accrued_interest_balance, label: t(".accrued_interest_balance"), step: 0.01, min: 0, value: federal_form.object.input_value(:accrued_interest_balance) %>
+                <%= federal_form.number_field :interest_bearing_principal_balance, label: t(".interest_bearing_principal_balance"), step: 0.01, min: 0, value: federal_form.object.input_value(:interest_bearing_principal_balance) %>
+                <%= federal_form.number_field :weighted_average_rate, label: t(".weighted_average_rate"), step: 0.001, min: 0, value: federal_form.object.input_value(:weighted_average_rate) %>
+                <%= federal_form.date_field :servicer_balance_as_of, label: t(".servicer_balance_as_of"), value: federal_form.object.input_value(:servicer_balance_as_of) %>
+              </div>
 
-            <% assumptions = @debt_profile.federal_student_loan.repayment_assumptions %>
-            <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <%= federal_form.fields_for :repayment_assumptions do |assumptions_form| %>
-                <%= assumptions_form.number_field :annual_income,
-                      label: t(".annual_income"),
-                      value: assumptions["annual_income"],
-                      step: 1,
-                      min: 0 %>
+              <% assumptions = @debt_profile.federal_student_loan.repayment_assumptions %>
+              <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <%= federal_form.fields_for :repayment_assumptions do |assumptions_form| %>
+                  <%= assumptions_form.number_field :annual_income,
+                        label: t(".annual_income"),
+                        value: assumptions["annual_income"],
+                        step: 1,
+                        min: 0 %>
 
-                <%= assumptions_form.number_field :poverty_guideline,
-                      label: t(".poverty_guideline"),
-                      value: assumptions["poverty_guideline"],
-                      step: 1,
-                      min: 0 %>
+                  <%= assumptions_form.number_field :poverty_guideline,
+                        label: t(".poverty_guideline"),
+                        value: assumptions["poverty_guideline"],
+                        step: 1,
+                        min: 0 %>
 
-                <%= assumptions_form.number_field :dependent_count,
-                      label: t(".dependent_count"),
-                      value: assumptions["dependent_count"],
-                      step: 1,
-                      min: 0 %>
+                  <%= assumptions_form.number_field :dependent_count,
+                        label: t(".dependent_count"),
+                        value: assumptions["dependent_count"],
+                        step: 1,
+                        min: 0 %>
 
-                <div class="flex items-center justify-between gap-3 rounded-lg border border-primary p-3">
-                  <div>
-                    <p class="text-sm font-medium text-primary"><%= t(".new_ibr_borrower") %></p>
+                  <div class="flex items-center justify-between gap-3 rounded-lg border border-primary p-3">
+                    <div>
+                      <p class="text-sm font-medium text-primary"><%= t(".new_ibr_borrower") %></p>
+                    </div>
+                    <%= assumptions_form.toggle :new_ibr_borrower, checked: ActiveModel::Type::Boolean.new.cast(assumptions["new_ibr_borrower"]) %>
                   </div>
-                  <%= assumptions_form.toggle :new_ibr_borrower, checked: ActiveModel::Type::Boolean.new.cast(assumptions["new_ibr_borrower"]) %>
-                </div>
-              <% end %>
-            </div>
-          <% end %>
-        </div>
+
+                  <div class="sm:col-span-2 rounded-lg border border-primary p-3">
+                    <p class="mb-2 text-sm font-medium text-primary"><%= t(".repayment_plans") %></p>
+                    <%= hidden_field_tag "debt_profile[federal_student_loan][repayment_assumptions][selected_plan_codes][]", "" %>
+                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <% Debt::FederalStudentLoan::Profile::PLAN_CODES.each do |plan_code| %>
+                        <label class="flex items-center gap-2 text-sm text-primary">
+                          <%= check_box_tag "debt_profile[federal_student_loan][repayment_assumptions][selected_plan_codes][]",
+                                plan_code,
+                                federal_form.object.selected_plan_codes.include?(plan_code),
+                                class: "checkbox checkbox--light" %>
+                          <span><%= t(".#{plan_code}") %></span>
+                        </label>
+                      <% end %>
+                    </div>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
 
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <%= form.select :rate_type,

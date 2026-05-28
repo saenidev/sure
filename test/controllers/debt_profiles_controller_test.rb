@@ -81,6 +81,35 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[name='debt_profile[federal_student_loan][accrued_interest_balance]']"
     assert_select "input[name='debt_profile[federal_student_loan][repayment_assumptions][annual_income]']"
     assert_select "input[name='debt_profile[federal_student_loan][repayment_assumptions][poverty_guideline]']"
+    assert_select "input[type='checkbox'][name='debt_profile[federal_student_loan][repayment_assumptions][selected_plan_codes][]'][value='standard_10_year']"
+    assert_select "input[type='checkbox'][name='debt_profile[federal_student_loan][repayment_assumptions][selected_plan_codes][]'][value='ibr']"
+    assert_select "input[type='checkbox'][name='debt_profile[federal_student_loan][repayment_assumptions][selected_plan_codes][]'][value='rap_estimated_2026']"
+    assert_select "input[type='checkbox'][name='debt_profile[federal_student_loan][repayment_assumptions][selected_plan_codes][]'][value='tiered_standard_estimated_2026']"
+  end
+
+  test "edit hides federal student loan fields for non loan debt accounts" do
+    get edit_account_debt_profile_path(accounts(:credit_card))
+
+    assert_response :success
+    assert_select "input[name='debt_profile[federal_student_loan][enabled]']", count: 0
+    assert_select "input[name='debt_profile[federal_student_loan][principal_balance]']", count: 0
+  end
+
+  test "update ignores federal student loan params for non loan debt accounts" do
+    credit_card = accounts(:credit_card)
+
+    patch account_debt_profile_path(credit_card), params: {
+      debt_profile: {
+        status: "active",
+        federal_student_loan: {
+          enabled: "0",
+          principal_balance: "999"
+        }
+      }
+    }
+
+    assert_redirected_to account_path(credit_card, tab: "overview")
+    assert_empty credit_card.reload.debt_profile.extra
   end
 
   test "update saves federal student loan settings" do
@@ -117,6 +146,107 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_equal BigDecimal("6.12"), @account.debt_profile.debt_rate_periods.first.annual_rate
   end
 
+  test "update preserves federal repayment assumptions omitted by the form" do
+    profile = DebtProfile.create!(account: @account, status: "active")
+    profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "10000",
+      accrued_interest_balance: "0",
+      repayment_assumptions: {
+        "annual_income" => "65000",
+        "poverty_guideline" => "15650",
+        "selected_plan_codes" => [ "standard_10_year", "rap_estimated_2026" ],
+        "rap_rules" => {
+          "version" => "draft",
+          "forgiveness_months" => 240,
+          "brackets" => []
+        }
+      }
+    )
+    profile.save!
+
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        federal_student_loan: {
+          enabled: "1",
+          subsidy_type: "unsubsidized",
+          school_status: "repayment",
+          principal_balance: "10000",
+          accrued_interest_balance: "0",
+          repayment_assumptions: {
+            annual_income: "72000"
+          }
+        }
+      }
+    }
+
+    assert_redirected_to account_path(@account, tab: "overview")
+    assumptions = @account.reload.debt_profile.federal_student_loan.repayment_assumptions
+    assert_equal "72000", assumptions["annual_income"]
+    assert_equal "15650", assumptions["poverty_guideline"]
+    assert_equal [ "standard_10_year", "rap_estimated_2026" ], assumptions["selected_plan_codes"]
+    assert_equal "draft", assumptions.dig("rap_rules", "version")
+  end
+
+  test "federal weighted average rate wins over generic annual rate when both are submitted" do
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        annual_rate: "3.5",
+        federal_student_loan: {
+          enabled: "1",
+          subsidy_type: "unsubsidized",
+          school_status: "in_school",
+          principal_balance: "12500",
+          accrued_interest_balance: "315.42",
+          weighted_average_rate: "6.12"
+        }
+      }
+    }
+
+    assert_redirected_to account_path(@account, tab: "overview")
+    assert_equal BigDecimal("6.12"), @account.reload.debt_profile.debt_rate_periods.first.annual_rate
+  end
+
+  test "enabled federal weighted average rate ignores invalid generic annual rate" do
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        annual_rate: "not-a-number",
+        federal_student_loan: {
+          enabled: "1",
+          subsidy_type: "unsubsidized",
+          school_status: "in_school",
+          principal_balance: "12500",
+          accrued_interest_balance: "315.42",
+          weighted_average_rate: "6.12"
+        }
+      }
+    }
+
+    assert_redirected_to account_path(@account, tab: "overview")
+    assert_equal BigDecimal("6.12"), @account.reload.debt_profile.debt_rate_periods.first.annual_rate
+  end
+
+  test "disabled federal weighted average rate does not override generic annual rate" do
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        annual_rate: "6.25",
+        federal_student_loan: {
+          enabled: "0",
+          weighted_average_rate: "0.0"
+        }
+      }
+    }
+
+    assert_redirected_to account_path(@account, tab: "overview")
+    assert_equal BigDecimal("6.25"), @account.reload.debt_profile.debt_rate_periods.first.annual_rate
+  end
+
   test "update syncs federal student loan balance to manual loan account balance" do
     patch account_debt_profile_path(@account), params: {
       debt_profile: {
@@ -140,6 +270,119 @@ class DebtProfilesControllerTest < ActionDispatch::IntegrationTest
     reconciliation = @account.entries.valuations.find_by(date: Date.current)
     assert_equal BigDecimal("12815.42"), reconciliation.amount
     assert_equal "reconciliation", reconciliation.entryable.kind
+  end
+
+  test "update does not create balance reconciliation when federal balance is unchanged" do
+    @account.update!(balance: 12815.42.to_d)
+    profile = DebtProfile.create!(account: @account, status: "active")
+    profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "in_school",
+      principal_balance: "12500",
+      accrued_interest_balance: "315.42"
+    )
+    profile.save!
+
+    assert_no_difference -> { @account.entries.valuations.count } do
+      patch account_debt_profile_path(@account), params: {
+        debt_profile: {
+          status: "active",
+          federal_student_loan: {
+            enabled: "1",
+            subsidy_type: "unsubsidized",
+            school_status: "in_school",
+            principal_balance: "12500",
+            accrued_interest_balance: "315.42"
+          }
+        }
+      }
+    end
+
+    assert_redirected_to account_path(@account, tab: "overview")
+    assert_equal BigDecimal("12815.42"), @account.reload.balance
+  end
+
+  test "update syncs cleared federal student loan balances to zero" do
+    profile = DebtProfile.create!(account: @account, status: "active")
+    profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "in_school",
+      principal_balance: "12500",
+      accrued_interest_balance: "315.42"
+    )
+    profile.save!
+    @account.set_current_balance(12815.42.to_d)
+
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        federal_student_loan: {
+          enabled: "1",
+          subsidy_type: "unsubsidized",
+          school_status: "in_school",
+          principal_balance: "",
+          accrued_interest_balance: ""
+        }
+      }
+    }
+
+    assert_redirected_to account_path(@account, tab: "overview")
+    assert_equal 0.to_d, @account.reload.balance
+    assert_equal 0.to_d, @account.debt_profile.federal_student_loan.principal_balance
+    assert_equal 0.to_d, @account.debt_profile.federal_student_loan.accrued_interest_balance
+  end
+
+  test "update with invalid federal numeric input re-renders validation errors" do
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        federal_student_loan: {
+          enabled: "1",
+          subsidy_type: "unsubsidized",
+          school_status: "repayment",
+          principal_balance: "not-a-number",
+          accrued_interest_balance: "100"
+        }
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "Federal student loan principal balance must be a number"
+  end
+
+  test "update with non-finite federal balance does not sync account balance" do
+    original_balance = @account.balance
+
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        federal_student_loan: {
+          enabled: "1",
+          subsidy_type: "unsubsidized",
+          school_status: "repayment",
+          principal_balance: "NaN",
+          accrued_interest_balance: "100"
+        }
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "Federal student loan principal balance must be a number"
+    assert_equal original_balance, @account.reload.balance
+  end
+
+  test "update with invalid annual rate re-renders rate period validation errors" do
+    patch account_debt_profile_path(@account), params: {
+      debt_profile: {
+        status: "active",
+        annual_rate: "not-a-number"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, "Annual rate is not a number"
   end
 
   test "update does not create profile for connected debt account" do

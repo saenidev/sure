@@ -23,7 +23,8 @@ module Debt
 
     def resolve
       rate_period = profile&.debt_rate_periods&.for_date(as_of)&.first
-      annual_rate = decimal_or_nil(rate_period&.annual_rate || account_default(:debt_default_annual_rate))
+      federal_weighted_rate = federal_student_loan_weighted_rate
+      annual_rate = decimal_or_nil(rate_period&.annual_rate || federal_weighted_rate || account_default(:debt_default_annual_rate))
       rate_type = rate_period&.rate_type || profile&.rate_type || account_default(:debt_default_rate_type)
       monthly_payment = decimal_or_nil(profile&.minimum_payment_amount || account_default(:debt_default_monthly_payment))
       opening_balance = decimal_or_nil(account.balance)
@@ -38,7 +39,7 @@ module Debt
         monthly_payment: monthly_payment,
         opening_balance: opening_balance,
         currency: account.currency,
-        source: rate_period.present? ? "rate_period" : "account"
+        source: source_for(rate_period, federal_weighted_rate)
       )
     end
 
@@ -53,6 +54,20 @@ module Debt
         return nil unless account.accountable.respond_to?(method_name)
 
         account.accountable.public_send(method_name)
+      end
+
+      def federal_student_loan_weighted_rate
+        return nil unless profile&.federal_student_loan&.enabled?
+        return nil if profile.federal_student_loan.input_value(:weighted_average_rate).blank?
+
+        profile.federal_student_loan.weighted_average_rate.presence
+      end
+
+      def source_for(rate_period, federal_weighted_rate)
+        return "rate_period" if rate_period.present?
+        return "federal_student_loan" if federal_weighted_rate.present?
+
+        "account"
       end
 
       def decimal_or_nil(value)

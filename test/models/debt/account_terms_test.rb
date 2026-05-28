@@ -38,6 +38,43 @@ class Debt::AccountTermsTest < ActiveSupport::TestCase
     assert_equal "account", terms.source
   end
 
+  test "uses enabled federal weighted average rate before loan defaults" do
+    profile = DebtProfile.create!(account: @loan_account)
+    profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "10000",
+      accrued_interest_balance: "0",
+      weighted_average_rate: "6.12"
+    )
+    profile.save!
+
+    terms = Debt::AccountTerms.new(@loan_account, as_of: Date.new(2026, 5, 1)).resolve
+
+    assert terms.accrual_ready?
+    assert_equal BigDecimal("6.12"), terms.annual_rate
+    assert_equal "federal_student_loan", terms.source
+  end
+
+  test "blank enabled federal weighted average rate does not override loan defaults" do
+    profile = DebtProfile.create!(account: @loan_account)
+    profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "10000",
+      accrued_interest_balance: "0"
+    )
+    profile.save!
+
+    terms = Debt::AccountTerms.new(@loan_account, as_of: Date.new(2026, 5, 1)).resolve
+
+    assert terms.accrual_ready?
+    assert_equal BigDecimal("3.5"), terms.annual_rate
+    assert_equal "account", terms.source
+  end
+
   test "uses credit card APR and minimum payment defaults" do
     DebtProfile.create!(account: @credit_card_account)
 

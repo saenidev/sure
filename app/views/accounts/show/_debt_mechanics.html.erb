@@ -59,7 +59,7 @@
         </div>
       </div>
 
-      <% if profile.federal_student_loan.enabled? %>
+      <% if account.loan? && profile.federal_student_loan.enabled? %>
         <% federal = profile.federal_student_loan %>
         <% repayment_scenarios = Debt::FederalStudentLoan::RepaymentPlan::Comparison.new(profile).call %>
 

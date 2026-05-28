@@ -50,7 +50,10 @@ class DebtProfilesController < ApplicationController
     def update_debt_profile
       attrs = debt_profile_params.to_h
       federal_attributes = attrs.delete("federal_student_loan")
-      annual_rate = attrs.delete("annual_rate").presence || federal_attributes&.fetch("weighted_average_rate", nil).presence
+      federal_attributes = nil unless @account.loan?
+      submitted_annual_rate = attrs.delete("annual_rate").presence
+      annual_rate = federal_rate_param(federal_attributes) || submitted_annual_rate
+      @debt_profile.annual_rate = annual_rate if annual_rate.present?
 
       DebtProfile.transaction do
         @debt_profile.assign_attributes(attrs)
@@ -61,7 +64,8 @@ class DebtProfilesController < ApplicationController
       end
 
       true
-    rescue ActiveRecord::RecordInvalid
+    rescue ActiveRecord::RecordInvalid => e
+      merge_child_validation_errors(e.record)
       false
     end
 
@@ -70,7 +74,10 @@ class DebtProfilesController < ApplicationController
       return unless @debt_profile.federal_student_loan.enabled?
 
       federal = @debt_profile.federal_student_loan
-      result = @account.set_current_balance(federal.principal_balance + federal.accrued_interest_balance)
+      balance = federal.principal_balance + federal.accrued_interest_balance
+      return if balance == @account.balance
+
+      result = @account.set_current_balance(balance)
 
       return if result.success?
 
@@ -82,7 +89,16 @@ class DebtProfilesController < ApplicationController
       return false if federal_attributes.blank?
 
       attrs = federal_attributes.to_h.with_indifferent_access
-      attrs[:principal_balance].present? || attrs[:accrued_interest_balance].present?
+      attrs.key?(:principal_balance) || attrs.key?(:accrued_interest_balance)
+    end
+
+    def federal_rate_param(federal_attributes)
+      return nil if federal_attributes.blank?
+
+      attrs = federal_attributes.to_h.with_indifferent_access
+      return nil unless ActiveModel::Type::Boolean.new.cast(attrs[:enabled])
+
+      attrs[:weighted_average_rate].presence
     end
 
     def upsert_manual_rate_period!(annual_rate)
@@ -93,6 +109,15 @@ class DebtProfilesController < ApplicationController
         rate_type: @debt_profile.rate_type.presence || Debt::AccountTerms.new(@account).resolve.rate_type || "variable",
         annual_rate: annual_rate
       )
+    end
+
+    def merge_child_validation_errors(record)
+      return if record == @debt_profile
+      return if record.errors.blank?
+
+      record.errors.full_messages.each do |message|
+        @debt_profile.errors.add(:base, message)
+      end
     end
 
     def debt_profile_params

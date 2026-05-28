@@ -88,4 +88,18 @@ class DebtProfileTest < ActiveSupport::TestCase
 
     assert_nil profile.effective_start_on
   end
+
+  test "rejects federal student loan mode on non loan liabilities" do
+    profile = DebtProfile.new(account: accounts(:credit_card), status: "active")
+    profile.federal_student_loan.assign(
+      enabled: true,
+      subsidy_type: "unsubsidized",
+      school_status: "repayment",
+      principal_balance: "1000",
+      accrued_interest_balance: "0"
+    )
+
+    assert_not profile.valid?
+    assert_includes profile.errors[:base], "Federal student loan mode is only available for loan accounts"
+  end
 end

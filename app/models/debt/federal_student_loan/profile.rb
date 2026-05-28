@@ -5,6 +5,7 @@ module Debt
       SUBSIDY_TYPES = %w[subsidized unsubsidized mixed].freeze
       SCHOOL_STATUSES = %w[in_school grace repayment deferment forbearance].freeze
       PLAN_CODES = %w[standard_10_year ibr rap_estimated_2026 tiered_standard_estimated_2026].freeze
+      DEFAULT_PLAN_CODES = %w[standard_10_year ibr].freeze
       DECIMAL_FIELDS = %w[
         principal_balance
         accrued_interest_balance
@@ -12,6 +13,15 @@ module Debt
         interest_bearing_principal_balance
         weighted_average_rate
       ].freeze
+      REPAYMENT_DECIMAL_FIELDS = {
+        "annual_income" => "annual income",
+        "poverty_guideline" => "poverty guideline"
+      }.freeze
+      REPAYMENT_INTEGER_FIELDS = {
+        "dependent_count" => "dependent count",
+        "family_size" => "family size",
+        "policy_year" => "policy year"
+      }.freeze
 
       def initialize(debt_profile)
         @debt_profile = debt_profile
@@ -64,7 +74,13 @@ module Debt
       end
 
       def selected_plan_codes
-        Array(repayment_assumptions["selected_plan_codes"]).presence || [ "standard_10_year", "ibr" ]
+        return DEFAULT_PLAN_CODES unless repayment_assumptions.key?("selected_plan_codes")
+
+        Array(repayment_assumptions["selected_plan_codes"]).compact_blank
+      end
+
+      def input_value(key)
+        data[key.to_s]
       end
 
       def assign(attributes)
@@ -73,7 +89,7 @@ module Debt
         attributes.to_h.each do |key, value|
           case key.to_s
           when "repayment_assumptions"
-            normalized["repayment_assumptions"] = value || {}
+            normalized["repayment_assumptions"] = merged_repayment_assumptions(value)
           when "enabled"
             normalized["enabled"] = ActiveModel::Type::Boolean.new.cast(value)
           when *DECIMAL_FIELDS
@@ -106,15 +122,23 @@ module Debt
       def capitalize_interest!(amount)
         amount = amount.to_d
 
-        assign(
+        attributes = {
           principal_balance: principal_balance + amount,
           accrued_interest_balance: [ accrued_interest_balance - amount, 0.to_d ].max,
           capitalized_interest_total: capitalized_interest_total + amount
-        )
+        }
+        attributes[:interest_bearing_principal_balance] = interest_bearing_principal_balance + amount if subsidy_type == "mixed"
+
+        assign(attributes)
       end
 
       def validate
         return unless enabled?
+
+        unless debt_profile.account&.loan?
+          debt_profile.errors.add(:base, "Federal student loan mode is only available for loan accounts")
+          return
+        end
 
         debt_profile.errors.add(:base, "Federal student loan subsidy type is invalid") unless SUBSIDY_TYPES.include?(subsidy_type)
         debt_profile.errors.add(:base, "Federal student loan school status is invalid") unless SCHOOL_STATUSES.include?(school_status)
@@ -126,6 +150,7 @@ module Debt
         validate_decimal_field("interest_bearing_principal_balance", "interest-bearing principal balance") if data["interest_bearing_principal_balance"].present?
         validate_decimal_field("weighted_average_rate", "weighted average rate") if data["weighted_average_rate"].present?
         debt_profile.errors.add(:base, "Federal student loan servicer balance date is invalid") if data["servicer_balance_as_of"].present? && servicer_balance_as_of.blank?
+        validate_repayment_assumptions
 
         if subsidy_type == "mixed" && debt_profile.auto_accrual_enabled? && data["interest_bearing_principal_balance"].blank?
           debt_profile.errors.add(:base, "Federal mixed loans require interest-bearing principal for automatic accrual")
@@ -171,10 +196,63 @@ module Debt
           return if raw_value.blank?
 
           value = BigDecimal(raw_value.to_s)
+          unless value.finite?
+            debt_profile.errors.add(:base, "Federal student loan #{label} must be a number")
+            return
+          end
 
           debt_profile.errors.add(:base, "Federal student loan #{label} must be nonnegative") if value.negative?
         rescue ArgumentError
           debt_profile.errors.add(:base, "Federal student loan #{label} must be a number")
+        end
+
+        def validate_repayment_assumptions
+          REPAYMENT_DECIMAL_FIELDS.each do |key, label|
+            validate_repayment_decimal_field(key, label)
+          end
+
+          REPAYMENT_INTEGER_FIELDS.each do |key, label|
+            validate_repayment_integer_field(key, label)
+          end
+        end
+
+        def merged_repayment_assumptions(value)
+          return {} if value.nil?
+
+          submitted = value.respond_to?(:to_h) ? value.to_h : {}
+          normalized = submitted.deep_stringify_keys
+          if normalized.key?("selected_plan_codes")
+            normalized["selected_plan_codes"] = Array(normalized["selected_plan_codes"]).compact_blank
+          end
+
+          repayment_assumptions.deep_dup.merge(normalized)
+        end
+
+        def validate_repayment_decimal_field(key, label)
+          raw_value = repayment_assumptions[key]
+          return if raw_value.blank?
+
+          value = BigDecimal(raw_value.to_s)
+          unless value.finite?
+            debt_profile.errors.add(:base, "Federal repayment #{label} must be a number")
+            return
+          end
+
+          debt_profile.errors.add(:base, "Federal repayment #{label} must be nonnegative") if value.negative?
+        rescue ArgumentError
+          debt_profile.errors.add(:base, "Federal repayment #{label} must be a number")
+        end
+
+        def validate_repayment_integer_field(key, label)
+          raw_value = repayment_assumptions[key]
+          return if raw_value.blank?
+
+          value = Integer(raw_value.to_s, exception: false)
+          if value.nil?
+            debt_profile.errors.add(:base, "Federal repayment #{label} must be a whole number")
+          elsif value.negative?
+            debt_profile.errors.add(:base, "Federal repayment #{label} must be nonnegative")
+          end
         end
 
         def decimal_for_comparison(key)
