@@ -1,0 +1,176 @@
+<%# locals: (workspace:) %>
+<%#
+  Comparison tab: lets the user compose several scenario stacks into one run
+  group and compares the resulting ForecastRun rows side by side.
+
+  Reads persisted runs only via the workspace's ComparisonSeriesBuilder (no
+  engine recompute, months eager-loaded so no N+1 over stacks x 36 months).
+
+  States:
+    * no run group yet            -> empty state + compose CTA
+    * a group exists              -> comparison table (per stack: end-of-horizon
+                                     cash/net-worth/debt, feasibility pill,
+                                     aggregated risk flags) + per-stack net-worth
+                                     charts. If any stack failed, a partial-
+                                     failure banner names the failed stack(s)
+                                     while completed stacks still render.
+%>
+<section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.comparison") %>">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="space-y-1">
+      <h3 class="text-primary text-base font-medium"><%= t("forecasts.comparison.heading") %></h3>
+      <p class="text-secondary text-sm"><%= t("forecasts.comparison.description") %></p>
+    </div>
+
+    <%# Compose CTA is disabled while a generation is in flight so a comparison
+        run is never stacked on top of a running one (the controller enforces the
+        same guard server-side). %>
+    <% if workspace.running? %>
+      <%= render DS::Button.new(
+        text: t("forecasts.comparison.compose.open"),
+        icon: "git-compare",
+        variant: "outline",
+        size: :sm,
+        disabled: true
+      ) %>
+    <% else %>
+      <%= render "forecast/runs/compare_form",
+            scenarios: workspace.composable_scenarios,
+            max_stacks: Forecast::RunsController::MAX_SCENARIO_STACKS %>
+    <% end %>
+  </div>
+
+  <% if workspace.comparison_partial_failure? %>
+    <%= render DS::Alert.new(variant: :warning) do %>
+      <div class="space-y-1">
+        <p class="font-semibold"><%= t("forecasts.comparison.partial_failure.title") %></p>
+        <p class="text-sm">
+          <%= t("forecasts.comparison.partial_failure.body",
+                stacks: workspace.comparison_stacks.select(&:failed).map(&:label).to_sentence) %>
+        </p>
+      </div>
+    <% end %>
+  <% end %>
+
+  <% if workspace.comparison_data? %>
+    <% stacks = workspace.comparison_stacks %>
+
+    <%# Side-by-side metric table (the chosen comparison surface). One row per
+        scenario stack, ordered stably (baseline first). %>
+    <div class="overflow-x-auto rounded-xl border border-primary">
+      <table class="w-full text-sm" data-testid="forecast-comparison-table">
+        <caption class="sr-only"><%= t("forecasts.comparison.table.caption") %></caption>
+        <thead>
+          <tr class="border-b border-primary text-secondary text-left">
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.comparison.table.stack") %></th>
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.comparison.table.feasibility") %></th>
+            <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.comparison.table.end_cash") %></th>
+            <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.comparison.table.end_net_worth") %></th>
+            <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.comparison.table.end_debt") %></th>
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.comparison.table.risk_flags") %></th>
+          </tr>
+        </thead>
+        <tbody class="text-primary">
+          <% stacks.each do |stack| %>
+            <tr class="border-b border-primary last:border-0 align-top">
+              <th scope="row" class="px-4 py-3 font-medium text-left">
+                <div class="flex flex-col gap-1">
+                  <span><%= stack.label %></span>
+                  <% if stack.failed %>
+                    <%= render DS::Pill.new(
+                      label: t("forecasts.comparison.table.status_failed"),
+                      tone: :fuchsia,
+                      style: :soft,
+                      size: :sm
+                    ) %>
+                  <% end %>
+                </div>
+              </th>
+              <td class="px-4 py-3">
+                <% if stack.failed %>
+                  <span class="text-secondary">—</span>
+                <% else %>
+                  <%= render DS::Pill.new(
+                    label: t("forecasts.overview.feasibility.#{stack.feasibility_status}"),
+                    tone: workspace.feasibility_tone_for(stack.feasibility_status),
+                    style: :soft,
+                    size: :sm
+                  ) %>
+                <% end %>
+              </td>
+              <td class="px-4 py-3 text-right tabular-nums">
+                <%= stack.end_cash ? format_money(stack.end_cash) : t("forecasts.overview.metrics.unavailable") %>
+              </td>
+              <td class="px-4 py-3 text-right tabular-nums">
+                <%= stack.end_net_worth ? format_money(stack.end_net_worth) : t("forecasts.overview.metrics.unavailable") %>
+              </td>
+              <td class="px-4 py-3 text-right tabular-nums">
+                <%= stack.end_debt ? format_money(stack.end_debt) : t("forecasts.overview.metrics.unavailable") %>
+              </td>
+              <td class="px-4 py-3">
+                <% if stack.risk_flag_types.any? %>
+                  <ul class="space-y-1">
+                    <% stack.risk_flag_types.each do |flag_type| %>
+                      <li class="flex items-center gap-1.5 text-xs text-primary">
+                        <%= icon "alert-triangle", size: "xs", color: "warning" %>
+                        <span><%= t("forecasts.overview.risk_flags.types.#{flag_type}", default: flag_type.to_s.humanize) %></span>
+                      </li>
+                    <% end %>
+                  </ul>
+                <% else %>
+                  <span class="text-secondary text-xs"><%= t("forecasts.comparison.table.no_risk_flags") %></span>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+
+    <%# Per-stack net-worth charts. Each reuses the shared single-line
+        time-series-chart controller (multi-line is impractical without a new D3
+        controller, so we render one card per stack). Failed/too-short stacks
+        fall back to the shared data_not_available message. %>
+    <section aria-labelledby="forecast-comparison-charts-heading" class="space-y-3">
+      <h3 id="forecast-comparison-charts-heading" class="text-primary text-base font-medium">
+        <%= t("forecasts.comparison.charts.heading") %>
+      </h3>
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <% stacks.each do |stack| %>
+          <article class="rounded-xl border border-primary bg-container p-4 space-y-3"
+                   aria-label="<%= t("forecasts.comparison.charts.stack_aria", label: stack.label) %>">
+            <h4 class="text-primary text-sm font-medium"><%= stack.label %></h4>
+            <% if stack.net_worth_series&.any? %>
+              <div id="forecastComparison-<%= stack.key %>"
+                   class="w-full min-h-44 privacy-sensitive"
+                   data-controller="time-series-chart"
+                   data-time-series-chart-data-value="<%= stack.net_worth_series.to_json %>"></div>
+            <% else %>
+              <div class="flex min-h-44 w-full items-center justify-center">
+                <p class="text-secondary text-sm">
+                  <%= stack.failed ? t("forecasts.comparison.charts.failed") : t("forecasts.overview.charts.data_not_available") %>
+                </p>
+              </div>
+            <% end %>
+          </article>
+        <% end %>
+      </div>
+    </section>
+  <% else %>
+    <%# No run group yet: nothing to compare. %>
+    <div class="rounded-xl border border-primary bg-container p-8 text-center"
+         aria-labelledby="forecast-comparison-empty-title">
+      <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+        <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+          <%= icon "git-compare", size: "lg", color: "default" %>
+        </span>
+        <div class="space-y-1">
+          <h3 id="forecast-comparison-empty-title" class="text-primary text-lg font-medium">
+            <%= t("forecasts.comparison.empty.title") %>
+          </h3>
+          <p class="text-secondary text-sm"><%= t("forecasts.comparison.empty.body") %></p>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</section>

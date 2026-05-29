@@ -70,6 +70,8 @@
         <% tabs.with_panel(tab_id: tab_id) do %>
           <% if tab_id == "overview" %>
             <%= render "forecasts/overview", workspace: @workspace %>
+          <% elsif tab_id == "comparison" %>
+            <%= render "forecasts/comparison", workspace: @workspace %>
           <% elsif tab_id == "scenarios" %>
             <%= render "forecasts/scenarios", workspace: @workspace %>
           <% elsif tab_id == "goals" %>

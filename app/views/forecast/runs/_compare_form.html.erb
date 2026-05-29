@@ -1,0 +1,114 @@
+<%# locals: (scenarios:, max_stacks:) %>
+<%#
+  "Compare scenarios" compose form, rendered inline as a native <dialog> (DS
+  styling) on the comparison tab. The dialog stays closed until the trigger
+  button opens it via the `forecast-compare` controller (no turbo-frame fetch,
+  so no new route is needed — this reuses runs#create).
+
+  The user composes up to `max_stacks - 1` extra stacks (baseline `[]` is always
+  added server-side, so it is not shown as a checkbox group). Each composable
+  stack is a <details> disclosure of the family's active scenarios; checking
+  scenarios builds that stack's `scenario_ids`. Unchecked / collapsed stacks
+  submit no ids and are normalized to baseline (and deduped) by the controller.
+
+  Validation (foreign ids, > cap) is enforced server-side; this form only offers
+  the family's own active scenarios, so a normal submission can never carry a
+  foreign id.
+%>
+<% composable_stacks = max_stacks - 1 %>
+
+<div data-controller="forecast-compare">
+  <%= render DS::Button.new(
+    text: t("forecasts.comparison.compose.open"),
+    icon: "git-compare",
+    variant: "outline",
+    size: :sm,
+    type: "button",
+    data: { action: "forecast-compare#open" }
+  ) %>
+
+  <dialog data-forecast-compare-target="dialog"
+          aria-labelledby="forecast-compare-title"
+          class="w-full max-w-lg rounded-xl bg-container text-primary shadow-border-xs backdrop:bg-overlay p-0">
+    <div class="flex flex-col gap-4 p-5">
+      <header class="flex items-start justify-between gap-2">
+        <div class="space-y-1">
+          <h2 id="forecast-compare-title" class="text-primary text-lg font-medium">
+            <%= t("forecasts.comparison.compose.title") %>
+          </h2>
+          <p class="text-secondary text-sm"><%= t("forecasts.comparison.compose.subtitle") %></p>
+        </div>
+        <button type="button"
+                class="shrink-0 text-secondary hover:text-primary"
+                data-action="forecast-compare#close"
+                aria-label="<%= t("forecasts.comparison.compose.close") %>">
+          <%= icon "x", size: "sm" %>
+        </button>
+      </header>
+
+      <% if scenarios.empty? %>
+        <p class="text-secondary text-sm"><%= t("forecasts.comparison.compose.no_scenarios") %></p>
+        <div class="flex justify-end">
+          <%= render DS::Button.new(
+            text: t("forecasts.comparison.compose.new_scenario"),
+            icon: "plus",
+            href: new_forecast_scenario_path,
+            frame: "modal",
+            size: :sm
+          ) %>
+        </div>
+      <% else %>
+        <%= form_with url: forecast_runs_path, method: :post, class: "space-y-4" do |f| %>
+          <p class="text-secondary text-xs">
+            <%= t("forecasts.comparison.compose.baseline_note") %>
+          </p>
+
+          <fieldset class="space-y-3">
+            <legend class="sr-only"><%= t("forecasts.comparison.compose.stacks_legend") %></legend>
+
+            <% composable_stacks.times do |stack_index| %>
+              <% stack_dom_id = "forecast-compare-stack-#{stack_index}" %>
+              <details class="rounded-lg border border-primary bg-surface p-3"
+                       <%= "open" if stack_index.zero? %>>
+                <summary class="cursor-pointer text-sm font-medium text-primary marker:text-secondary">
+                  <%= t("forecasts.comparison.compose.stack_label", number: stack_index + 1) %>
+                </summary>
+
+                <div class="mt-3 space-y-2" role="group" aria-labelledby="<%= stack_dom_id %>-legend">
+                  <p id="<%= stack_dom_id %>-legend" class="sr-only">
+                    <%= t("forecasts.comparison.compose.stack_scenarios_legend", number: stack_index + 1) %>
+                  </p>
+                  <% scenarios.each do |scenario| %>
+                    <% checkbox_id = "#{stack_dom_id}-scenario-#{scenario.id}" %>
+                    <label for="<%= checkbox_id %>" class="flex items-center gap-2 text-sm text-primary">
+                      <%= check_box_tag "scenario_stacks[#{stack_index}][scenario_ids][]",
+                            scenario.id,
+                            false,
+                            id: checkbox_id,
+                            class: "rounded border-primary" %>
+                      <span><%= scenario.name %></span>
+                    </label>
+                  <% end %>
+                </div>
+              </details>
+            <% end %>
+          </fieldset>
+
+          <div class="flex items-center justify-end gap-2 pt-1">
+            <%= render DS::Button.new(
+              text: t("forecasts.comparison.compose.cancel"),
+              variant: "ghost",
+              type: "button",
+              data: { action: "forecast-compare#close" }
+            ) %>
+            <%= render DS::Button.new(
+              text: t("forecasts.comparison.compose.submit"),
+              icon: "play",
+              type: "submit"
+            ) %>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+  </dialog>
+</div>

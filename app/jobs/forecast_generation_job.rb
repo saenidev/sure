@@ -11,11 +11,18 @@ class ForecastGenerationJob < ApplicationJob
   # We rescue that re-raised error here so a failed forecast surfaces to the
   # user as a "failed" run group in the workspace (with a Retry control) rather
   # than as an exploded background job. The error is still logged for operators.
-  def perform(family:, user:, name: nil)
+  #
+  # `scenario_stacks` is an array of arrays of ForecastScenario ids. It defaults
+  # to baseline-only (`[[]]`) so legacy single-run callers keep working, while
+  # the comparison flow passes several stacks to produce multiple ForecastRun
+  # rows under one ForecastRunGroup. The controller is responsible for
+  # validating that every id belongs to the family before enqueuing, so the job
+  # trusts the already-vetted stacks.
+  def perform(family:, user:, name: nil, scenario_stacks: [ [] ])
     Forecast::Runner.new(
       family: family,
       user: user,
-      scenario_stacks: [ [] ],
+      scenario_stacks: scenario_stacks.presence || [ [] ],
       run_type: "manual",
       name: name.presence || default_name,
       start_on: Date.current

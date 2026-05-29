@@ -215,6 +215,85 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # --- comparison tab --------------------------------------------------------
+
+  test "comparison tab renders one row per scenario stack for a completed group" do
+    group = build_completed_run_group(family: @family, user: @user, runs: 2)
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    assert_select "section[aria-label='#{I18n.t("forecasts.show.tabs.comparison")}']"
+    assert_select "[data-testid=forecast-comparison-table] caption", text: I18n.t("forecasts.comparison.table.caption")
+    # One <tbody> row per stack (2 runs in the group).
+    assert_select "[data-testid=forecast-comparison-table] tbody tr", count: 2
+  end
+
+  test "comparison tab offers the compose form trigger when not running" do
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    assert_select "[data-controller='forecast-compare']"
+    assert_select "[data-action='forecast-compare#open']"
+  end
+
+  test "comparison surfaces a partial failure and still renders completed stacks" do
+    # A failed comparison group that still contains one completed stack: the
+    # workspace must show results (not a blank failure page), with the failed
+    # stack distinctly flagged and the partial-failure banner shown.
+    group = @family.forecast_run_groups.create!(
+      user: @user,
+      name: "Comparison run",
+      run_type: "manual",
+      currency: @family.currency,
+      horizon_start_on: Date.current,
+      horizon_end_on: 36.months.from_now.to_date,
+      daily_until_on: 90.days.from_now.to_date
+    )
+
+    completed = group.forecast_runs.create!(
+      family: @family, user: @user,
+      scenario_stack_key: "baseline",
+      scenario_stack_snapshot: { "key" => "baseline" },
+      status: "running", feasibility_status: "pass", currency: @family.currency,
+      input_snapshot: forecast_valid_input_snapshot(@family)
+    )
+    3.times do |i|
+      period_start = Date.current + i.months
+      completed.forecast_months.create!(
+        period_start_on: period_start, period_end_on: period_start.end_of_month,
+        precision: "monthly", scenario_stack_key: "baseline", currency: @family.currency,
+        cash_balance: 1000 + (i * 100), liquid_balance: 2000, debt_balance: 0,
+        net_worth: 5000 + (i * 100), risk_flags: []
+      )
+    end
+    completed.update!(status: "completed", finished_at: Time.current)
+
+    group.forecast_runs.create!(
+      family: @family, user: @user,
+      scenario_stack_key: "failed_stack",
+      scenario_stack_snapshot: { "key" => "failed_stack" },
+      status: "failed", feasibility_status: "unknown", currency: @family.currency,
+      error_message: "MoneyConverter::MissingRate: no rate",
+      input_snapshot: forecast_valid_input_snapshot(@family)
+    )
+    group.update_column(:status, "failed")
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    # Not a blank/total failure page: the workspace tabs render.
+    assert_select "section[aria-label='#{I18n.t("forecasts.show.tabs.comparison")}']"
+    # Partial-failure banner names the failed stack.
+    assert_select "p", text: I18n.t("forecasts.comparison.partial_failure.title")
+    # The failed stack is flagged distinctly with the "Failed" pill.
+    assert_select "[data-testid=forecast-comparison-table] tbody", text: /#{Regexp.escape(I18n.t("forecasts.comparison.table.status_failed"))}/
+    # Both stacks render (completed baseline + failed stack).
+    assert_select "[data-testid=forecast-comparison-table] tbody tr", count: 2
+  end
+
   private
     # Counts queries matching a pattern issued during the block and asserts the
     # count stays within bound, guarding against N+1 over forecast runs.

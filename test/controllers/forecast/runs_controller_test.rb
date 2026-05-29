@@ -16,7 +16,7 @@ class Forecast::RunsControllerTest < ActionDispatch::IntegrationTest
   test "create enqueues ForecastGenerationJob with the baseline stack args" do
     assert_enqueued_with(
       job: ForecastGenerationJob,
-      args: [ { family: @family, user: @user, name: I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long)) } ]
+      args: [ { family: @family, user: @user, name: I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long)), scenario_stacks: [ [] ] } ]
     ) do
       post forecast_runs_path
     end
@@ -141,9 +141,115 @@ class Forecast::RunsControllerTest < ActionDispatch::IntegrationTest
     # the job always carries Current.family/Current.user.
     assert_enqueued_with(
       job: ForecastGenerationJob,
-      args: [ { family: @family, user: @user, name: I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long)) } ]
+      args: [ { family: @family, user: @user, name: I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long)), scenario_stacks: [ [] ] } ]
     ) do
       post forecast_runs_path
     end
+  end
+
+  # --- comparison: scenario_stacks param -------------------------------------
+
+  test "create enqueues the comparison job with exactly the submitted stacks plus baseline" do
+    @family.forecast_scenarios.delete_all
+    scenario_a = @family.forecast_scenarios.create!(name: "A", status: "active")
+    scenario_b = @family.forecast_scenarios.create!(name: "B", status: "active")
+
+    expected_name = I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long))
+
+    assert_enqueued_with(
+      job: ForecastGenerationJob,
+      args: [ {
+        family: @family,
+        user: @user,
+        name: expected_name,
+        scenario_stacks: [ [], [ scenario_a.id ], [ scenario_a.id, scenario_b.id ] ]
+      } ]
+    ) do
+      post forecast_runs_path, params: {
+        scenario_stacks: {
+          "0" => { scenario_ids: [ scenario_a.id ] },
+          "1" => { scenario_ids: [ scenario_a.id, scenario_b.id ] }
+        }
+      }
+    end
+
+    assert_redirected_to forecast_path
+  end
+
+  test "empty scenario_stacks submission defaults to baseline-only" do
+    assert_enqueued_with(
+      job: ForecastGenerationJob,
+      args: [ {
+        family: @family,
+        user: @user,
+        name: I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long)),
+        scenario_stacks: [ [] ]
+      } ]
+    ) do
+      post forecast_runs_path, params: { scenario_stacks: { "0" => { scenario_ids: [] } } }
+    end
+  end
+
+  # --- validation / authorization: foreign or over-cap stacks reject ----------
+
+  test "a stack containing a foreign scenario id is rejected with 422 and enqueues nothing" do
+    foreign = families(:empty).forecast_scenarios.create!(name: "Foreign", status: "active")
+    mine = @family.forecast_scenarios.create!(name: "Mine", status: "active")
+
+    assert_no_enqueued_jobs only: ForecastGenerationJob do
+      post forecast_runs_path, params: {
+        scenario_stacks: { "0" => { scenario_ids: [ mine.id, foreign.id ] } }
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "an unknown scenario id is rejected with 422 and enqueues nothing" do
+    assert_no_enqueued_jobs only: ForecastGenerationJob do
+      post forecast_runs_path, params: {
+        scenario_stacks: { "0" => { scenario_ids: [ "00000000-0000-0000-0000-000000000000" ] } }
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "more stacks than the cap is rejected with 422 and enqueues nothing" do
+    scenarios = Array.new(Forecast::RunsController::MAX_SCENARIO_STACKS + 1) do |i|
+      @family.forecast_scenarios.create!(name: "S#{i}", status: "active")
+    end
+
+    # Each stack carries a distinct scenario so they do not dedupe away; with
+    # baseline added this exceeds the cap.
+    stacks = scenarios.each_with_index.to_h { |scenario, i| [ i.to_s, { scenario_ids: [ scenario.id ] } ] }
+
+    assert_no_enqueued_jobs only: ForecastGenerationJob do
+      post forecast_runs_path, params: { scenario_stacks: stacks }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "comparison create is blocked while a generation is in flight" do
+    @family.forecast_run_groups.create!(
+      user: @user,
+      name: "In flight",
+      run_type: "manual",
+      status: "running",
+      currency: @family.currency,
+      horizon_start_on: Date.current,
+      horizon_end_on: 36.months.from_now.to_date,
+      daily_until_on: 90.days.from_now.to_date
+    )
+    scenario = @family.forecast_scenarios.create!(name: "A", status: "active")
+
+    assert_no_enqueued_jobs only: ForecastGenerationJob do
+      post forecast_runs_path, params: {
+        scenario_stacks: { "0" => { scenario_ids: [ scenario.id ] } }
+      }
+    end
+
+    assert_redirected_to forecast_path
   end
 end

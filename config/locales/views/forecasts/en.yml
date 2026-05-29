@@ -7,6 +7,7 @@ en:
       set_up_scenarios: "Set up scenarios"
       tabs:
         overview: "Overview"
+        comparison: "Comparison"
         timeline: "Timeline"
         scenarios: "Scenarios"
         goals: "Goals"
@@ -39,6 +40,46 @@ en:
       default_name: "Forecast %{date}"
       enqueued: "Generating your forecast. This page will update when it is ready."
       already_running: "A forecast is already being generated. Please wait for it to finish."
+    comparison:
+      heading: "Compare scenario stacks"
+      description: "Generate several scenario stacks in one run and compare their end-of-horizon outcomes side by side. Baseline is always included as a reference."
+      baseline_label: "Baseline"
+      compose:
+        open: "Compare scenarios"
+        title: "Compose scenario stacks"
+        subtitle: "Pick the active scenarios that make up each stack. Each stack is projected across the full 36-month horizon."
+        baseline_note: "Baseline (no scenarios) is always compared as a reference, so you do not need to add it."
+        stacks_legend: "Scenario stacks to compare"
+        stack_label: "Stack %{number}"
+        stack_scenarios_legend: "Scenarios in stack %{number}"
+        no_scenarios: "You have no active scenarios to compare yet. Create and activate a scenario first."
+        new_scenario: "New scenario"
+        cancel: "Cancel"
+        close: "Close"
+        submit: "Run comparison"
+      partial_failure:
+        title: "Some scenario stacks could not be projected"
+        body: "These stacks failed and are shown without results: %{stacks}. The stacks that completed are still shown below."
+      table:
+        caption: "End-of-horizon cash, net worth, debt, feasibility, and risk flags for each scenario stack."
+        stack: "Scenario stack"
+        feasibility: "Feasibility"
+        end_cash: "End cash"
+        end_net_worth: "End net worth"
+        end_debt: "End debt"
+        risk_flags: "Risk flags"
+        no_risk_flags: "None"
+        status_failed: "Failed"
+      charts:
+        heading: "Net worth by scenario stack"
+        stack_aria: "Net worth projection for %{label}"
+        failed: "This scenario stack failed, so there is nothing to chart."
+      empty:
+        title: "Nothing to compare yet"
+        body: "Generate a forecast, then compose scenario stacks to compare their projected outcomes side by side."
+      errors:
+        too_many: "You can compare at most %{max} scenario stacks at once."
+        unknown_scenarios: "One or more selected scenarios could not be found. Please refresh and try again."
     scenarios:
       index:
         title: "Scenarios"

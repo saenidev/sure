@@ -15,7 +15,7 @@ module Forecast
   # The "most recent wins" rule means a newer failed group supersedes an older
   # completed one, so users are never shown a stale success.
   class Workspace
-    TAB_IDS = %w[overview timeline scenarios goals reconciliation review].freeze
+    TAB_IDS = %w[overview comparison timeline scenarios goals reconciliation review].freeze
     BASELINE_STACK_KEY = "baseline".freeze
 
     attr_reader :family
@@ -24,12 +24,15 @@ module Forecast
       @family = family
     end
 
-    # The newest run group regardless of status, eager-loading its runs.
+    # The newest run group regardless of status, eager-loading its runs and the
+    # runs' monthly projection rows in one batched query. Both the Overview
+    # (baseline run's months) and the Comparison tab (every run's months) read
+    # from this single preload, so the workspace never N+1s over runs x months.
     def latest_group
       return @latest_group if defined?(@latest_group)
 
       @latest_group = family.forecast_run_groups
-        .includes(:forecast_runs)
+        .includes(forecast_runs: :forecast_months)
         .order(created_at: :desc)
         .first
     end
@@ -83,7 +86,14 @@ module Forecast
       return @baseline_run = nil unless has_run?
 
       runs = latest_group.forecast_runs.to_a
-      @baseline_run = runs.find { |run| run.scenario_stack_key == BASELINE_STACK_KEY } || runs.first
+      # Prefer the completed baseline stack; in a partial-failure group the
+      # baseline stack itself may have failed, so fall back to any completed run
+      # (then any run) so the Overview headline summarizes real output.
+      @baseline_run =
+        runs.find { |run| run.scenario_stack_key == BASELINE_STACK_KEY && run.status == "completed" } ||
+        runs.find { |run| run.status == "completed" } ||
+        runs.find { |run| run.scenario_stack_key == BASELINE_STACK_KEY } ||
+        runs.first
     end
 
     # The 36 monthly projection rows for the baseline run, ordered for the
@@ -94,7 +104,9 @@ module Forecast
       return @monthly_rows if defined?(@monthly_rows)
       return @monthly_rows = [] unless baseline_run
 
-      @monthly_rows = baseline_run.forecast_months.order(:period_start_on).to_a
+      # Sort the eager-loaded association in Ruby; calling `.order` on a loaded
+      # association would issue a second forecast_months query (N+1).
+      @monthly_rows = baseline_run.forecast_months.to_a.sort_by(&:period_start_on)
     end
 
     # The 90 daily projection rows for the baseline run, ordered for the
@@ -248,6 +260,69 @@ module Forecast
       latest_group.forecast_runs.size
     end
 
+    # --- Comparison (scenario-stack) accessors --------------------------------
+
+    # The runs of the latest group (regardless of group status), ordered stably
+    # with baseline first then by stack key, with their months eager-loaded so
+    # the comparison table/chart never N+1 over runs x 36 months. Unlike
+    # `baseline_run`, this surfaces runs even for a partially-failed group so the
+    # comparison can show which stack failed alongside the ones that succeeded.
+    def comparison_runs
+      return @comparison_runs if defined?(@comparison_runs)
+      return @comparison_runs = [] if latest_group.nil?
+
+      # Reuse the runs (and their months) already eager-loaded by `latest_group`
+      # and sort in Ruby — no extra forecast_runs / forecast_months query.
+      @comparison_runs = latest_group.forecast_runs.to_a
+        .sort_by { |run| [ run.scenario_stack_key == BASELINE_STACK_KEY ? 0 : 1, run.scenario_stack_key.to_s ] }
+    end
+
+    # Read-only builder that turns the latest group's runs into one net-worth
+    # series + end-of-horizon metrics per scenario stack. Reads persisted rows
+    # only (no engine recompute). Returns nil when there is no run group yet.
+    def comparison_series_builder
+      return @comparison_series_builder if defined?(@comparison_series_builder)
+      return @comparison_series_builder = nil if comparison_runs.empty?
+
+      @comparison_series_builder = Forecast::ComparisonSeriesBuilder.new(runs: comparison_runs)
+    end
+
+    # The per-stack comparison rows for the comparison table/chart, or [] when
+    # there is nothing to compare yet.
+    def comparison_stacks
+      comparison_series_builder&.stacks || []
+    end
+
+    # True when the latest group has at least one run to compare.
+    def comparison_data?
+      comparison_runs.any?
+    end
+
+    # True when the latest group has more than the baseline stack — i.e. an
+    # actual comparison (not just a single baseline run).
+    def multiple_stacks?
+      comparison_runs.size > 1
+    end
+
+    # True when any stack in the latest comparison group failed, so the view can
+    # surface the partial-failure banner without dropping completed stacks.
+    def comparison_partial_failure?
+      comparison_runs.any? { |run| run.status == "failed" }
+    end
+
+    # The DS::Pill tone for a run-level feasibility status (reuses the same ramp
+    # as the baseline overview). A failed run maps to the blocked/fuchsia tone.
+    def feasibility_tone_for(status)
+      FEASIBILITY_TONES.fetch(status, :gray)
+    end
+
+    # Active scenarios the user can compose into stacks, ordered for the compose
+    # form. Only active scenarios are projectable, mirroring the Runner's
+    # ScenarioStack filter. Memoized; one query.
+    def composable_scenarios
+      @composable_scenarios ||= family.forecast_scenarios.active.ordered.to_a
+    end
+
     def generated_at
       latest_group&.finished_at || latest_group&.created_at if has_run?
     end
@@ -288,7 +363,12 @@ module Forecast
         if group.nil?
           planning_data? ? :ready : :onboarding
         elsif group.failed?
-          :failed
+          # A failed *comparison* group can still carry completed stacks (only
+          # some scenario stacks errored). In that partial-failure case we show
+          # the workspace + results (with a per-stack failure surface in the
+          # Comparison tab) rather than a blank failure page. Only a group with
+          # no completed run at all is a true, total failure.
+          group_has_completed_run? ? :has_run : :failed
         elsif group.completed?
           :has_run
         else
@@ -297,6 +377,10 @@ module Forecast
           # poller) rather than a stale success or a misleading "ready".
           :running
         end
+      end
+
+      def group_has_completed_run?
+        latest_group.forecast_runs.any? { |run| run.status == "completed" }
       end
   end
 end
