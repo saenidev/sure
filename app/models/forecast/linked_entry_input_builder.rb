@@ -18,7 +18,7 @@ module Forecast
           next if entry_pending?(entry)
           next if entry.excluded?
           next unless start_on <= entry.date && entry.date <= end_on
-          next unless entry.date > Date.current
+          next unless entry.date > start_on
           next unless linked_entry_in_scope?(entry)
 
           payload(entry, status: "linked_future", link: link)
@@ -32,7 +32,7 @@ module Forecast
         snapshot = link.entry_snapshot || {}
         date = Date.parse(snapshot.fetch("date"))
         return nil unless start_on <= date && date <= end_on
-        return nil unless date > Date.current
+        return nil unless date > start_on
         return nil unless snapshot_in_scope?(link, snapshot)
 
         source_amount = (snapshot["transfer_source_amount"].presence || snapshot.fetch("amount").to_d.abs).to_d

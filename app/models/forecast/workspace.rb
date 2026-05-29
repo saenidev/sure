@@ -260,7 +260,7 @@ module Forecast
         {
           account: account,
           setting: settings_by_account[account.id],
-          effective_class: classifier.call(account)
+          effective_class: classifier.call(account, on: Date.current)
         }
       end
     end

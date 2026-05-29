@@ -226,7 +226,14 @@ module Forecast
       # profile-backed account and stamp payoff metadata on every row. Reads only
       # the already-computed ending balances; introduces no clock or RNG.
       def stamp_payoff_metadata(rows)
-        payoff_row = rows.find { |row| row.fetch(:ending_balance).to_d.zero? }
+        # The payoff is the first period that reaches zero AND stays zero for the
+        # rest of the horizon. A later drawdown/refinance that re-grows the balance
+        # means the debt was not actually paid off, so do not stamp a payoff that
+        # never sticks.
+        payoff_row = rows.each_with_index.find { |row, i|
+          row.fetch(:ending_balance).to_d.zero? &&
+            rows[(i + 1)..].all? { |later| later.fetch(:ending_balance).to_d.zero? }
+        }&.first
         payoff_projected_on = payoff_row&.fetch(:period_end_on)
 
         rows.map do |row|
@@ -833,7 +840,13 @@ module Forecast
       # explainable via the rate_spans snapshot, mirroring the single-rate path.
       def refinanced_projected_interest(account, profile, terms, period, opening_balance, opening_conversion, forecast_last_accrued_on:, refinance:)
         unless terms.annual_rate.present?
-          return zero_projected_interest("refinance_rate_not_provided", forecast_last_accrued_on: forecast_last_accrued_on)
+          # A payment-only refinance (no new rate) cannot model interest; flag the row
+          # as incomplete rather than presenting zero interest as fully modeled.
+          return zero_projected_interest(
+            "refinance_rate_not_provided",
+            forecast_last_accrued_on: forecast_last_accrued_on,
+            risk_flags: [ { "type" => "debt_projection_incomplete", "account_id" => account.id, "reason" => "refinance_rate_not_provided" } ]
+          )
         end
 
         window = forecast_accrual_window(profile, as_of: period.end_date, forecast_last_accrued_on: forecast_last_accrued_on)

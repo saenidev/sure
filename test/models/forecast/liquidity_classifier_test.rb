@@ -38,4 +38,11 @@ class Forecast::LiquidityClassifierTest < ActiveSupport::TestCase
     assert_equal "cash", classifier.call(setting.account, on: 1.month.from_now.to_date)
     assert_equal "liquid", classifier.call(setting.account, on: 3.months.from_now.to_date)
   end
+
+  test "call requires an explicit on: date so it cannot silently read the wall clock" do
+    classifier = Forecast::LiquidityClassifier.new(family: families(:dylan_family), scenario_ids: [])
+
+    assert_raises(ArgumentError) { classifier.call(accounts(:depository)) }
+    assert_equal "cash", classifier.call(accounts(:depository), on: Date.current)
+  end
 end

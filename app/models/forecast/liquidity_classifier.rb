@@ -5,7 +5,7 @@ module Forecast
       @scenario_ids = Array(scenario_ids).compact_blank
     end
 
-    def call(account, on: Date.current)
+    def call(account, on:)
       override = overrides_for(on)[account.id]
       return override if override.present?
 

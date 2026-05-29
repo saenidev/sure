@@ -120,6 +120,53 @@ class Forecast::InputBuilderTest < ActiveSupport::TestCase
     assert_equal 100.to_d, row.fetch(:expected_spending)
   end
 
+  test "accepted-link future/past classification follows the run date, not the wall clock" do
+    family = families(:dylan_family)
+    run_start = Date.new(2026, 6, 1)
+    occurrence = Date.new(2026, 9, 1) # after the run start -> future relative to the run
+    event = family.forecast_events.create!(
+      name: "Planned repair",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 100,
+      currency: family.currency,
+      starts_on: occurrence
+    )
+    transaction = Transaction.create!(kind: "standard", category: categories(:food_and_drink))
+    entry = Entry.create!(
+      account: accounts(:depository),
+      entryable: transaction,
+      name: "Repair",
+      date: occurrence,
+      amount: 100,
+      currency: family.currency
+    )
+    family.forecast_event_links.create!(
+      forecast_event: event,
+      entry: entry,
+      occurrence_on: occurrence,
+      link_type: "actual",
+      status: "accepted"
+    )
+
+    snapshot = lambda do
+      result = Forecast::InputBuilder.new(family: family, user: users(:family_admin), scenario_ids: [], start_on: run_start).call
+      [
+        result.events.any? { |row| row.fetch(:forecast_event_id) == event.id },
+        result.pending_entries.map { |row| row.fetch(:status) }.sort
+      ]
+    end
+
+    # Same run date, two different wall clocks straddling the occurrence date. With a
+    # wall-clock leak the occurrence flips from "future" to "past" between runs; keyed
+    # off the run date it is deterministically the same.
+    before_occurrence = travel_to(Date.new(2026, 6, 15)) { snapshot.call }
+    after_occurrence = travel_to(Date.new(2026, 9, 15)) { snapshot.call }
+
+    assert_equal before_occurrence, after_occurrence,
+      "accepted-link future/past handling must depend on start_on, not Date.current"
+  end
+
   test "accepted link to excluded future entry does not suppress forecast event" do
     family = families(:dylan_family)
     event = family.forecast_events.create!(

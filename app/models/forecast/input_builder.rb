@@ -133,7 +133,7 @@ module Forecast
 
         if entry.transaction? && entry.transaction.pending?
           pending_entry_ids.include?(entry.id.to_s) || pending_transfer_keys.include?(transfer_key_for(entry.transaction.transfer))
-        elsif entry.date > Date.current
+        elsif entry.date > start_on
           entry.date <= horizon_end_on && linked_future_entry_ids.include?(entry.id.to_s)
         else
           true

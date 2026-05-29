@@ -1237,6 +1237,107 @@ class Forecast::DebtProjectionAdapterTest < ActiveSupport::TestCase
     end
   end
 
+  test "a drawdown re-growing the balance after it hits zero is not stamped as a payoff" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 1000)
+    account.debt_profile&.destroy!
+    start_on = Date.current.next_month.beginning_of_month
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 400,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 0, starts_on: start_on)
+    periods = (0..4).map do |index|
+      month = start_on + index.months
+      Forecast::PeriodBuilder::PeriodWindow.new(index: index, start_date: month.beginning_of_month, end_date: month.end_of_month, precision: "monthly")
+    end
+    # 1000 / 400 zeroes the balance at index 2; an index-3 drawdown re-grows it, so the
+    # debt is never actually paid off across the horizon.
+    drawdown_on = (start_on + 3.months).beginning_of_month
+    drawdown_event = {
+      account_id: account.id,
+      effect_type: "debt_drawdown",
+      date: drawdown_on,
+      debt_delta: 5_000.to_d,
+      risk_flags: [],
+      source_snapshot: { "id" => "regrow-drawdown" }
+    }
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current,
+      forecast_debt_events: [ drawdown_event ]
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    assert rows.any? { |row| row.fetch(:period_start_on) == drawdown_on && row.fetch(:ending_balance).to_d.positive? },
+      "the drawdown should re-grow the balance above zero"
+    assert_empty rows.select { |row| row.fetch(:is_payoff_period) }
+    assert rows.all? { |row| row.fetch(:payoff_projected_on).nil? },
+      "no payoff date should be stamped when a later drawdown re-grows the balance"
+  end
+
+  test "payment-only scenario refinance flags incomplete interest instead of silently zeroing it" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    account.loan.update!(interest_rate: nil)
+    start_on = Date.current.next_month.beginning_of_month
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 0,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 120, starts_on: start_on)
+    refinance_on = (start_on + 1.month).beginning_of_month
+    periods = amortization_periods(start_on, 3)
+    # Refinance overrides ONLY the monthly payment, leaving the new rate unknown.
+    refinance_event = {
+      account_id: account.id,
+      effect_type: "debt_terms_override",
+      transaction_kind: "standard",
+      date: refinance_on,
+      debt_delta: 0.to_d,
+      refinance: { "effective_on" => refinance_on.iso8601, "new_monthly_payment" => "500" },
+      risk_flags: [],
+      source_snapshot: { "id" => "refi-payment-only", "effective_on" => refinance_on.iso8601 }
+    }
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current,
+      forecast_debt_events: [ refinance_event ]
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    after_row = rows.find { |row| row.fetch(:period_start_on) == refinance_on }
+    assert_equal 0.to_d, after_row.fetch(:projected_interest)
+    incomplete = after_row.fetch(:risk_flags).select { |flag| flag["type"] == "debt_projection_incomplete" }
+    assert incomplete.any? { |flag| flag["reason"] == "refinance_rate_not_provided" },
+      "payment-only refinance must flag debt_projection_incomplete (refinance_rate_not_provided), got: #{after_row.fetch(:risk_flags).inspect}"
+  end
+
   test "zero-interest fixed payment amortizes on ceil(balance/payment) schedule" do
     family = families(:dylan_family)
     user = users(:family_admin)
