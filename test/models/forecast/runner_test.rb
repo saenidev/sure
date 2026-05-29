@@ -122,6 +122,60 @@ class Forecast::RunnerTest < ActiveSupport::TestCase
     assert_equal 0, ForecastMonth.where(forecast_run: persisted_runs).count
   end
 
+  test "a single failing stack does not roll back its completed siblings (partial failure)" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+
+    # One scenario whose event cannot be FX-converted -> its stack fails. The
+    # baseline stack ([]) has no such event -> it completes.
+    failing_scenario = family.forecast_scenarios.create!(
+      created_by_user: user,
+      name: "Foreign expense",
+      starts_on: Date.current,
+      position: 1
+    )
+    family.forecast_events.create!(
+      forecast_scenario: failing_scenario,
+      name: "Unconvertible cost",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 500,
+      currency: "EUR",
+      starts_on: Date.current
+    )
+    ExchangeRate.stubs(:find_or_fetch_rate).with(from: "EUR", to: family.currency, date: anything, cache: false).returns(nil)
+
+    # The baseline stack must NOT be rolled back by the failing scenario stack.
+    group = Forecast::Runner.new(
+      family: family,
+      user: user,
+      scenario_stacks: [ [], [ failing_scenario.id ] ],
+      run_type: "manual",
+      name: "Partial failure"
+    ).call
+
+    group.reload
+    # The group is failed (a stack errored) but it is NOT a total failure: it
+    # carries the completed baseline stack alongside a persisted failed marker.
+    assert_equal "failed", group.status
+    assert group.error_message.present?
+
+    runs = group.forecast_runs.to_a
+    completed = runs.select { |run| run.status == "completed" }
+    failed = runs.select { |run| run.status == "failed" }
+
+    assert_equal 1, completed.size, "the baseline stack must survive the sibling failure"
+    assert_equal 1, failed.size, "the failed stack must persist a marker so the comparison can flag it"
+    assert_equal "baseline", completed.first.scenario_stack_key
+
+    # The completed stack's output rows survive (they were NOT rolled back).
+    assert_equal 36, completed.first.forecast_months.count
+    assert_equal 90, completed.first.forecast_days.count
+    # The failed marker carries no output rows.
+    assert_equal 0, failed.first.forecast_months.count
+    assert_equal 0, failed.first.forecast_days.count
+  end
+
   test "rejects empty scenario stack lists" do
     error = assert_raises ArgumentError do
       Forecast::Runner.new(

@@ -689,6 +689,7 @@ en:
       submit_to_hermes:
         success: "Forecast sent to Hermes."
         not_configured: "Hermes is not configured. The forecast packet was built and saved, ready to send once Hermes is available."
+        hermes_request_failed: "Sending to Hermes failed. The packet was saved; try again shortly."
         incomplete: "This forecast has not completed, so it cannot be sent to Hermes yet."
       approve_draft:
         success: "Added \"%{name}\" as a disabled scenario. Activate it to include it in your forecast."

@@ -1,13 +1,10 @@
-<%# locals: (event:, occurrence_on:, family:, currency:) %>
+<%# locals: (event:, occurrence_on:, candidates:, currency:) %>
 
-<%
-  # Read-only candidate matching for this unmatched occurrence. The builder is
-  # family-scoped and excludes entries already claimed by an accepted link.
-  candidates = Forecast::MatchCandidateBuilder.new(
-    family: family,
-    event: event,
-    occurrence_on: occurrence_on
-  ).call
+<%#
+  Read-only candidate list for this unmatched occurrence. `candidates` is built
+  by Forecast::Reconciliation#candidates_for in a single batched pass across all
+  unmatched rows (one entries query + one accepted-claim load shared by every
+  row), so rendering this partial issues NO per-row query.
 %>
 
 <div class="space-y-3 border-t border-primary pt-4"

@@ -254,7 +254,10 @@ class Forecast::DebtProjectionAdapterTest < ActiveSupport::TestCase
       minimum_payment_amount: 100,
       paid_amount: 0
     )
-    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: Date.current, end_date: Date.current.end_of_month, precision: "daily_backed")
+    # Window must cover the obligation's due date regardless of where in the month
+    # "today" falls; otherwise this breaks near month-end when due_on (today + 3
+    # days) crosses into the next month and the obligation falls out of window.
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: Date.current, end_date: [ Date.current.end_of_month, due_on ].max, precision: "daily_backed")
     ExchangeRate.expects(:find_or_fetch_rate)
       .with(from: "EUR", to: family.currency, date: due_on, cache: false)
       .returns(OpenStruct.new(rate: 2.to_d, date: due_on))

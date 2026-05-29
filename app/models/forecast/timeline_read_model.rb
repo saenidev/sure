@@ -67,7 +67,10 @@ module Forecast
     # count.
     def months
       @months ||= run.forecast_months
-        .includes(:forecast_category_projections, :forecast_debt_projections)
+        .includes(
+          { forecast_category_projections: [ :category, :parent_category ] },
+          { forecast_debt_projections: :account }
+        )
         .order(:period_start_on)
         .to_a
     end

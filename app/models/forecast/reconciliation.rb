@@ -52,6 +52,24 @@ module Forecast
       rows.empty?
     end
 
+    # Scored match candidates for ONE unmatched row, built from data loaded in a
+    # SINGLE batched pass across every unmatched row (see #candidate_entry_pool /
+    # #claimed_entry_ids_for). This replaces the old per-row MatchCandidateBuilder
+    # that issued ~3-4 queries for every unmatched event on every forecast page
+    # load; here the shared entry pool + accepted-claim set are loaded once and
+    # the per-row builder does its scoring in Ruby with no further queries.
+    def candidates_for(row)
+      return [] if row.matched?
+
+      Forecast::MatchCandidateBuilder.new(
+        family: family,
+        event: row.event,
+        occurrence_on: row.occurrence_on,
+        candidate_entries: candidate_entry_pool,
+        claimed_entry_ids: claimed_entry_ids_for(row)
+      ).call
+    end
+
     private
       attr_reader :family, :today, :due_soon_window
 
@@ -103,6 +121,71 @@ module Forecast
         else
           "planned"
         end
+      end
+
+      # --- batched candidate matching (one pass for every unmatched row) --------
+
+      def unmatched_rows
+        @unmatched_rows ||= rows.reject(&:matched?)
+      end
+
+      # The single transaction-entry pool the per-row builders filter in Ruby.
+      # Loads, in ONE query, every family Transaction entry inside the UNION of
+      # all unmatched rows' date windows (with the records each candidate reads
+      # eager-loaded). Returns [] when there is nothing to match so no query runs.
+      def candidate_entry_pool
+        return @candidate_entry_pool if defined?(@candidate_entry_pool)
+
+        windows = unmatched_rows.filter_map { |row| candidate_window(row.occurrence_on) }
+        if windows.empty?
+          return @candidate_entry_pool = []
+        end
+
+        earliest = windows.map(&:begin).min
+        latest = windows.map(&:end).max
+
+        @candidate_entry_pool = family.entries
+          .where(entryable_type: "Transaction")
+          .where(excluded: false)
+          .where(date: earliest..latest)
+          .includes(:account, entryable: :category)
+          .to_a
+      end
+
+      # Entry ids claimed by an ACCEPTED link anywhere in the family. Loaded once
+      # and shared across rows (the same exclusion the per-event builder applied).
+      def accepted_claimed_entry_ids
+        @accepted_claimed_entry_ids ||= family.forecast_event_links
+          .where(status: "accepted")
+          .where.not(entry_id: nil)
+          .pluck(:entry_id)
+      end
+
+      # Map of [event_id, occurrence_on] -> entry ids already linked to that exact
+      # occurrence (any status), loaded once so re-proposing a known link is
+      # avoided without a per-row query.
+      def occurrence_claimed_entry_ids
+        @occurrence_claimed_entry_ids ||= begin
+          family.forecast_event_links
+            .where.not(entry_id: nil)
+            .where.not(forecast_event_id: nil)
+            .pluck(:forecast_event_id, :occurrence_on, :entry_id)
+            .each_with_object(Hash.new { |h, k| h[k] = [] }) do |(event_id, occurrence_on, entry_id), memo|
+              memo[[ event_id, occurrence_on ]] << entry_id
+            end
+        end
+      end
+
+      # The full claimed-id exclusion for one row: the shared accepted set plus
+      # any entry already linked to this event at this occurrence.
+      def claimed_entry_ids_for(row)
+        (accepted_claimed_entry_ids + occurrence_claimed_entry_ids[[ row.event.id, row.occurrence_on ]]).uniq
+      end
+
+      def candidate_window(occurrence_on)
+        return nil if occurrence_on.blank?
+
+        (occurrence_on - MatchCandidateBuilder::DEFAULT_DATE_WINDOW)..(occurrence_on + MatchCandidateBuilder::DEFAULT_DATE_WINDOW)
       end
   end
 end

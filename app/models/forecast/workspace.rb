@@ -38,8 +38,17 @@ module Forecast
       # forecast_months / forecast_category_projections / forecast_debt_projections
       # query counts at one each regardless of which tab is active (no N+1 over
       # runs x 36 months x projections).
+      # Nest the projections' own belongs_to associations (category/parent_category
+      # for the budget lane's labels, account for the debt lane's labels) so the
+      # Timeline lanes never N+1 over their per-month projection rows. Without
+      # this, TimelineReadModel#category_label / #debt_label issue one categories
+      # / accounts query per projection row on every forecast page load (DS::Tabs
+      # renders the Timeline panel server-side regardless of the active tab).
       @latest_group = family.forecast_run_groups
-        .includes(forecast_runs: { forecast_months: [ :forecast_category_projections, :forecast_debt_projections ] })
+        .includes(forecast_runs: { forecast_months: [
+          { forecast_category_projections: [ :category, :parent_category ] },
+          { forecast_debt_projections: :account }
+        ] })
         .order(created_at: :desc)
         .first
     end

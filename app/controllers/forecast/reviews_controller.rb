@@ -54,10 +54,17 @@ module Forecast
       @review.update!(response_packet: @review.response_packet.merge(response_packet)) if response_packet.present?
 
       redirect_to forecast_review_path(@run_group), notice: t(".success")
-    rescue Forecast::HermesClient::NotConfigured, Forecast::HermesClient::RequestFailed
-      # Stubbed/unavailable external boundary: the packet is still built + saved,
-      # so the review is ready to send the moment Hermes is wired up.
+    rescue Forecast::HermesClient::NotConfigured
+      # Unconfigured external boundary (the default): the packet is still built +
+      # saved, so the review is ready to send the moment Hermes is wired up. This
+      # is a benign configuration state, NOT a failure.
       redirect_to forecast_review_path(@run_group), notice: t(".not_configured")
+    rescue Forecast::HermesClient::RequestFailed => e
+      # A CONFIGURED endpoint that failed the round-trip (timeout, 5xx, malformed
+      # response). This is a real transport failure, not the "not configured"
+      # state — log it for an operator and surface a distinct, actionable alert.
+      Rails.logger.error("[ForecastHermes] submit failed for run_group=#{@run_group.id}: #{e.class}: #{e.message}")
+      redirect_to forecast_review_path(@run_group), alert: t(".hermes_request_failed")
     rescue Forecast::PacketBuilder::IncompleteRunGroup
       redirect_to forecast_review_path(@run_group), alert: t(".incomplete")
     end

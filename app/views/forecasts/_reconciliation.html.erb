@@ -72,10 +72,12 @@
           <% if row.matched? %>
             <%= render "forecast/event_links/variance", link: row.accepted_link, currency: workspace.currency %>
           <% else %>
+            <%# Candidates are built from a single batched pass over all unmatched
+                rows (reconciliation.candidates_for), so the tab never N+1s. %>
             <%= render "forecast/event_links/candidates",
                   event: row.event,
                   occurrence_on: row.occurrence_on,
-                  family: workspace.family,
+                  candidates: reconciliation.candidates_for(row),
                   currency: workspace.currency %>
           <% end %>
         </li>

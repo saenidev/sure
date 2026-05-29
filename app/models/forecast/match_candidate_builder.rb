@@ -40,14 +40,21 @@ module Forecast
       end
     end
 
+    # `candidate_entries` / `claimed_entry_ids` may be injected (already loaded in
+    # one batched pass by Forecast::Reconciliation across ALL unmatched events) so
+    # this builder issues NO per-event queries. When omitted (e.g. a standalone
+    # call or a unit test) they are loaded lazily here as before.
     def initialize(family:, event:, occurrence_on: nil, date_window: DEFAULT_DATE_WINDOW,
-                   amount_tolerance: DEFAULT_AMOUNT_TOLERANCE, limit: DEFAULT_LIMIT)
+                   amount_tolerance: DEFAULT_AMOUNT_TOLERANCE, limit: DEFAULT_LIMIT,
+                   candidate_entries: nil, claimed_entry_ids: nil)
       @family = family
       @event = event
       @occurrence_on = occurrence_on || event&.starts_on
       @date_window = date_window.to_i
       @amount_tolerance = amount_tolerance.to_d
       @limit = limit
+      @injected_candidate_entries = candidate_entries
+      @injected_claimed_entry_ids = claimed_entry_ids
     end
 
     # Returns scored Candidate structs, best first, excluding any entry that is
@@ -74,7 +81,13 @@ module Forecast
       # event's cash-flow direction, with the records each candidate row reads
       # eager-loaded so scoring/rendering never N+1s. Excludes entries already
       # claimed by an accepted link or already linked to this occurrence.
+      #
+      # When a batched pool is injected (Reconciliation loads the union of every
+      # unmatched event's window once), we filter THAT pool in Ruby so this
+      # builder issues no per-event query.
       def candidate_entries
+        return filtered_injected_entries if @injected_candidate_entries
+
         scope = family.entries
           .where(entryable_type: "Transaction")
           .where(date: window_range)
@@ -84,6 +97,25 @@ module Forecast
           .includes(:account, entryable: :category)
 
         scope.to_a
+      end
+
+      # Filter the injected family-wide entry pool down to this event's window,
+      # cash-flow direction, and not-already-claimed set — all in Ruby (no query).
+      def filtered_injected_entries
+        range = window_range
+        claimed = claimed_entry_ids.to_set
+
+        @injected_candidate_entries.select do |entry|
+          entry.entryable_type == "Transaction" &&
+            range.cover?(entry.date) &&
+            entry_direction_ok?(entry) &&
+            !entry.excluded &&
+            !claimed.include?(entry.id)
+        end
+      end
+
+      def entry_direction_ok?(entry)
+        expects_inflow? ? entry.amount.to_d.negative? : entry.amount.to_d >= 0
       end
 
       def window_range
@@ -108,6 +140,8 @@ module Forecast
       # (claimed elsewhere), plus any entry already linked to this event at this
       # occurrence (candidate/accepted/etc.) so we don't re-propose a known link.
       def claimed_entry_ids
+        return @injected_claimed_entry_ids if @injected_claimed_entry_ids
+
         accepted = family.forecast_event_links
           .where(status: "accepted")
           .where.not(entry_id: nil)

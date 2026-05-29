@@ -17,31 +17,103 @@ module Forecast
       create_review!(group)
       group.update!(status: "running", started_at: Time.current)
 
-      ApplicationRecord.transaction do
-        scenario_stacks.each do |scenario_ids|
-          input = Forecast::InputBuilder.new(family: family, user: user, scenario_ids: scenario_ids, start_on: start_on).call
-          result = Forecast::Engine.new(input).call
-          persist_run!(group, result)
-        end
-
-        raise "Forecast runner produced no runs" if group.forecast_runs.empty?
-
-        group.update!(
-          status: "completed",
-          finished_at: Time.current,
-          source_data_versions: group.forecast_runs.first&.input_snapshot&.fetch("source_data_versions", {}) || {},
-          risk_flags: group.forecast_runs.flat_map(&:risk_flags).uniq
-        )
+      # Persist each scenario stack in its OWN transaction so a single stack
+      # failure (e.g. a MissingRate FX error on one stack) rolls back only that
+      # stack's rows, never its already-completed siblings. This is what makes
+      # partial failure reachable: a group can end "failed" while still carrying
+      # one or more "completed" runs, which the Comparison tab surfaces alongside
+      # the failed stack instead of blanking the whole comparison.
+      last_error = nil
+      scenario_stacks.each do |scenario_ids|
+        persist_stack!(group, scenario_ids)
+      rescue StandardError => e
+        last_error = e
       end
+
+      finalize_group!(group, last_error)
 
       group
     rescue StandardError => e
+      # A failure OUTSIDE per-stack persistence (group/review setup, or
+      # finalize) still fails the whole group loudly.
       group&.update!(status: "failed", finished_at: Time.current, error_message: e.message)
       raise
     end
 
     private
       attr_reader :family, :user, :scenario_stacks, :run_type, :name, :start_on, :trigger_metadata
+
+      # Build + persist one scenario stack inside its own transaction so a raise
+      # here rolls back only this stack's rows, never its completed siblings.
+      #
+      # On failure we record a lightweight, PERSISTED failed-run marker for the
+      # stack (outside the rolled-back transaction) so the Comparison tab can show
+      # WHICH stack failed alongside the ones that succeeded. The marker carries
+      # only the stack identity + error; it has no day/month rows. The error is
+      # re-raised so the caller records it and decides the group's terminal state.
+      def persist_stack!(group, scenario_ids)
+        stack = Forecast::ScenarioStack.new(family: family, scenario_ids: scenario_ids).call
+
+        ApplicationRecord.transaction do
+          input = Forecast::InputBuilder.new(family: family, user: user, scenario_ids: scenario_ids, start_on: start_on).call
+          result = Forecast::Engine.new(input).call
+          persist_run!(group, result)
+        end
+      rescue StandardError => e
+        record_failed_run!(group, stack, e)
+        raise
+      end
+
+      # Persist a failed-run marker for a stack whose persistence transaction
+      # rolled back. Runs OUTSIDE that transaction so the marker survives. Best
+      # effort: if even the marker cannot be written (e.g. the stack identity
+      # could not be derived) we swallow that secondary error so the original
+      # failure still propagates.
+      def record_failed_run!(group, stack, error)
+        return if stack.nil?
+
+        group.forecast_runs.create!(
+          family: family,
+          user: user,
+          scenario_stack_key: stack.key,
+          scenario_stack_snapshot: stack.snapshot,
+          status: "failed",
+          feasibility_status: "unknown",
+          currency: family.currency,
+          started_at: Time.current,
+          finished_at: Time.current,
+          error_message: error.message
+        )
+      rescue StandardError
+        nil
+      end
+
+      # Decide the group's terminal state from the runs that actually persisted.
+      # Any completed run -> the group is usable (partial success); the failed
+      # stacks remain visible in the Comparison tab. No completed run -> a true
+      # total failure, which re-raises the last error so callers (jobs/console)
+      # fail loudly as before.
+      def finalize_group!(group, last_error)
+        completed_runs = group.forecast_runs.reload.select { |run| run.status == "completed" }
+
+        if completed_runs.empty?
+          group.update!(
+            status: "failed",
+            finished_at: Time.current,
+            error_message: last_error&.message || "Forecast runner produced no completed runs"
+          )
+          raise last_error if last_error
+          raise "Forecast runner produced no completed runs"
+        end
+
+        group.update!(
+          status: last_error ? "failed" : "completed",
+          finished_at: Time.current,
+          error_message: last_error&.message,
+          source_data_versions: completed_runs.first&.input_snapshot&.fetch("source_data_versions", {}) || {},
+          risk_flags: completed_runs.flat_map(&:risk_flags).uniq
+        )
+      end
 
       def create_group!
         family.forecast_run_groups.create!(
