@@ -94,6 +94,7 @@ module Forecast
         debt_projection_adjustment = 0.to_d
 
         input.periods.months.map do |period|
+          opening_debt_for_month = debt
           month_days = day_rows.select { |day| period.start_date <= day.date && day.date <= period.end_date }
           budget = input.budgets.find { |row| row.fetch(:period_start_on) == period.start_date }
           debt_projections = input.debt_rows.select { |row| row.fetch(:period_start_on) == period.start_date }
@@ -163,7 +164,16 @@ module Forecast
           end
           debt = debt_balance
           net_worth -= debt_balance - debt_before_projection
+          total_debt_delta = debt_balance.to_d - opening_debt_for_month.to_d
+          debt_to_cash_ratio = debt_to_cash_ratio_for(debt_balance, cash)
+          cash_floor = minimum_cash_floor
           risk_flags = effect_rows.flat_map { |row| row.fetch(:risk_flags, []) } + debt_projections.flat_map { |row| row.fetch(:risk_flags, []) }
+          risk_flags += debt_pressure_risk_flags(
+            cash: cash,
+            cash_floor: cash_floor,
+            debt_payment_unbudgeted_cash_gap: debt_payment_unbudgeted_cash_gap,
+            debt_projections: debt_projections
+          )
 
           MonthRow.new(
             period_start_on: period.start_date,
@@ -195,7 +205,9 @@ module Forecast
               "debt_payment_budget_credit" => debt_budget_credit.to_s,
               "debt_payment_unbudgeted_cash_gap" => debt_payment_unbudgeted_cash_gap.to_s,
               "debt_payment_effect_credit" => debt_reconciliation.fetch(:cash_payment_credit).to_s,
-              "debt_projection_adjustment" => debt_projection_adjustment.to_s
+              "debt_projection_adjustment" => debt_projection_adjustment.to_s,
+              "total_debt_delta" => total_debt_delta.to_s,
+              "debt_to_cash_ratio" => debt_to_cash_ratio
             },
             risk_flags: risk_flags
           )
@@ -478,6 +490,47 @@ module Forecast
         return false unless debt_owned_effect
 
         projected_account_ids.include?(debt_effect_account_id(row))
+      end
+
+      # Minimum cash floor below which a month is considered cash-pressured. Defaults to
+      # zero, but rises to the strictest minimum_cash_balance goal target so the same
+      # floor that drives a goal blocker also drives the debt-pressure signal.
+      def minimum_cash_floor
+        targets = input.goals
+          .select { |goal| goal["goal_type"] == "minimum_cash_balance" }
+          .map { |goal| goal["target_amount"].to_d }
+
+        targets.max || 0.to_d
+      end
+
+      # Pure arithmetic over month-local values: flag debt_pressures_runway only when the
+      # unbudgeted debt cash gap is what drives this month's cash below the floor. If cash
+      # was already below the floor without the gap, the debt payment is not the cause.
+      def debt_pressure_risk_flags(cash:, cash_floor:, debt_payment_unbudgeted_cash_gap:, debt_projections:)
+        return [] unless debt_payment_unbudgeted_cash_gap.positive?
+        return [] unless cash < cash_floor
+        return [] unless cash + debt_payment_unbudgeted_cash_gap >= cash_floor
+
+        account_ids = debt_projections
+          .filter_map { |row| row.fetch(:account_id, nil) }
+          .uniq
+
+        [
+          {
+            "type" => "debt_pressures_runway",
+            "account_ids" => account_ids,
+            "cash_floor" => cash_floor.to_s,
+            "cash_balance" => cash.to_s,
+            "debt_payment_unbudgeted_cash_gap" => debt_payment_unbudgeted_cash_gap.to_s
+          }
+        ]
+      end
+
+      def debt_to_cash_ratio_for(debt_balance, cash)
+        return "0.0" if debt_balance.zero?
+        return "infinite" if cash <= 0
+
+        (debt_balance / cash).round(6).to_s
       end
 
       def actual_spending_already_reflected(category_projections, budget, period)

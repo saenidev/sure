@@ -891,4 +891,270 @@ class Forecast::EngineTest < ActiveSupport::TestCase
 
     assert_equal 800.to_d, result.months.first.debt_balance
   end
+
+  test "flags debt_pressures_runway when an unbudgeted debt cash gap drives cash below zero" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    period_start = Date.current.next_month.beginning_of_month
+    period_end = period_start.end_of_month
+    liability_id = SecureRandom.uuid
+    input = Forecast::InputBuilder::Result.new(
+      family: family,
+      user: user,
+      currency: family.currency,
+      periods: Forecast::PeriodBuilder::Result.new(
+        days: [],
+        months: [
+          Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: period_start, end_date: period_end, precision: "monthly")
+        ]
+      ),
+      scenario_stack: Forecast::ScenarioStack::Result.new(key: "baseline", scenario_ids: [], snapshot: {}, risk_flags: []),
+      accounts: [
+        { id: SecureRandom.uuid, classification: "asset", accountable_type: "Depository", liquidity_class: "cash", balance: 50.to_d, risk_flags: [], source_snapshot: {} },
+        { id: liability_id, classification: "liability", accountable_type: "CreditCard", liquidity_class: "debt", balance: 1000.to_d, risk_flags: [], source_snapshot: {} }
+      ],
+      budgets: [],
+      recurring_items: [],
+      pending_entries: [],
+      portfolio: { portfolio_value: 0.to_d, holdings: [], risk_flags: [] },
+      debt_rows: [
+        { account_id: liability_id, period_start_on: period_start, ending_balance: 900.to_d, cash_payment_gap: 100.to_d, risk_flags: [] }
+      ],
+      goals: [],
+      events: [],
+      source_data_versions: {},
+      risk_flags: []
+    )
+
+    result = Forecast::Engine.new(input).call
+    month = result.months.first
+    flag = month.risk_flags.find { |row| row["type"] == "debt_pressures_runway" }
+
+    assert_equal(-50.to_d, month.cash_balance)
+    assert flag.present?
+    assert_equal [ liability_id ], flag.fetch("account_ids")
+    assert_includes result.risk_flags, flag
+  end
+
+  test "does not flag debt_pressures_runway when cash stays above the floor" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    period_start = Date.current.next_month.beginning_of_month
+    period_end = period_start.end_of_month
+    liability_id = SecureRandom.uuid
+    input = Forecast::InputBuilder::Result.new(
+      family: family,
+      user: user,
+      currency: family.currency,
+      periods: Forecast::PeriodBuilder::Result.new(
+        days: [],
+        months: [
+          Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: period_start, end_date: period_end, precision: "monthly")
+        ]
+      ),
+      scenario_stack: Forecast::ScenarioStack::Result.new(key: "baseline", scenario_ids: [], snapshot: {}, risk_flags: []),
+      accounts: [
+        { id: SecureRandom.uuid, classification: "asset", accountable_type: "Depository", liquidity_class: "cash", balance: 1000.to_d, risk_flags: [], source_snapshot: {} },
+        { id: liability_id, classification: "liability", accountable_type: "CreditCard", liquidity_class: "debt", balance: 1000.to_d, risk_flags: [], source_snapshot: {} }
+      ],
+      budgets: [],
+      recurring_items: [],
+      pending_entries: [],
+      portfolio: { portfolio_value: 0.to_d, holdings: [], risk_flags: [] },
+      debt_rows: [
+        { account_id: liability_id, period_start_on: period_start, ending_balance: 900.to_d, cash_payment_gap: 100.to_d, risk_flags: [] }
+      ],
+      goals: [],
+      events: [],
+      source_data_versions: {},
+      risk_flags: []
+    )
+
+    result = Forecast::Engine.new(input).call
+    month = result.months.first
+
+    assert_equal 900.to_d, month.cash_balance
+    assert_nil month.risk_flags.find { |row| row["type"] == "debt_pressures_runway" }
+  end
+
+  test "uses a minimum_cash_balance goal target as the debt-pressure floor" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    period_start = Date.current.next_month.beginning_of_month
+    period_end = period_start.end_of_month
+    liability_id = SecureRandom.uuid
+    input = Forecast::InputBuilder::Result.new(
+      family: family,
+      user: user,
+      currency: family.currency,
+      periods: Forecast::PeriodBuilder::Result.new(
+        days: [],
+        months: [
+          Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: period_start, end_date: period_end, precision: "monthly")
+        ]
+      ),
+      scenario_stack: Forecast::ScenarioStack::Result.new(key: "baseline", scenario_ids: [], snapshot: {}, risk_flags: []),
+      accounts: [
+        { id: SecureRandom.uuid, classification: "asset", accountable_type: "Depository", liquidity_class: "cash", balance: 550.to_d, risk_flags: [], source_snapshot: {} },
+        { id: liability_id, classification: "liability", accountable_type: "CreditCard", liquidity_class: "debt", balance: 1000.to_d, risk_flags: [], source_snapshot: {} }
+      ],
+      budgets: [],
+      recurring_items: [],
+      pending_entries: [],
+      portfolio: { portfolio_value: 0.to_d, holdings: [], risk_flags: [] },
+      debt_rows: [
+        { account_id: liability_id, period_start_on: period_start, ending_balance: 900.to_d, cash_payment_gap: 100.to_d, risk_flags: [] }
+      ],
+      goals: [
+        {
+          "id" => SecureRandom.uuid,
+          "goal_type" => "minimum_cash_balance",
+          "target_amount" => 500.to_d,
+          "required" => true,
+          "blocking_behavior" => "warns",
+          "evaluation_starts_on" => period_start.iso8601,
+          "evaluation_ends_on" => period_end.iso8601
+        }
+      ],
+      events: [],
+      source_data_versions: {},
+      risk_flags: []
+    )
+
+    result = Forecast::Engine.new(input).call
+    month = result.months.first
+    flag = month.risk_flags.find { |row| row["type"] == "debt_pressures_runway" }
+
+    assert_equal 450.to_d, month.cash_balance
+    assert flag.present?
+    assert_equal "500.0", flag.fetch("cash_floor")
+    assert_equal [ liability_id ], flag.fetch("account_ids")
+  end
+
+  test "records total_debt_delta and debt_to_cash_ratio for amortizing and growing debt months" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    period_start = Date.current.next_month.beginning_of_month
+    period_end = period_start.end_of_month
+    liability_id = SecureRandom.uuid
+    build_input = lambda do |ending_balance|
+      Forecast::InputBuilder::Result.new(
+        family: family,
+        user: user,
+        currency: family.currency,
+        periods: Forecast::PeriodBuilder::Result.new(
+          days: [],
+          months: [
+            Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: period_start, end_date: period_end, precision: "monthly")
+          ]
+        ),
+        scenario_stack: Forecast::ScenarioStack::Result.new(key: "baseline", scenario_ids: [], snapshot: {}, risk_flags: []),
+        accounts: [
+          { id: SecureRandom.uuid, classification: "asset", accountable_type: "Depository", liquidity_class: "cash", balance: 2000.to_d, risk_flags: [], source_snapshot: {} },
+          { id: liability_id, classification: "liability", accountable_type: "CreditCard", liquidity_class: "debt", balance: 1000.to_d, risk_flags: [], source_snapshot: {} }
+        ],
+        budgets: [],
+        recurring_items: [],
+        pending_entries: [],
+        portfolio: { portfolio_value: 0.to_d, holdings: [], risk_flags: [] },
+        debt_rows: [
+          { account_id: liability_id, period_start_on: period_start, ending_balance: ending_balance, cash_payment_gap: 0.to_d, risk_flags: [] }
+        ],
+        goals: [],
+        events: [],
+        source_data_versions: {},
+        risk_flags: []
+      )
+    end
+
+    amortizing = Forecast::Engine.new(build_input.call(900.to_d)).call.months.first
+    growing = Forecast::Engine.new(build_input.call(1100.to_d)).call.months.first
+
+    assert_equal(-100.to_d, amortizing.source_breakdown.fetch("total_debt_delta").to_d)
+    assert_equal "0.45", amortizing.source_breakdown.fetch("debt_to_cash_ratio")
+    assert_equal 100.to_d, growing.source_breakdown.fetch("total_debt_delta").to_d
+    assert_equal "0.55", growing.source_breakdown.fetch("debt_to_cash_ratio")
+  end
+
+  test "emits no debt-pressure flag and zero debt delta when there are no debt rows" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    period_start = Date.current.next_month.beginning_of_month
+    period_end = period_start.end_of_month
+    input = Forecast::InputBuilder::Result.new(
+      family: family,
+      user: user,
+      currency: family.currency,
+      periods: Forecast::PeriodBuilder::Result.new(
+        days: [],
+        months: [
+          Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: period_start, end_date: period_end, precision: "monthly")
+        ]
+      ),
+      scenario_stack: Forecast::ScenarioStack::Result.new(key: "baseline", scenario_ids: [], snapshot: {}, risk_flags: []),
+      accounts: [
+        { id: SecureRandom.uuid, classification: "asset", accountable_type: "Depository", liquidity_class: "cash", balance: 1000.to_d, risk_flags: [], source_snapshot: {} }
+      ],
+      budgets: [],
+      recurring_items: [],
+      pending_entries: [],
+      portfolio: { portfolio_value: 0.to_d, holdings: [], risk_flags: [] },
+      debt_rows: [],
+      goals: [],
+      events: [],
+      source_data_versions: {},
+      risk_flags: []
+    )
+
+    result = Forecast::Engine.new(input).call
+    month = result.months.first
+
+    assert_nil month.risk_flags.find { |row| row["type"] == "debt_pressures_runway" }
+    assert_equal "0.0", month.source_breakdown.fetch("total_debt_delta")
+    assert_equal "0.0", month.source_breakdown.fetch("debt_to_cash_ratio")
+  end
+
+  test "produces identical debt-pressure flags and breakdown for identical inputs" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    period_start = Date.current.next_month.beginning_of_month
+    period_end = period_start.end_of_month
+    liability_id = SecureRandom.uuid
+    cash_id = SecureRandom.uuid
+    build_input = lambda do
+      Forecast::InputBuilder::Result.new(
+        family: family,
+        user: user,
+        currency: family.currency,
+        periods: Forecast::PeriodBuilder::Result.new(
+          days: [],
+          months: [
+            Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: period_start, end_date: period_end, precision: "monthly")
+          ]
+        ),
+        scenario_stack: Forecast::ScenarioStack::Result.new(key: "baseline", scenario_ids: [], snapshot: {}, risk_flags: []),
+        accounts: [
+          { id: cash_id, classification: "asset", accountable_type: "Depository", liquidity_class: "cash", balance: 50.to_d, risk_flags: [], source_snapshot: {} },
+          { id: liability_id, classification: "liability", accountable_type: "CreditCard", liquidity_class: "debt", balance: 1000.to_d, risk_flags: [], source_snapshot: {} }
+        ],
+        budgets: [],
+        recurring_items: [],
+        pending_entries: [],
+        portfolio: { portfolio_value: 0.to_d, holdings: [], risk_flags: [] },
+        debt_rows: [
+          { account_id: liability_id, period_start_on: period_start, ending_balance: 900.to_d, cash_payment_gap: 100.to_d, risk_flags: [] }
+        ],
+        goals: [],
+        events: [],
+        source_data_versions: {},
+        risk_flags: []
+      )
+    end
+
+    first = Forecast::Engine.new(build_input.call).call.months.first
+    second = Forecast::Engine.new(build_input.call).call.months.first
+
+    assert_equal first.risk_flags, second.risk_flags
+    assert_equal first.source_breakdown, second.source_breakdown
+  end
 end
