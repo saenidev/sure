@@ -1,0 +1,37 @@
+<%# locals: (workspace:) %>
+<section class="rounded-xl border border-primary bg-container p-4" aria-label="<%= t("forecasts.run_summary_header.title") %>">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <h2 class="text-primary text-base font-medium"><%= t("forecasts.run_summary_header.title") %></h2>
+      <p class="text-secondary text-sm">
+        <% if workspace.generated_at.present? %>
+          <%= t("forecasts.run_summary_header.generated_at", datetime: l(workspace.generated_at, format: :long)) %>
+        <% else %>
+          <%= t("forecasts.run_summary_header.generated_at_unknown") %>
+        <% end %>
+      </p>
+    </div>
+
+    <dl class="flex flex-wrap gap-x-8 gap-y-2">
+      <div class="space-y-0.5">
+        <dt class="text-secondary text-xs uppercase tracking-wide"><%= t("forecasts.run_summary_header.horizon") %></dt>
+        <dd class="text-primary text-sm font-medium">
+          <% if workspace.horizon_start_on.present? && workspace.horizon_end_on.present? %>
+            <%= t("forecasts.run_summary_header.horizon_range",
+                  start_date: l(workspace.horizon_start_on, format: :long),
+                  end_date: l(workspace.horizon_end_on, format: :long)) %>
+          <% else %>
+            <%= t("forecasts.run_summary_header.horizon_unknown") %>
+          <% end %>
+        </dd>
+      </div>
+
+      <div class="space-y-0.5">
+        <dt class="text-secondary text-xs uppercase tracking-wide"><%= t("forecasts.show.tabs.scenarios") %></dt>
+        <dd class="text-primary text-sm font-medium">
+          <%= t("forecasts.run_summary_header.scenario_stacks", count: workspace.scenario_stack_count) %>
+        </dd>
+      </div>
+    </dl>
+  </div>
+</section>

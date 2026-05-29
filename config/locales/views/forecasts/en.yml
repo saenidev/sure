@@ -3,4 +3,35 @@ en:
     show:
       title: "Forecast"
       description: "Model monthly budget, cash runway, goals, debt, portfolio movement, and life scenarios across the next 36 months."
-      empty_state: "Forecast data will appear here after the foundation engine creates the first run."
+      generate: "Generate forecast"
+      set_up_scenarios: "Set up scenarios"
+      tabs:
+        overview: "Overview"
+        timeline: "Timeline"
+        scenarios: "Scenarios"
+        goals: "Goals"
+        reconciliation: "Reconciliation"
+        review: "Review"
+      tab_placeholder: "This section becomes available in an upcoming release."
+    empty_state:
+      onboarding:
+        title: "Plan your financial future"
+        body: "Set up scenarios, events, and goals, then generate a forecast to project your budget, cash runway, debt, and portfolio across the next 36 months."
+      ready:
+        title: "Ready to generate your forecast"
+        body: "You have planning data in place. Generate a forecast to project the next 36 months across your scenario stacks."
+    run_summary_header:
+      title: "Latest forecast"
+      generated_at: "Generated %{datetime}"
+      generated_at_unknown: "Generation time unavailable"
+      horizon: "Horizon"
+      horizon_range: "%{start_date} to %{end_date}"
+      horizon_unknown: "Horizon unavailable"
+      scenario_stacks:
+        one: "%{count} scenario stack"
+        other: "%{count} scenario stacks"
+    failure:
+      title: "Your latest forecast failed"
+      default_message: "The forecast could not be generated. Please review your scenarios and try again."
+      retry: "Retry forecast"
+      dismiss: "Dismiss"

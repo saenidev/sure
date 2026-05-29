@@ -1,0 +1,38 @@
+<%# locals: (workspace:) %>
+<section class="rounded-xl border border-primary bg-container p-8 text-center" aria-labelledby="forecast-empty-state-title">
+  <div class="mx-auto flex max-w-md flex-col items-center gap-4">
+    <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+      <%= icon "chart-line", size: "lg", color: "default" %>
+    </span>
+
+    <% state = workspace.onboarding? ? "onboarding" : "ready" %>
+
+    <div class="space-y-1">
+      <h2 id="forecast-empty-state-title" class="text-primary text-lg font-medium">
+        <%= t("forecasts.empty_state.#{state}.title") %>
+      </h2>
+      <p class="text-secondary text-sm">
+        <%= t("forecasts.empty_state.#{state}.body") %>
+      </p>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
+      <%# Generate affordance placeholder: run generation arrives in a later slice. %>
+      <%= render DS::Button.new(
+        text: t("forecasts.show.generate"),
+        icon: "play",
+        disabled: true
+      ) %>
+
+      <% if workspace.onboarding? %>
+        <%# Scenario setup affordance placeholder: routed in a later slice. %>
+        <%= render DS::Button.new(
+          text: t("forecasts.show.set_up_scenarios"),
+          variant: "outline",
+          icon: "settings-2",
+          disabled: true
+        ) %>
+      <% end %>
+    </div>
+  </div>
+</section>

@@ -1,18 +1,65 @@
-<% content_for :title, t(".title") %>
+<% content_for :title, t("forecasts.show.title") %>
 
-<div class="space-y-6">
+<div class="space-y-6 pb-6 lg:pb-12">
   <header class="flex flex-wrap items-center justify-between gap-3">
     <div class="space-y-1">
-      <h1 class="text-primary text-2xl font-semibold"><%= t(".title") %></h1>
+      <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.show.title") %></h1>
       <p class="text-secondary text-sm">
-        <%= t(".description") %>
+        <%= t("forecasts.show.description") %>
       </p>
     </div>
   </header>
 
-  <section class="rounded-lg border border-primary bg-container p-4">
-    <p class="text-secondary text-sm">
-      <%= t(".empty_state") %>
-    </p>
-  </section>
+  <% if @workspace.failed? %>
+    <%# Failure surface: most-recent run group failed. Dismissible so the user
+        can continue, but the error is always shown first so they are never left
+        on a blank or stale page. %>
+    <section data-controller="element-removal" aria-live="assertive">
+      <%= render DS::Alert.new(variant: :error, live: :assertive) do %>
+        <div class="flex items-start justify-between gap-3">
+          <div class="space-y-2">
+            <p class="font-semibold"><%= t("forecasts.failure.title") %></p>
+            <p><%= @workspace.error_message.presence || t("forecasts.failure.default_message") %></p>
+            <div class="pt-1">
+              <%# Retry affordance placeholder: regeneration arrives in a later slice. %>
+              <%= render DS::Button.new(
+                text: t("forecasts.failure.retry"),
+                variant: "outline",
+                icon: "refresh-cw",
+                size: :sm,
+                disabled: true
+              ) %>
+            </div>
+          </div>
+          <button type="button"
+                  class="shrink-0 text-secondary hover:text-primary"
+                  data-action="element-removal#remove"
+                  aria-label="<%= t("forecasts.failure.dismiss") %>">
+            <%= icon "x", size: "sm" %>
+          </button>
+        </div>
+      <% end %>
+    </section>
+  <% elsif @workspace.has_run? %>
+    <%= render "forecasts/run_summary_header", workspace: @workspace %>
+
+    <%= render DS::Tabs.new(active_tab: params[:tab].presence || "overview", url_param_key: "tab") do |tabs| %>
+      <% tabs.with_nav do |nav| %>
+        <% @workspace.tab_ids.each do |tab_id| %>
+          <% nav.with_btn(id: tab_id, label: t("forecasts.show.tabs.#{tab_id}")) %>
+        <% end %>
+      <% end %>
+
+      <% @workspace.tab_ids.each do |tab_id| %>
+        <% tabs.with_panel(tab_id: tab_id) do %>
+          <section class="rounded-xl border border-primary bg-container p-6"
+                   aria-label="<%= t("forecasts.show.tabs.#{tab_id}") %>">
+            <p class="text-secondary text-sm"><%= t("forecasts.show.tab_placeholder") %></p>
+          </section>
+        <% end %>
+      <% end %>
+    <% end %>
+  <% else %>
+    <%= render "forecasts/empty_state", workspace: @workspace %>
+  <% end %>
 </div>
