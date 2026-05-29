@@ -1,0 +1,117 @@
+<%# locals: (link:, currency:) %>
+
+<%
+  # Expected (from the event snapshot, captured at link time) vs actual (from
+  # the entry snapshot). Both are immutable JSON on the accepted link, so the
+  # variance reads only the link — no live event/entry query, no N+1.
+  event_snapshot = link.event_snapshot || {}
+  entry_snapshot = link.entry_snapshot || {}
+
+  expected_amount = event_snapshot["amount"].present? ? BigDecimal(event_snapshot["amount"]).abs : nil
+  actual_amount = entry_snapshot["amount"].present? ? BigDecimal(entry_snapshot["amount"]).abs : nil
+  expected_currency = event_snapshot["currency"] || currency
+  actual_currency = entry_snapshot["currency"] || currency
+  amount_delta = (expected_amount && actual_amount) ? (actual_amount - expected_amount) : nil
+
+  expected_date = event_snapshot["occurrence_on"].presence || event_snapshot["starts_on"].presence
+  expected_date = expected_date && Date.parse(expected_date)
+  actual_date = entry_snapshot["date"].present? ? Date.parse(entry_snapshot["date"]) : nil
+  date_delta_days = (expected_date && actual_date) ? (actual_date - expected_date).to_i : nil
+
+  expected_category = event_snapshot.dig("category", "name")
+  actual_category = entry_snapshot.dig("category", "name")
+  category_matches = expected_category.present? && expected_category == actual_category
+%>
+
+<div class="space-y-3 border-t border-primary pt-4" data-testid="<%= dom_id(link, :variance) %>">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h5 class="text-secondary text-xs font-medium uppercase tracking-wide">
+      <%= t("forecasts.reconciliation.variance.heading") %>
+    </h5>
+    <span class="text-secondary text-xs truncate">
+      <%= t("forecasts.reconciliation.variance.linked_to", name: entry_snapshot["name"].presence || t("forecasts.reconciliation.variance.unknown_entry")) %>
+    </span>
+  </div>
+
+  <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <%# Amount delta %>
+    <div class="rounded-lg border border-primary p-3 space-y-1">
+      <dt class="text-secondary text-xs"><%= t("forecasts.reconciliation.variance.amount") %></dt>
+      <dd class="text-primary text-sm">
+        <%= expected_amount ? Money.new(expected_amount, expected_currency).format : t("forecasts.reconciliation.row.no_amount") %>
+        <span class="text-secondary">→</span>
+        <%= actual_amount ? Money.new(actual_amount, actual_currency).format : t("forecasts.reconciliation.row.no_amount") %>
+      </dd>
+      <% if amount_delta %>
+        <dd class="text-xs <%= amount_delta.zero? ? "text-secondary" : "text-primary" %>">
+          <%= t("forecasts.reconciliation.variance.delta", value: Money.new(amount_delta, actual_currency).format) %>
+        </dd>
+      <% end %>
+    </div>
+
+    <%# Date delta %>
+    <div class="rounded-lg border border-primary p-3 space-y-1">
+      <dt class="text-secondary text-xs"><%= t("forecasts.reconciliation.variance.date") %></dt>
+      <dd class="text-primary text-sm">
+        <%= expected_date ? l(expected_date, format: :long) : t("forecasts.reconciliation.row.no_date") %>
+        <span class="text-secondary">→</span>
+        <%= actual_date ? l(actual_date, format: :long) : t("forecasts.reconciliation.row.no_date") %>
+      </dd>
+      <% if date_delta_days %>
+        <dd class="text-xs <%= date_delta_days.zero? ? "text-secondary" : "text-primary" %>">
+          <%= t("forecasts.reconciliation.variance.date_delta", count: date_delta_days.abs) %>
+        </dd>
+      <% end %>
+    </div>
+
+    <%# Category delta %>
+    <div class="rounded-lg border border-primary p-3 space-y-1">
+      <dt class="text-secondary text-xs"><%= t("forecasts.reconciliation.variance.category") %></dt>
+      <dd class="text-primary text-sm">
+        <%= expected_category.presence || t("forecasts.reconciliation.variance.uncategorized") %>
+        <span class="text-secondary">→</span>
+        <%= actual_category.presence || t("forecasts.reconciliation.variance.uncategorized") %>
+      </dd>
+      <dd class="text-xs text-secondary">
+        <%= category_matches ? t("forecasts.reconciliation.variance.match") : t("forecasts.reconciliation.variance.mismatch") %>
+      </dd>
+    </div>
+
+    <%# Account %>
+    <div class="rounded-lg border border-primary p-3 space-y-1">
+      <dt class="text-secondary text-xs"><%= t("forecasts.reconciliation.variance.account") %></dt>
+      <dd class="text-primary text-sm">
+        <%= entry_snapshot["account_id"].present? ? Current.family.accounts.find_by(id: entry_snapshot["account_id"])&.name.presence || t("forecasts.reconciliation.variance.unknown_account") : t("forecasts.reconciliation.variance.unknown_account") %>
+      </dd>
+    </div>
+  </dl>
+
+  <div class="flex items-center gap-2">
+    <%# Supersede: mark the accepted link superseded (e.g. a better actual was
+        found). The model forbids changing its linked records, so only the status
+        transitions. %>
+    <%= render DS::Button.new(
+      text: t("forecasts.reconciliation.variance.supersede"),
+      href: forecast_event_link_path(link, forecast_event_link: { status: "superseded" }),
+      method: :patch,
+      variant: "outline",
+      size: :sm,
+      icon: "history"
+    ) %>
+    <%# Unlink: delete the link entirely so the occurrence returns to unmatched. %>
+    <%= render DS::Button.new(
+      text: t("forecasts.reconciliation.variance.unlink"),
+      href: forecast_event_link_path(link),
+      method: :delete,
+      variant: "outline_destructive",
+      size: :sm,
+      icon: "unlink",
+      confirm: CustomConfirm.new(
+        destructive: true,
+        title: t("forecasts.reconciliation.variance.unlink_confirm.title"),
+        body: t("forecasts.reconciliation.variance.unlink_confirm.body"),
+        btn_text: t("forecasts.reconciliation.variance.unlink_confirm.confirm")
+      )
+    ) %>
+  </div>
+</div>

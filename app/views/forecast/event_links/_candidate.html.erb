@@ -1,0 +1,51 @@
+<%# locals: (event:, occurrence_on:, candidate:, currency:) %>
+
+<%
+  entry = candidate.entry
+  # Confidence indicator tone: high reads positive, medium warns, low neutral.
+  confidence_tones = { "high" => :indigo, "medium" => :amber, "low" => :gray }
+%>
+
+<li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary p-3"
+    data-testid="<%= dom_id(entry, :candidate) %>">
+  <div class="min-w-0 space-y-1">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-primary text-sm font-medium truncate"><%= entry.name %></span>
+      <%= render DS::Pill.new(
+        label: t("forecasts.reconciliation.candidates.confidence.#{candidate.confidence_level}"),
+        tone: confidence_tones.fetch(candidate.confidence_level, :gray),
+        show_dot: true,
+        title: t("forecasts.reconciliation.candidates.confidence_title", percent: (candidate.confidence * 100).round)
+      ) %>
+    </div>
+    <p class="text-secondary text-xs">
+      <%= t("forecasts.reconciliation.candidates.actual",
+            amount: Money.new(entry.amount.abs, entry.currency).format,
+            date: l(entry.date, format: :long),
+            account: entry.account.name) %>
+    </p>
+  </div>
+
+  <%# Accept this candidate: creates an accepted ForecastEventLink. The event,
+      entry, occurrence, confidence, and scoring rationale are passed so the
+      accepted link records why it was proposed. %>
+  <%= form_with url: forecast_event_links_path, method: :post, class: "shrink-0" do |f| %>
+    <%= f.hidden_field "forecast_event_link[forecast_event_id]", value: event.id %>
+    <%= f.hidden_field "forecast_event_link[entry_id]", value: entry.id %>
+    <%= f.hidden_field "forecast_event_link[occurrence_on]", value: occurrence_on&.iso8601 %>
+    <%= f.hidden_field "forecast_event_link[link_type]", value: "actual" %>
+    <%= f.hidden_field "forecast_event_link[confidence]", value: candidate.confidence %>
+    <%= f.hidden_field "forecast_event_link[match_metadata][confidence]", value: candidate.confidence %>
+    <%= f.hidden_field "forecast_event_link[match_metadata][confidence_level]", value: candidate.confidence_level %>
+    <% candidate.reasons.each do |reason| %>
+      <%= f.hidden_field "forecast_event_link[match_metadata][reasons][]", value: reason, id: nil %>
+    <% end %>
+    <%= render DS::Button.new(
+      text: t("forecasts.reconciliation.candidates.accept"),
+      type: "submit",
+      variant: "outline",
+      size: :sm,
+      icon: "link"
+    ) %>
+  <% end %>
+</li>

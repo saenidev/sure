@@ -363,6 +363,22 @@ module Forecast
       timeline_run.present?
     end
 
+    # --- Reconciliation (expected-vs-actual linking) --------------------------
+
+    # Read-only query for the Reconciliation tab: every event paired with its
+    # derived lifecycle state (planned/due_soon/matched/missed) and accepted
+    # link. The lifecycle is COMPUTED from dates + accepted links; it never
+    # mutates ForecastEvent#status. Memoized so the tab and its summary share one
+    # load.
+    def reconciliation
+      @reconciliation ||= Forecast::Reconciliation.new(family: family)
+    end
+
+    # True when the family has any events to reconcile.
+    def reconciliation_data?
+      !reconciliation.empty?
+    end
+
     def generated_at
       latest_group&.finished_at || latest_group&.created_at if has_run?
     end

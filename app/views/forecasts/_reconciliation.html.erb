@@ -1,0 +1,85 @@
+<%# locals: (workspace:) %>
+
+<%
+  reconciliation = workspace.reconciliation
+  rows = reconciliation.rows
+
+  # Lifecycle state -> DS::Pill tone. Matched reads positive (indigo), due_soon
+  # warns (amber), missed flags (fuchsia), planned is neutral (gray).
+  lifecycle_tones = {
+    "matched" => :indigo,
+    "due_soon" => :amber,
+    "missed" => :fuchsia,
+    "planned" => :gray
+  }
+%>
+
+<section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.reconciliation") %>">
+  <div class="space-y-1">
+    <p class="text-secondary text-sm"><%= t("forecasts.reconciliation.description") %></p>
+  </div>
+
+  <% if rows.empty? %>
+    <div class="rounded-xl border border-primary bg-container p-8 text-center space-y-3"
+         data-testid="reconciliation-empty-state">
+      <div class="mx-auto w-fit text-secondary">
+        <%= icon "git-compare", size: "xl" %>
+      </div>
+      <h3 class="text-primary text-base font-medium"><%= t("forecasts.reconciliation.empty.title") %></h3>
+      <p class="text-secondary text-sm max-w-md mx-auto"><%= t("forecasts.reconciliation.empty.body") %></p>
+      <div class="pt-1">
+        <%= render DS::Button.new(
+          text: t("forecasts.reconciliation.empty.new_event"),
+          icon: "plus",
+          href: new_forecast_event_path
+        ) %>
+      </div>
+    </div>
+  <% else %>
+    <%# Lifecycle summary counts so the user sees the reconciliation backlog at a
+        glance. Counts are computed once from the same rows load. %>
+    <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="reconciliation-summary">
+      <% Forecast::Reconciliation::LIFECYCLE_STATES.each do |state| %>
+        <div class="rounded-xl border border-primary bg-container p-4 space-y-1">
+          <dt class="text-secondary text-xs"><%= t("forecasts.reconciliation.lifecycle.#{state}") %></dt>
+          <dd class="text-primary text-xl font-semibold"><%= reconciliation.counts[state] %></dd>
+        </div>
+      <% end %>
+    </dl>
+
+    <ul class="space-y-3" role="list">
+      <% rows.each do |row| %>
+        <li id="<%= dom_id(row.event, :reconciliation) %>"
+            class="rounded-xl border border-primary bg-container p-4 space-y-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0 space-y-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <h4 class="text-primary text-sm font-medium truncate"><%= row.event.name %></h4>
+                <%= render DS::Pill.new(
+                  label: t("forecasts.reconciliation.lifecycle.#{row.lifecycle_state}"),
+                  tone: lifecycle_tones.fetch(row.lifecycle_state, :gray),
+                  show_dot: true
+                ) %>
+              </div>
+              <p class="text-secondary text-xs">
+                <%= t("forecasts.reconciliation.row.expected",
+                      amount: row.event.amount ? Money.new(row.event.amount, row.event.currency || workspace.currency).format : t("forecasts.reconciliation.row.no_amount"),
+                      date: row.occurrence_on ? l(row.occurrence_on, format: :long) : t("forecasts.reconciliation.row.no_date")) %>
+              </p>
+            </div>
+          </div>
+
+          <% if row.matched? %>
+            <%= render "forecast/event_links/variance", link: row.accepted_link, currency: workspace.currency %>
+          <% else %>
+            <%= render "forecast/event_links/candidates",
+                  event: row.event,
+                  occurrence_on: row.occurrence_on,
+                  family: workspace.family,
+                  currency: workspace.currency %>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+</section>

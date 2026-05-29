@@ -308,6 +308,7 @@ Rails.application.routes.draw do
     resources :goals
     resources :account_liquidity_settings
     resources :budget_overrides
+    resources :event_links, only: %i[index create update destroy]
   end
 
   resources :reports, only: %i[index] do

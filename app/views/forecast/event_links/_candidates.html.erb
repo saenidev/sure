@@ -1,0 +1,34 @@
+<%# locals: (event:, occurrence_on:, family:, currency:) %>
+
+<%
+  # Read-only candidate matching for this unmatched occurrence. The builder is
+  # family-scoped and excludes entries already claimed by an accepted link.
+  candidates = Forecast::MatchCandidateBuilder.new(
+    family: family,
+    event: event,
+    occurrence_on: occurrence_on
+  ).call
+%>
+
+<div class="space-y-3 border-t border-primary pt-4"
+     data-testid="<%= dom_id(event, :candidates) %>">
+  <h5 class="text-secondary text-xs font-medium uppercase tracking-wide">
+    <%= t("forecasts.reconciliation.candidates.heading") %>
+  </h5>
+
+  <% if candidates.empty? %>
+    <p class="text-secondary text-sm" data-testid="<%= dom_id(event, :no_candidates) %>">
+      <%= t("forecasts.reconciliation.candidates.empty") %>
+    </p>
+  <% else %>
+    <ul class="space-y-2" role="list">
+      <% candidates.each do |candidate| %>
+        <%= render "forecast/event_links/candidate",
+              event: event,
+              occurrence_on: occurrence_on,
+              candidate: candidate,
+              currency: currency %>
+      <% end %>
+    </ul>
+  <% end %>
+</div>

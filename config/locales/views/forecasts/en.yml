@@ -380,6 +380,64 @@ en:
         success: "Goal updated."
       destroy:
         success: "Goal deleted."
+    reconciliation:
+      description: "Match planned forecast events against the actual transactions you have recorded, and review where reality differed from the plan."
+      index:
+        title: "Reconciliation"
+      empty:
+        title: "Nothing to reconcile yet"
+        body: "Create forecast events to model expected income and expenses. Once an event is due, you can match it to the actual transaction here."
+        new_event: "New event"
+      lifecycle:
+        planned: "Planned"
+        due_soon: "Due soon"
+        matched: "Matched"
+        missed: "Missed"
+      row:
+        expected: "Expected %{amount} on %{date}"
+        no_amount: "No amount"
+        no_date: "No date"
+      candidates:
+        heading: "Suggested matches"
+        empty: "No matching transactions were found in the date window. Record the transaction, then it will appear here."
+        actual: "%{amount} on %{date} · %{account}"
+        accept: "Accept match"
+        confidence_title: "%{percent}% confidence"
+        confidence:
+          high: "High confidence"
+          medium: "Medium confidence"
+          low: "Low confidence"
+      variance:
+        heading: "Variance"
+        linked_to: "Matched to %{name}"
+        unknown_entry: "a transaction"
+        amount: "Amount"
+        date: "Date"
+        category: "Category"
+        account: "Account"
+        delta: "Difference: %{value}"
+        date_delta:
+          zero: "On the expected date"
+          one: "%{count} day off"
+          other: "%{count} days off"
+        match: "Categories match"
+        mismatch: "Categories differ"
+        uncategorized: "Uncategorized"
+        unknown_account: "Unknown account"
+        supersede: "Supersede"
+        unlink: "Unlink"
+        unlink_confirm:
+          title: "Unlink this match?"
+          body: "This removes the link between the forecast event and the transaction. The event returns to unmatched and you can match it again."
+          confirm: "Unlink"
+      create:
+        success: "Match accepted."
+        error: "We could not accept that match."
+      update:
+        success: "Match updated."
+        error: "We could not update that match."
+      destroy:
+        success: "Match removed."
     budget_overrides:
       index:
         title: "Forecast budget"
