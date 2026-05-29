@@ -56,7 +56,6 @@ module Forecast
           end
 
           payment = terms.monthly_payment.present? ? money_converter.convert(amount: terms.monthly_payment, currency: terms.currency, source: "debt_account:#{account.id}:monthly_payment:#{period.end_date}") : nil
-          terms_valid_from = terms_valid_from_for(profile, period.end_date)
           scenario_effect = debt_scenario_effect_for(account, period)
           opening_balance = [ balance + scenario_effect.fetch(:drawdown), 0.to_d ].max
           projected_interest = projected_interest_for(
@@ -67,7 +66,6 @@ module Forecast
             opening_balance,
             opening,
             forecast_last_accrued_on: forecast_last_accrued_on,
-            terms_valid_from: terms_valid_from,
             native_interest_bearing_balance: native_interest_bearing_balance,
             native_accrued_interest_balance: native_accrued_interest_balance
           )
@@ -281,7 +279,7 @@ module Forecast
           terms.accrual_ready?
       end
 
-      def projected_interest_for(account, profile, terms, period, opening_balance, opening_conversion, forecast_last_accrued_on:, terms_valid_from: nil, native_interest_bearing_balance: nil, native_accrued_interest_balance: 0.to_d)
+      def projected_interest_for(account, profile, terms, period, opening_balance, opening_conversion, forecast_last_accrued_on:, native_interest_bearing_balance: nil, native_accrued_interest_balance: 0.to_d)
         unless terms.accrual_ready?
           return zero_projected_interest(
             "terms_not_accrual_ready",
@@ -293,7 +291,13 @@ module Forecast
         return zero_projected_interest("accrual_schedule_not_due") unless window.fetch(:due)
 
         period_end = [ period.end_date, window.fetch(:period_end_on) ].min
-        start_date = [ run_date, window.fetch(:period_start_on), terms_valid_from ].compact.max
+        natural_start = [ run_date, window.fetch(:period_start_on), profile.effective_start_on ].compact.max
+        # Clamp only the LEADING no-rate gap forward: if no rate period covers the
+        # natural start, accrual begins at the first rate period that opens on or
+        # before period_end. Intra-window rate transitions are handled by splitting
+        # into sub-spans below rather than by clamping the whole period forward.
+        leading_clamp = leading_rate_clamp_for(profile, natural_start, period_end)
+        start_date = [ natural_start, leading_clamp ].compact.max
         return zero_projected_interest("no_days_in_period") if start_date > period_end
         federal_handler = Debt::FederalStudentLoan::AccrualHandler.new(profile)
         unless federal_handler.accrues_interest?
@@ -305,38 +309,116 @@ module Forecast
           )
         end
 
-        terms = Debt::AccountTerms.new(account, as_of: period_end).resolve
-        unless terms.accrual_ready?
+        # Resolve every rate-period boundary that falls strictly inside the
+        # accrual window. Accruing the whole span at the end-of-span rate would
+        # apply a rate to days before its starts_on; instead we split the span at
+        # each boundary and accrue each sub-span at its own resolved rate, summing
+        # the interest. Boundaries are collected with a stable, DB-order-independent
+        # ordering (starts_on, priority, id) so overlapping/variable periods resolve
+        # identically regardless of insertion order.
+        spans = rate_spans_for(profile, start_date, period_end)
+        denominator = federal_handler.day_count_denominator
+
+        span_results = spans.map do |span|
+          span_start = span.fetch(:start_on)
+          span_end = span.fetch(:end_on)
+          span_terms = Debt::AccountTerms.new(account, as_of: span_end).resolve
+          next { not_ready: span_terms } unless span_terms.accrual_ready?
+
+          span_days = (span_end - span_start).to_i + 1
+          span_basis = projected_interest_basis(account, profile, federal_handler, span_terms, opening_balance, opening_conversion, span_end, native_interest_bearing_balance: native_interest_bearing_balance, native_accrued_interest_balance: native_accrued_interest_balance)
+          span_interest = (span_basis.fetch(:amount) * (span_terms.annual_rate.to_d / 100) * span_days / denominator).round(4)
+
+          {
+            terms: span_terms,
+            basis: span_basis,
+            days: span_days,
+            interest: span_interest,
+            start_on: span_start,
+            end_on: span_end
+          }
+        end
+
+        not_ready = span_results.find { |result| result.key?(:not_ready) }
+        if not_ready
+          span_terms = not_ready.fetch(:not_ready)
           return zero_projected_interest(
             "terms_not_accrual_ready",
-            risk_flags: terms.missing_fields.map { |field| { "type" => "debt_projection_incomplete", "account_id" => account.id, "reason" => "missing_#{field}" } }
+            risk_flags: span_terms.missing_fields.map { |field| { "type" => "debt_projection_incomplete", "account_id" => account.id, "reason" => "missing_#{field}" } }
           )
         end
 
-        days = (period_end - start_date).to_i + 1
-        denominator = federal_handler.day_count_denominator
-        basis = projected_interest_basis(account, profile, federal_handler, terms, opening_balance, opening_conversion, period_end, native_interest_bearing_balance: native_interest_bearing_balance, native_accrued_interest_balance: native_accrued_interest_balance)
-        projected_interest = (basis.fetch(:amount) * (terms.annual_rate.to_d / 100) * days / denominator).round(4)
+        projected_interest = span_results.sum(0.to_d) { |result| result.fetch(:interest) }
+        # The basis snapshot is identical across sub-spans (same opening balance and
+        # FX) so the final span's snapshot represents the period; per-span rate and
+        # day-count detail lives under "rate_spans".
+        final_basis = span_results.last.fetch(:basis)
 
         {
           amount: projected_interest,
           forecast_last_accrued_on: period_end,
-          risk_flags: basis.fetch(:risk_flags),
-          source_snapshot: basis.fetch(:source_snapshot).merge(
+          risk_flags: span_results.flat_map { |result| result.fetch(:basis).fetch(:risk_flags) },
+          source_snapshot: final_basis.fetch(:source_snapshot).merge(
             "amount" => projected_interest.to_s,
             "currency" => money_converter.currency,
             "period_start_on" => start_date.iso8601,
             "period_end_on" => period_end.iso8601,
-            "terms_valid_from" => terms_valid_from&.iso8601,
-            "federal_policy_applied" => federal_handler.enabled?
+            "terms_valid_from" => start_date.iso8601,
+            "federal_policy_applied" => federal_handler.enabled?,
+            "rate_spans" => span_results.map do |result|
+              {
+                "start_on" => result.fetch(:start_on).iso8601,
+                "end_on" => result.fetch(:end_on).iso8601,
+                "days" => result.fetch(:days),
+                "annual_rate" => result.fetch(:terms).annual_rate.to_s,
+                "terms_source" => result.fetch(:terms).source,
+                "interest" => result.fetch(:interest).to_s
+              }
+            end
           )
         }
       end
 
-      def terms_valid_from_for(profile, as_of)
-        rate_period = profile.debt_rate_periods.for_date(as_of).first
+      # Split [start_date, period_end] at each DebtRatePeriod boundary that falls
+      # strictly inside the window, so each sub-span accrues at its own resolved
+      # rate. Boundaries come from rate periods whose starts_on lies in
+      # (start_date, period_end]; iteration uses a stable (starts_on, priority, id)
+      # ordering in Ruby so the result never depends on DB row order. Returns an
+      # ordered, contiguous, gap-free list of { start_on:, end_on: } sub-spans.
+      def rate_spans_for(profile, start_date, period_end)
+        boundaries = profile.debt_rate_periods
+          .sort_by { |rate_period| [ rate_period.starts_on, rate_period.priority, rate_period.id ] }
+          .map(&:starts_on)
+          .select { |starts_on| starts_on > start_date && starts_on <= period_end }
+          .uniq
 
-        [ profile.effective_start_on, rate_period&.starts_on ].compact.max
+        cut_points = ([ start_date ] + boundaries).uniq
+        cut_points.each_with_index.map do |span_start, index|
+          next_boundary = cut_points[index + 1]
+          span_end = next_boundary ? next_boundary.prev_day : period_end
+          { start_on: span_start, end_on: span_end }
+        end
+      end
+
+      # Forward-clamp the accrual start past a leading no-rate gap. If a rate
+      # period already covers the natural start there is nothing to skip (returns
+      # nil). Otherwise accrual cannot begin until the first rate period opens, so
+      # we return the earliest rate-period start that lands inside the window.
+      # Iterates with a stable (starts_on, priority, id) ordering so the clamp is
+      # independent of DB row order.
+      def leading_rate_clamp_for(profile, natural_start, period_end)
+        ordered = profile.debt_rate_periods
+          .sort_by { |rate_period| [ rate_period.starts_on, rate_period.priority, rate_period.id ] }
+        return nil if ordered.any? { |rate_period| rate_period_covers?(rate_period, natural_start) }
+
+        ordered
+          .map(&:starts_on)
+          .select { |starts_on| starts_on > natural_start && starts_on <= period_end }
+          .min
+      end
+
+      def rate_period_covers?(rate_period, date)
+        rate_period.starts_on <= date && (rate_period.ends_on.nil? || rate_period.ends_on >= date)
       end
 
       def projected_interest_basis(account, profile, federal_handler, terms, opening_balance, opening_conversion, period_end, native_interest_bearing_balance: nil, native_accrued_interest_balance: 0.to_d)
