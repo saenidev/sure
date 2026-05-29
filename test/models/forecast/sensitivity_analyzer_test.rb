@@ -79,6 +79,65 @@ class Forecast::SensitivityAnalyzerTest < ActiveSupport::TestCase
     assert_operator result.perturbed_metric.fetch("debt_balance"), :>, result.baseline_metric.fetch("debt_balance")
   end
 
+  test "debt rate +200bps leaves account_balance_only fallback rows untouched while perturbing profile-backed rows" do
+    # HARD INVARIANT: balance-only fallback rows never modeled interest, so the
+    # rate perturbation must NOT touch them (no phantom interest, no inflated
+    # ending balance). This exercises the `next dup unless profile_backed?(row)`
+    # guard against an actual fallback row, which the profile-only test above
+    # never does.
+    profile_row = {
+      projection_key: "acct-loan",
+      account_id: "acct-loan",
+      period_start_on: @first_start,
+      period_end_on: @first_end,
+      currency: @family.currency,
+      opening_balance: 10_000.to_d,
+      projected_interest: (10_000.to_d * 0.05.to_d / 12).round(6),
+      projected_payment: 0.to_d,
+      cash_payment_gap: 0.to_d,
+      projected_drawdown: 0.to_d,
+      ending_balance: (10_000.to_d + (10_000.to_d * 0.05.to_d / 12).round(6)),
+      balance_trend: "growing",
+      source: "debt_profile_snapshot",
+      risk_flags: [],
+      source_snapshot: {}
+    }
+    fallback_row = {
+      projection_key: "acct-fallback",
+      account_id: "acct-fallback",
+      period_start_on: @first_start,
+      period_end_on: @first_end,
+      currency: @family.currency,
+      opening_balance: 8_000.to_d,
+      projected_interest: 0.to_d,
+      projected_payment: 0.to_d,
+      cash_payment_gap: 0.to_d,
+      projected_drawdown: 0.to_d,
+      ending_balance: 8_000.to_d,
+      balance_trend: "stable",
+      source: "account_balance_only",
+      risk_flags: [ { "type" => "debt_projection_incomplete", "account_id" => "acct-fallback", "reason" => "missing_terms" } ],
+      source_snapshot: {}
+    }
+    input = base_input(debt_rows: [ profile_row, fallback_row ])
+
+    analyzer = Forecast::SensitivityAnalyzer.new(input: input)
+    perturbed_input = analyzer.send(:shift_debt_rate, input, basis_points: 200.to_d)
+
+    perturbed_profile = perturbed_input.debt_rows.find { |row| row.fetch(:account_id) == "acct-loan" }
+    perturbed_fallback = perturbed_input.debt_rows.find { |row| row.fetch(:account_id) == "acct-fallback" }
+
+    # Profile-backed row gains the extra interest and a higher ending balance.
+    assert_operator perturbed_profile.fetch(:projected_interest), :>, profile_row.fetch(:projected_interest)
+    assert_operator perturbed_profile.fetch(:ending_balance), :>, profile_row.fetch(:ending_balance)
+
+    # Balance-only fallback row is byte-for-byte unchanged: no phantom interest,
+    # no inflated ending balance, and it still carries its incomplete risk flag.
+    assert_equal fallback_row.fetch(:projected_interest), perturbed_fallback.fetch(:projected_interest)
+    assert_equal fallback_row.fetch(:ending_balance), perturbed_fallback.fetch(:ending_balance)
+    assert_equal fallback_row.fetch(:risk_flags), perturbed_fallback.fetch(:risk_flags)
+  end
+
   test "market return -20% scales portfolio_delta and carries the change into net worth coherently" do
     # A single effect row carrying a positive portfolio_delta with a matching
     # net_worth_delta. Income/expense fields are zero so only the market_return
