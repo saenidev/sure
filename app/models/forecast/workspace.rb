@@ -167,6 +167,24 @@ module Forecast
       @scenarios_count ||= family.forecast_scenarios.count
     end
 
+    # Family scenarios grouped by status for the Scenarios tab. Eager-loads the
+    # planning children so the row badges/counts add no N+1 over each scenario.
+    # Memoized so re-rendering the tab does not re-query.
+    def scenario_groups
+      return @scenario_groups if defined?(@scenario_groups)
+
+      scenarios = family.forecast_scenarios
+        .includes(:forecast_events, :forecast_budget_overrides, :forecast_goals, :forecast_account_liquidity_settings)
+        .ordered
+        .to_a
+
+      @scenario_groups = {
+        "active" => scenarios.select(&:active?),
+        "disabled" => scenarios.select(&:disabled?),
+        "archived" => scenarios.select(&:archived?)
+      }
+    end
+
     def events_count
       @events_count ||= family.forecast_events.count
     end

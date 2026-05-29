@@ -1,0 +1,17 @@
+<%# locals: (workspace:) %>
+
+<section class="space-y-4" aria-label="<%= t("forecasts.show.tabs.scenarios") %>">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <p class="text-secondary text-sm"><%= t("forecasts.scenarios.index.description") %></p>
+
+    <%= render DS::Button.new(
+      text: t("forecasts.scenarios.index.new"),
+      icon: "plus",
+      href: new_forecast_scenario_path,
+      frame: "modal",
+      size: :sm
+    ) %>
+  </div>
+
+  <%= render "forecast/scenarios/list", scenario_groups: workspace.scenario_groups %>
+</section>

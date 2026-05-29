@@ -295,6 +295,13 @@ Rails.application.routes.draw do
     resources :runs, only: %i[create] do
       get :status, on: :member
     end
+
+    resources :scenarios, except: :show do
+      member do
+        patch :toggle
+        post :duplicate
+      end
+    end
   end
 
   resources :reports, only: %i[index] do

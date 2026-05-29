@@ -39,6 +39,68 @@ en:
       default_name: "Forecast %{date}"
       enqueued: "Generating your forecast. This page will update when it is ready."
       already_running: "A forecast is already being generated. Please wait for it to finish."
+    scenarios:
+      index:
+        title: "Scenarios"
+        description: "Build the what-if scenarios that feed your forecast. Activate the ones you want projected, disable the rest, and duplicate to branch."
+        new: "New scenario"
+      new:
+        title: "New scenario"
+      edit:
+        title: "Edit scenario"
+      empty:
+        title: "No scenarios yet"
+        body: "Create a scenario to model a what-if, such as a new job, a move, or a large purchase. Active scenarios are projected in your forecast."
+      groups:
+        active: "Active (%{count})"
+        disabled: "Disabled (%{count})"
+        archived: "Archived (%{count})"
+      statuses:
+        active: "Active"
+        disabled: "Disabled"
+        archived: "Archived"
+      approval_statuses:
+        manual: "Manual"
+        pending: "Pending"
+        approved: "Approved"
+        rejected: "Rejected"
+      row:
+        edit: "Edit"
+        duplicate: "Duplicate"
+        archive: "Archive"
+        delete: "Delete"
+        toggle_label: "Toggle %{name} active"
+        date_window: "%{start_date} to %{end_date}"
+        open_start: "No start"
+        open_end: "No end"
+      form:
+        name_label: "Name"
+        name_placeholder: "e.g. New job offer"
+        description_label: "Description"
+        description_placeholder: "What does this scenario model?"
+        starts_on_label: "Starts on"
+        ends_on_label: "Ends on"
+        status_label: "Status"
+        display_order_label: "Display order"
+        create: "Create scenario"
+        update: "Save scenario"
+      archive_confirm:
+        title: "Archive scenario?"
+        body: "Archive %{name}? It will no longer be projected and cannot be toggled back on until restored."
+        confirm: "Archive"
+      create:
+        success: "Scenario created."
+      update:
+        success: "Scenario updated."
+      destroy:
+        success: "Scenario deleted."
+      toggle:
+        success: "Scenario updated."
+        archived: "Archived scenarios cannot be toggled. Restore it first."
+        error: "We could not update this scenario."
+      duplicate:
+        success: "Scenario duplicated. The copy is disabled until you turn it on."
+        error: "We could not duplicate this scenario: %{message}"
     running:
       title: "Generating your forecast"
       body: "We are projecting the next 36 months across your accounts, budgets, debts, and scenarios. This usually takes a moment."

@@ -1,0 +1,42 @@
+<%# locals: (scenario:) %>
+
+<%= styled_form_with model: scenario,
+                     url: scenario.persisted? ? forecast_scenario_path(scenario) : forecast_scenarios_path,
+                     class: "space-y-4" do |f| %>
+  <% if scenario.errors.any? %>
+    <%= render "shared/form_errors", model: scenario %>
+  <% end %>
+
+  <div class="space-y-2">
+    <%= f.text_field :name,
+                     label: t("forecasts.scenarios.form.name_label"),
+                     placeholder: t("forecasts.scenarios.form.name_placeholder"),
+                     required: true,
+                     autofocus: true %>
+
+    <%= f.text_area :description,
+                    label: t("forecasts.scenarios.form.description_label"),
+                    placeholder: t("forecasts.scenarios.form.description_placeholder"),
+                    rows: 3 %>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <%= f.date_field :starts_on, label: t("forecasts.scenarios.form.starts_on_label") %>
+    <%= f.date_field :ends_on, label: t("forecasts.scenarios.form.ends_on_label") %>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <%= f.select :status,
+                 ForecastScenario::STATUSES.map { |s| [ t("forecasts.scenarios.statuses.#{s}"), s ] },
+                 { label: t("forecasts.scenarios.form.status_label") } %>
+
+    <%= f.number_field :display_order,
+                       label: t("forecasts.scenarios.form.display_order_label"),
+                       min: 0,
+                       step: 1 %>
+  </div>
+
+  <div class="flex items-center justify-end gap-2 pt-2">
+    <%= f.submit scenario.persisted? ? t("forecasts.scenarios.form.update") : t("forecasts.scenarios.form.create") %>
+  </div>
+<% end %>

@@ -1,0 +1,19 @@
+<% content_for :title, t("forecasts.scenarios.index.title") %>
+
+<div class="space-y-6 pb-6 lg:pb-12">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <div class="space-y-1">
+      <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.scenarios.index.title") %></h1>
+      <p class="text-secondary text-sm"><%= t("forecasts.scenarios.index.description") %></p>
+    </div>
+
+    <%= render DS::Button.new(
+      text: t("forecasts.scenarios.index.new"),
+      icon: "plus",
+      href: new_forecast_scenario_path,
+      frame: "modal"
+    ) %>
+  </header>
+
+  <%= render "forecast/scenarios/list", scenario_groups: @scenario_groups %>
+</div>
