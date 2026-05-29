@@ -126,6 +126,8 @@ class ForecastEvent < ApplicationRecord
 
       if refinance["effective_on"].blank?
         errors.add(:source_metadata, "refinance must include effective_on for debt_terms_override events")
+      elsif !parseable_date?(refinance["effective_on"])
+        errors.add(:source_metadata, "refinance effective_on must be a valid date for debt_terms_override events")
       end
 
       new_rate = refinance["new_annual_rate"]
@@ -150,6 +152,16 @@ class ForecastEvent < ApplicationRecord
 
     def non_negative_decimal?(value)
       BigDecimal(value.to_s) >= 0
+    rescue ArgumentError, TypeError
+      false
+    end
+
+    def parseable_date?(value)
+      return true if value.is_a?(Date)
+      return false if value.blank?
+
+      Date.iso8601(value.to_s)
+      true
     rescue ArgumentError, TypeError
       false
     end

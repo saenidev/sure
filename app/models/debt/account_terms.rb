@@ -16,13 +16,21 @@ module Debt
       end
     end
 
-    def initialize(account, as_of: Date.current)
+    # `rate_periods` lets a caller inject a preloaded, authoritative snapshot of the
+    # profile's debt_rate_periods so resolve never issues a `for_date` query. This
+    # is used by the forecast adapter, which materializes a fresh array ONCE per
+    # account (from its eager-load) and resolves terms for many periods in a hot
+    # loop. Pass nil (the default) to keep the original behavior of querying
+    # `for_date` per call, which every other caller relies on for authoritative,
+    # never-stale rate resolution.
+    def initialize(account, as_of: Date.current, rate_periods: nil)
       @account = account
       @as_of = as_of
+      @rate_periods = rate_periods
     end
 
     def resolve
-      rate_period = profile&.debt_rate_periods&.for_date(as_of)&.first
+      rate_period = rate_period_for(as_of)
       federal_weighted_rate = federal_student_loan_weighted_rate
       annual_rate = decimal_or_nil(rate_period&.annual_rate || federal_weighted_rate || account_default(:debt_default_annual_rate))
       rate_type = rate_period&.rate_type || profile&.rate_type || account_default(:debt_default_rate_type)
@@ -44,10 +52,25 @@ module Debt
     end
 
     private
-      attr_reader :account, :as_of
+      attr_reader :account, :as_of, :rate_periods
 
       def profile
         @profile ||= account.debt_profile
+      end
+
+      # Resolve the active rate period for `as_of`. When a caller injects a
+      # preloaded `rate_periods` snapshot, select from it in Ruby (zero DB
+      # queries), mirroring the `for_date` scope exactly: same predicate
+      # (starts_on <= as_of AND (ends_on nil OR ends_on >= as_of)) and the same
+      # ORDER BY priority DESC, starts_on DESC -> first winner. Otherwise issue the
+      # authoritative `for_date` query so non-injecting callers never read a stale
+      # association cache.
+      def rate_period_for(as_of)
+        return profile&.debt_rate_periods&.for_date(as_of)&.first if rate_periods.nil?
+
+        rate_periods
+          .select { |rate_period| rate_period.starts_on <= as_of && (rate_period.ends_on.nil? || rate_period.ends_on >= as_of) }
+          .min_by { |rate_period| [ -rate_period.priority, -rate_period.starts_on.jd ] }
       end
 
       def account_default(method_name)

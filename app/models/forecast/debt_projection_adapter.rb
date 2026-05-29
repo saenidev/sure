@@ -24,10 +24,35 @@ module Forecast
     private
       attr_reader :family, :user, :periods, :money_converter, :recurring_items, :included_account_scope, :forecast_debt_events, :run_date
 
+      # Resolve debt terms for an account at a date WITHOUT re-querying rate periods
+      # per call. We materialize the account's freshly eager-loaded debt_rate_periods
+      # into a stable, frozen array ONCE per account (ordered by starts_on, priority,
+      # id for deterministic, DB-order-independent resolution) and inject it into
+      # AccountTerms. Because the adapter eager-loads fresh and never mutates rate
+      # periods during `call`, the snapshot is authoritative and the per-period
+      # AccountTerms resolution issues zero additional DB queries.
+      def resolve_terms(account, as_of)
+        Debt::AccountTerms.new(account, as_of: as_of, rate_periods: rate_periods_snapshot(account)).resolve
+      end
+
+      def rate_periods_snapshot(account)
+        @rate_periods_snapshots ||= {}
+        @rate_periods_snapshots[account.id] ||= begin
+          profile = account.debt_profile
+          (profile&.debt_rate_periods || [])
+            .sort_by { |rate_period| [ rate_period.starts_on, rate_period.priority, rate_period.id ] }
+            .freeze
+        end
+      end
+
       def accounts
         family.accounts.visible.liabilities
           .where(id: included_account_scope.ids)
-          .includes(:debt_obligations, :debt_payment_allocations, debt_profile: :debt_rate_periods)
+          .includes(
+            { debt_obligations: { debt_payment_allocations: :entry } },
+            { debt_payment_allocations: :entry },
+            debt_profile: :debt_rate_periods
+          )
           .order(:accountable_type, :name, :id)
       end
 
@@ -37,7 +62,7 @@ module Forecast
         base_reasons = base_projection_reasons(account, profile)
 
         if base_reasons.any?
-          terms = Debt::AccountTerms.new(account, as_of: readiness_date).resolve
+          terms = resolve_terms(account, readiness_date)
           reasons = base_reasons + terms.missing_fields.map { |field| "missing_#{field}" }
           return account_balance_only_rows(account, profile, opening, reasons)
         end
@@ -48,7 +73,7 @@ module Forecast
         forecast_last_accrued_on = profile.last_accrued_on
 
         rows = periods.map do |period|
-          terms = Debt::AccountTerms.new(account, as_of: period.end_date).resolve
+          terms = resolve_terms(account, period.end_date)
           unless terms.accrual_ready?
             reasons = terms.missing_fields.map { |field| "missing_#{field}" }
             row = account_balance_only_row(account, profile, opening, terms, period, balance, reasons)
@@ -97,10 +122,13 @@ module Forecast
           actual_payment_credit = required_payment.fetch(:already_net_of_actuals) ? 0.to_d : actual_payment.fetch(:amount)
           fulfilled_payment = actual_payment_credit + recurring_payment + scenario_payment
           cash_payment_gap = [ required_payment_amount - fulfilled_payment, 0.to_d ].max
-          # The balloon is a contractually scheduled lump sum: it reduces the balance
-          # in its due period regardless of whether cash covers it (the shortfall is
-          # surfaced separately via cash_payment_gap above).
-          baseline_projected_payment = [ scenario_payment + recurring_payment + cash_payment_gap + balloon_amount, balance_with_interest ].min
+          # The balloon is a contractually scheduled lump sum that already flows into
+          # required_payment_amount (line above) and therefore into cash_payment_gap
+          # when unfunded; it reduces the balance in its due period regardless of
+          # whether cash covers it (the shortfall is surfaced separately via
+          # cash_payment_gap). Do NOT re-add balloon_amount here or it is counted
+          # twice, overpaying the loan and corrupting the ending balance / net worth.
+          baseline_projected_payment = [ scenario_payment + recurring_payment + cash_payment_gap, balance_with_interest ].min
           amortization = amortization_extra_payment_for(
             account,
             profile,
@@ -219,7 +247,7 @@ module Forecast
         balance = opening.amount
 
         periods.map do |period|
-          terms = Debt::AccountTerms.new(account, as_of: period.end_date).resolve
+          terms = resolve_terms(account, period.end_date)
           row = account_balance_only_row(account, profile, opening, terms, period, balance, reasons)
           balance = row.fetch(:ending_balance)
           row
@@ -355,7 +383,7 @@ module Forecast
         span_results = spans.map do |span|
           span_start = span.fetch(:start_on)
           span_end = span.fetch(:end_on)
-          span_terms = Debt::AccountTerms.new(account, as_of: span_end).resolve
+          span_terms = resolve_terms(account, span_end)
           next { not_ready: span_terms } unless span_terms.accrual_ready?
 
           span_days = (span_end - span_start).to_i + 1
@@ -679,15 +707,28 @@ module Forecast
       # are never present (input builder threads them via debt_sensitive_events) so
       # the baseline stack is unaffected.
       def refinance_override_for(account, period)
-        candidates = forecast_debt_events.select do |row|
+        account_overrides = forecast_debt_events.select do |row|
           row.fetch(:effect_type, nil) == "debt_terms_override" &&
             debt_effect_account_id(row) == account.id &&
-            row.fetch(:refinance, nil).is_a?(Hash) &&
-            (effective = parse_date(row.dig(:refinance, "effective_on"))).present? &&
+            row.fetch(:refinance, nil).is_a?(Hash)
+        end
+
+        candidates = account_overrides.select do |row|
+          (effective = parse_date(row.dig(:refinance, "effective_on"))).present? &&
             effective <= period.end_date
         end
 
-        return no_refinance if candidates.empty?
+        if candidates.empty?
+          # If override events exist for this account but every effective_on failed
+          # to parse, the override is silently dropped (no rate/payment/drawdown
+          # change). Surface that loudly rather than pretending the scenario equals
+          # baseline: an unparseable date must never make an override vanish without
+          # an audit trail.
+          unparseable = account_overrides.reject { |row| parse_date(row.dig(:refinance, "effective_on")).present? }
+          return no_refinance if unparseable.empty?
+
+          return unparseable_refinance(account, unparseable)
+        end
 
         # Stable tie-break: latest effective_on wins; ties resolve by event id so the
         # result never depends on DB/array row order.
@@ -718,6 +759,32 @@ module Forecast
 
       def no_refinance
         { active: false, terms: nil, drawdown: 0.to_d, risk_flags: [], source_snapshot: { "applied" => false } }
+      end
+
+      # An override event existed for this account but its effective_on could not be
+      # parsed into a real date, so no rate/payment/drawdown change is applied. We do
+      # NOT silently fall back to baseline: emit a debt_projection_incomplete flag and
+      # record the discarded event ids so the dropped override stays explainable.
+      def unparseable_refinance(account, unparseable_events)
+        discarded_ids = unparseable_events.map { |row| row.dig(:source_snapshot, "id") }
+        {
+          active: false,
+          terms: nil,
+          drawdown: 0.to_d,
+          risk_flags: [
+            {
+              "type" => "debt_projection_incomplete",
+              "account_id" => account.id,
+              "reason" => "debt_terms_override_unparseable_effective_on"
+            }
+          ],
+          source_snapshot: {
+            "applied" => false,
+            "discarded_reason" => "unparseable_effective_on",
+            "discarded_forecast_event_ids" => discarded_ids,
+            "discarded_effective_on_values" => unparseable_events.map { |row| row.dig(:refinance, "effective_on") }
+          }
+        }
       end
 
       # Build a frozen, deterministic terms struct from the refinance metadata. The
@@ -808,12 +875,19 @@ module Forecast
       end
 
       def required_payment_for(account, period, payment, opening_balance, include_overdue: false)
-        obligations = account.debt_obligations
-          .where(status: %w[open partially_paid overdue paid])
-        obligations = if include_overdue
-          obligations.where("due_on <= ?", period.end_date)
-        else
-          obligations.where(due_on: period.start_date..period.end_date)
+        # Filter the (eager-loaded) debt_obligations collection in Ruby instead of
+        # issuing a fresh `.where` per period. The full set is loaded once per
+        # account by `accounts` (includes(:debt_obligations, ...)); enumerating it
+        # here keeps the per-period cost as in-memory selection, not DB round-trips.
+        statuses = %w[open partially_paid overdue paid]
+        obligations = account.debt_obligations.to_a.select do |obligation|
+          next false unless obligation.status.in?(statuses)
+
+          if include_overdue
+            obligation.due_on <= period.end_date
+          else
+            obligation.due_on >= period.start_date && obligation.due_on <= period.end_date
+          end
         end
         # Stable ordering with an id tie-breaker so the same set of obligations
         # always resolves the same row regardless of DB row order. Provider/local
@@ -1026,14 +1100,19 @@ module Forecast
       end
 
       def actual_payment_for(account, period)
-        allocations = account.debt_payment_allocations
-          .joins(:entry)
-          .includes(:entry)
-          .where(status: %w[allocated estimated])
-          .where(entries: { date: period.start_date..[ period.end_date, run_date ].min })
-          .order("entries.date ASC", "debt_payment_allocations.id ASC")
-          .to_a
+        # Filter the (eager-loaded) debt_payment_allocations + entries in Ruby
+        # rather than issuing a joined `.where` per period. The account preloads
+        # `debt_payment_allocations: :entry`, so the per-period work is in-memory
+        # selection. Ordering mirrors the prior SQL (entry date, then allocation
+        # id) with a stable id tie-breaker so the resolved set never depends on DB
+        # row order.
+        cutoff = [ period.end_date, run_date ].min
+        allocations = account.debt_payment_allocations.to_a
+          .select { |allocation| allocation.status.in?(%w[allocated estimated]) }
+          .select { |allocation| allocation.entry.present? && allocation.entry.date.present? }
+          .select { |allocation| allocation.entry.date >= period.start_date && allocation.entry.date <= cutoff }
           .reject { |allocation| allocation.entry.excluded? || (allocation.entry.transaction? && allocation.entry.transaction.pending?) }
+          .sort_by { |allocation| [ allocation.entry.date, allocation.id ] }
 
         converted = allocations.map do |allocation|
           money_converter.convert(

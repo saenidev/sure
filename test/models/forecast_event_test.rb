@@ -206,4 +206,31 @@ class ForecastEventTest < ActiveSupport::TestCase
     event.source_metadata = { "destination_amount" => "450.0", "destination_currency" => "EUR" }
     assert event.valid?, event.errors.full_messages.to_sentence
   end
+
+  test "debt_terms_override rejects an unparseable refinance effective_on" do
+    event = @family.forecast_events.build(
+      name: "Refinance loan",
+      effect_type: "debt_terms_override",
+      behavior: "additive",
+      starts_on: Date.current,
+      account: @account,
+      source_metadata: { "refinance" => { "effective_on" => "soon", "new_annual_rate" => "12" } }
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:source_metadata], "refinance effective_on must be a valid date for debt_terms_override events"
+  end
+
+  test "debt_terms_override accepts a parseable refinance effective_on" do
+    event = @family.forecast_events.build(
+      name: "Refinance loan",
+      effect_type: "debt_terms_override",
+      behavior: "additive",
+      starts_on: Date.current,
+      account: @account,
+      source_metadata: { "refinance" => { "effective_on" => Date.current.iso8601, "new_annual_rate" => "12" } }
+    )
+
+    assert event.valid?, event.errors.full_messages.to_sentence
+  end
 end

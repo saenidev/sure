@@ -2368,4 +2368,136 @@ class Forecast::DebtProjectionAdapterTest < ActiveSupport::TestCase
     assert_equal 500.to_d, row.fetch(:cash_payment_gap)
     assert_equal "fixed_minimum_payment", row.fetch(:source_snapshot).fetch("required_payment").fetch("selected_source")
   end
+
+  # --- Balloon double-count regression (batch 1, fix 1) -----------------------
+  # The existing balloon tests use an oversized (balance-capped) balloon, which
+  # masks the double-count bug because the doubled payment floors at the balance
+  # either way. This uses a balloon SMALLER than the carried balance so the
+  # arithmetic is exact and the double-count would surface.
+
+  test "unfunded balloon smaller than balance is scheduled exactly once (no double-count)" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    account.loan.update!(interest_rate: nil)
+    start_on = Date.current.next_month.beginning_of_month
+    balloon_due = (start_on + 2.months).change(day: 15)
+    profile = build_amortization_profile(account, start_on: start_on, minimum_payment_amount: 100, annual_rate: 0)
+    profile.update!(extra: { "balloon" => { "due_on" => balloon_due.iso8601, "amount" => "3000", "currency" => family.currency } })
+    periods = amortization_periods(start_on, 4)
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    balloon_row = rows.find { |row| row.fetch(:period_start_on) <= balloon_due && balloon_due <= row.fetch(:period_end_on) }
+    # Opening this period = 10000 - 100 - 100 = 9800 (two prior minimum payments).
+    # Payment = 100 minimum + 3000 balloon = 3100 (counted ONCE, not 6100).
+    assert_equal 3_100.to_d, balloon_row.fetch(:projected_payment)
+    assert_equal 6_700.to_d, balloon_row.fetch(:ending_balance)
+    refute balloon_row.fetch(:source_snapshot).fetch("debt_balloon_due").fetch("balloon_capped_to_balance")
+  end
+
+  test "partially funded balloon counts the funded portion once and gaps the rest" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    account.loan.update!(interest_rate: nil)
+    start_on = Date.current.next_month.beginning_of_month
+    balloon_due = (start_on + 2.months).change(day: 15)
+    profile = build_amortization_profile(account, start_on: start_on, minimum_payment_amount: 100, annual_rate: 0)
+    profile.update!(extra: { "balloon" => { "due_on" => balloon_due.iso8601, "amount" => "2000", "currency" => family.currency } })
+    periods = amortization_periods(start_on, 4)
+    # A recurring loan payment of 100 lands in the balloon period; it funds part of
+    # the required (minimum + balloon) but does not change the scheduled payment.
+    recurring = [
+      {
+        destination_account_id: account.id,
+        transaction_kind: "loan_payment",
+        recurring_payment_modeled: true,
+        date: balloon_due,
+        amount: 100.to_d
+      }
+    ]
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: recurring,
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    balloon_row = rows.find { |row| row.fetch(:period_start_on) <= balloon_due && balloon_due <= row.fetch(:period_end_on) }
+    # Opening = 10000 - 100 - 100 = 9800. Required = 100 minimum + 2000 balloon = 2100.
+    # Funded by the 100 recurring payment -> gap 2000; total scheduled = 2100 (once).
+    assert_equal 2_100.to_d, balloon_row.fetch(:projected_payment)
+    assert_equal 7_700.to_d, balloon_row.fetch(:ending_balance)
+  end
+
+  # --- Unparseable refinance effective_on regression (batch 1, fix 3) ---------
+
+  test "refinance with an unparseable effective_on is flagged, not silently dropped" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    account.loan.update!(interest_rate: nil)
+    start_on = Date.current.next_month.beginning_of_month
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 0,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 120, starts_on: start_on)
+    periods = amortization_periods(start_on, 3)
+    bad_event = {
+      account_id: account.id,
+      effect_type: "debt_terms_override",
+      transaction_kind: "standard",
+      date: start_on,
+      debt_delta: 0.to_d,
+      refinance: { "effective_on" => "soon", "new_annual_rate" => "12" },
+      risk_flags: [],
+      source_snapshot: { "id" => "refi-bad", "effective_on" => "soon" }
+    }
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current,
+      forecast_debt_events: [ bad_event ]
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    first_row = rows.first
+    refinance_snapshot = first_row.fetch(:source_snapshot).fetch("refinance")
+    refute refinance_snapshot.fetch("applied")
+    assert_equal "unparseable_effective_on", refinance_snapshot.fetch("discarded_reason")
+    assert_includes refinance_snapshot.fetch("discarded_forecast_event_ids"), "refi-bad"
+    assert first_row.fetch(:risk_flags).any? { |flag|
+      flag["type"] == "debt_projection_incomplete" &&
+        flag["reason"] == "debt_terms_override_unparseable_effective_on"
+    }
+    # The original (unrefinanced) 120% rate still applies; no silent baseline swap.
+    assert_equal "120.0", first_row.fetch(:source_snapshot).fetch("projected_interest").fetch("rate_spans").last.fetch("annual_rate")
+  end
 end

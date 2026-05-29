@@ -79,6 +79,47 @@ class Forecast::SensitivityAnalyzerTest < ActiveSupport::TestCase
     assert_operator result.perturbed_metric.fetch("debt_balance"), :>, result.baseline_metric.fetch("debt_balance")
   end
 
+  test "market return -20% scales portfolio_delta and carries the change into net worth coherently" do
+    # A single effect row carrying a positive portfolio_delta with a matching
+    # net_worth_delta. Income/expense fields are zero so only the market_return
+    # branch moves anything. No debt rows -> debt_balance delta must be 0.
+    portfolio_row = {
+      id: "portfolio-gain",
+      date: @first_start,
+      category_id: nil,
+      transfer: false,
+      transaction_kind: nil,
+      budget_flow_type: nil,
+      expected_income: 0.to_d,
+      expected_spending: 0.to_d,
+      cash_delta: 0.to_d,
+      liquid_delta: 0.to_d,
+      debt_delta: 0.to_d,
+      portfolio_delta: 1_000.to_d,
+      net_worth_delta: 1_000.to_d,
+      risk_flags: [],
+      source_snapshot: {}
+    }
+    input = base_input.with(recurring_items: recurring_rows + [ portfolio_row ])
+
+    perturbation = Forecast::SensitivityAnalyzer::Perturbation.new(
+      key: "market_return_minus_20pct", kind: :market_return, magnitude: -0.20.to_d, description: "Market return -20%"
+    )
+    results = Forecast::SensitivityAnalyzer.new(input: input, perturbations: [ perturbation ]).call
+    result = results.first
+
+    assert_equal "market_return_minus_20pct", result.perturbation_key
+    # No debt anywhere, so the debt metric is untouched.
+    assert_equal 0.to_d, result.delta.fetch("debt_balance")
+    # portfolio_delta 1000 -> 800 (factor 0.8); the coherence carry moves
+    # net_worth_delta by (800 - 1000) = -200, so the reported net_worth delta is
+    # exactly -200. This proves scale_portfolio_rows keeps the net-worth carry in
+    # lockstep with the scaled portfolio_delta (the invariant under test).
+    assert_equal(-200.to_d, result.delta.fetch("net_worth"))
+    # Cash is independent of the portfolio move.
+    assert_equal 0.to_d, result.delta.fetch("cash_balance")
+  end
+
   test "a perturbation that does not touch a goal reports no status change for it" do
     # A maximum_debt_balance goal with no debt rows is unaffected by income changes.
     goal = {
