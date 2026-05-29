@@ -1,0 +1,65 @@
+<%# locals: (model:) %>
+<%#
+  Debt lane: monthly debt projection rows. One disclosure per month that carries
+  debt projections, listing each account's opening balance, projected interest,
+  projected payment, drawdown, and ending balance. The debt projections are
+  eager-loaded per month so this lane issues no per-month query.
+
+  Empty/edge: a run with no debt projections renders the empty-state below
+  (never a crash).
+%>
+<article class="rounded-xl border border-primary bg-container p-4 sm:p-5 space-y-4"
+         aria-labelledby="timeline-debt-lane-heading"
+         data-testid="timeline-debt-lane">
+  <div class="space-y-1">
+    <h4 id="timeline-debt-lane-heading" class="text-primary text-sm font-medium">
+      <%= t("forecasts.timeline.debt_lane.heading") %>
+    </h4>
+    <p class="text-secondary text-xs"><%= t("forecasts.timeline.debt_lane.subtitle") %></p>
+  </div>
+
+  <% if model.debt_projections? %>
+    <% months_with_debt = model.all_monthly_entries.select { |month| model.debt_rows_for(month).any? } %>
+    <div class="space-y-2">
+      <% months_with_debt.each do |month| %>
+        <% rows = model.debt_rows_for(month) %>
+        <details class="rounded-lg border border-primary">
+          <summary class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2">
+            <span class="text-primary text-sm font-medium"><%= l(month.period_start_on, format: :month_year) %></span>
+            <span class="flex items-center gap-2">
+              <span class="text-secondary text-xs tabular-nums"><%= format_money(month.debt_balance) %></span>
+              <%= icon "chevron-down", size: "sm" %>
+            </span>
+          </summary>
+          <div class="border-t border-primary overflow-x-auto">
+            <table class="w-full text-sm">
+              <caption class="sr-only"><%= t("forecasts.timeline.debt_lane.caption", month: l(month.period_start_on, format: :month_year)) %></caption>
+              <thead>
+                <tr class="border-b border-primary text-secondary text-left">
+                  <th scope="col" class="px-3 py-2 font-medium"><%= t("forecasts.timeline.debt_lane.account") %></th>
+                  <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.opening") %></th>
+                  <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.interest") %></th>
+                  <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.payment") %></th>
+                  <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.ending") %></th>
+                </tr>
+              </thead>
+              <tbody class="text-primary">
+                <% rows.each do |row| %>
+                  <tr class="border-b border-primary last:border-0">
+                    <th scope="row" class="px-3 py-2 font-medium text-left"><%= row.label %></th>
+                    <td class="px-3 py-2 text-right tabular-nums"><%= format_money(row.opening_balance) %></td>
+                    <td class="px-3 py-2 text-right tabular-nums"><%= format_money(row.projected_interest) %></td>
+                    <td class="px-3 py-2 text-right tabular-nums"><%= format_money(row.projected_payment) %></td>
+                    <td class="px-3 py-2 text-right tabular-nums"><%= format_money(row.ending_balance) %></td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      <% end %>
+    </div>
+  <% else %>
+    <p class="text-secondary text-sm" data-testid="timeline-debt-empty"><%= t("forecasts.timeline.debt_lane.empty") %></p>
+  <% end %>
+</article>

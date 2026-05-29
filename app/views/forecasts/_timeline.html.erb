@@ -1,0 +1,78 @@
+<%# locals: (workspace:) %>
+<%#
+  Timeline tab: one synchronized stack of lanes (cash / budget / portfolio /
+  debt / goals / scenario) for a single completed run. Reads ONLY persisted
+  output via Forecast::TimelineReadModel (no engine recompute). A daily/monthly
+  resolution toggle (Stimulus, query-param state) swaps the cash lane's 0-90
+  daily view for the 4-36 monthly view. Per-period source-contribution
+  drilldowns let users answer "why is this number here?" from the stored
+  source_breakdown JSON.
+
+  Empty/edge: a family with no completed run sees the empty state (never another
+  family's run, since the model is scoped through the workspace's own group).
+%>
+<section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.timeline") %>">
+  <% if workspace.timeline_data? %>
+    <% model = workspace.timeline_read_model %>
+    <% resolution = (params[:resolution].presence_in(%w[daily monthly]) || "daily") %>
+
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="space-y-1">
+        <h3 class="text-primary text-base font-medium"><%= t("forecasts.timeline.heading") %></h3>
+        <p class="text-secondary text-sm"><%= t("forecasts.timeline.description") %></p>
+      </div>
+    </div>
+
+    <div class="space-y-4"
+         data-controller="forecast-timeline"
+         data-forecast-timeline-resolution-value="<%= resolution %>">
+      <%# Resolution toggle: declarative, keyboard-operable, query-param state. %>
+      <div class="inline-flex rounded-lg border border-primary p-0.5" role="group"
+           aria-label="<%= t("forecasts.timeline.resolution.label") %>">
+        <button type="button"
+                class="rounded-md px-3 py-1 text-sm font-medium text-secondary aria-pressed:bg-surface-inset aria-pressed:text-primary"
+                aria-pressed="<%= resolution == "daily" %>"
+                data-forecast-timeline-target="button"
+                data-resolution="daily"
+                data-action="forecast-timeline#select">
+          <%= t("forecasts.timeline.resolution.daily") %>
+        </button>
+        <button type="button"
+                class="rounded-md px-3 py-1 text-sm font-medium text-secondary aria-pressed:bg-surface-inset aria-pressed:text-primary"
+                aria-pressed="<%= resolution == "monthly" %>"
+                data-forecast-timeline-target="button"
+                data-resolution="monthly"
+                data-action="forecast-timeline#select">
+          <%= t("forecasts.timeline.resolution.monthly") %>
+        </button>
+      </div>
+
+      <%# Cash lane is the only resolution-aware lane: it swaps between the 0-90
+          daily pane and the 4-36 monthly pane. The remaining lanes are monthly
+          by nature and render once. %>
+      <%= render "forecast/timeline/cash_lane", model: model, resolution: resolution %>
+      <%= render "forecast/timeline/budget_lane", model: model %>
+      <%= render "forecast/timeline/portfolio_lane", model: model %>
+      <%= render "forecast/timeline/debt_lane", model: model %>
+      <%= render "forecast/timeline/goals_lane", model: model %>
+      <%= render "forecast/timeline/scenario_lane", model: model %>
+    </div>
+  <% else %>
+    <%# No completed run for this family yet. %>
+    <div class="rounded-xl border border-primary bg-container p-8 text-center"
+         aria-labelledby="forecast-timeline-empty-title"
+         data-testid="timeline-empty-state">
+      <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+        <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+          <%= icon "calendar", size: "lg", color: "default" %>
+        </span>
+        <div class="space-y-1">
+          <h3 id="forecast-timeline-empty-title" class="text-primary text-lg font-medium">
+            <%= t("forecasts.timeline.empty.title") %>
+          </h3>
+          <p class="text-secondary text-sm"><%= t("forecasts.timeline.empty.body") %></p>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</section>

@@ -1,0 +1,39 @@
+<%# locals: (model:, source_breakdown:, period_label:) %>
+<%#
+  Source-contribution drilldown for one period. Uses a native <details>/<summary>
+  disclosure (keyboard-operable, no JS, no server round-trip) so each of the 90
+  days / 36 months can be opened independently. The persisted source_breakdown
+  JSON is humanized into label/value rows so users can answer "why is this number
+  here?" — budget inheritance, forecast events, recurring, pending, and forecast
+  effect contributions are all surfaced from the stored output.
+%>
+<% rows = model.drilldown_rows(source_breakdown) %>
+<details class="group inline-block text-left">
+  <summary class="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-secondary hover:text-primary list-none">
+    <%= icon "info", size: "xs" %>
+    <span><%= t("forecasts.timeline.drilldown.open") %></span>
+  </summary>
+
+  <div class="mt-2 w-72 rounded-lg border border-primary bg-surface p-3 space-y-2"
+       data-testid="timeline-drilldown-content">
+    <p class="text-primary text-xs font-medium"><%= t("forecasts.timeline.drilldown.title", period: period_label) %></p>
+    <% if rows.any? %>
+      <dl class="space-y-1">
+        <% rows.each do |row| %>
+          <div class="flex items-start justify-between gap-3 text-xs">
+            <dt class="text-secondary"><%= row.label %></dt>
+            <dd class="text-primary tabular-nums text-right">
+              <% if row.money %>
+                <%= format_money(row.money) %>
+              <% else %>
+                <%= row.value %>
+              <% end %>
+            </dd>
+          </div>
+        <% end %>
+      </dl>
+    <% else %>
+      <p class="text-secondary text-xs"><%= t("forecasts.timeline.drilldown.empty") %></p>
+    <% end %>
+  </div>
+</details>

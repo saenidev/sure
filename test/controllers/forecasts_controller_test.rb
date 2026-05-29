@@ -294,7 +294,161 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=forecast-comparison-table] tbody tr", count: 2
   end
 
+  # --- timeline tab ----------------------------------------------------------
+
+  test "timeline tab renders the synchronized lanes for a completed run" do
+    build_run_group_with_series(family: @family, user: @user, days: 90, months: 36)
+
+    get forecast_url(tab: "timeline")
+
+    assert_response :success
+    assert_select "section[aria-label='#{I18n.t("forecasts.show.tabs.timeline")}']"
+    # The resolution toggle and all six lanes render.
+    assert_select "[data-controller='forecast-timeline']"
+    assert_select "[data-testid=timeline-cash-lane]"
+    assert_select "[data-testid=timeline-budget-lane]"
+    assert_select "[data-testid=timeline-portfolio-lane]"
+    assert_select "[data-testid=timeline-debt-lane]"
+    assert_select "[data-testid=timeline-goals-lane]"
+    assert_select "[data-testid=timeline-scenario-lane]"
+    # The daily pane carries the 90 daily rows.
+    assert_select "[data-testid=timeline-cash-daily] tbody tr", count: 90
+  end
+
+  test "timeline tab renders the debt lane and a per-month drilldown from persisted projections" do
+    build_timeline_run_with_projections(family: @family, user: @user)
+
+    get forecast_url(tab: "timeline")
+
+    assert_response :success
+    # Debt lane shows projection rows (not the empty state).
+    assert_select "[data-testid=timeline-debt-empty]", count: 0
+    assert_select "[data-testid=timeline-debt-lane] th", text: /Card/
+    # Drilldown renders humanized source_breakdown rows from persisted JSON.
+    assert_select "[data-testid=timeline-drilldown-content]"
+    assert_select "[data-testid=timeline-drilldown-content] dt",
+      text: I18n.t("forecasts.timeline.drilldown.keys.budget_spend_gap")
+  end
+
+  test "timeline tab renders the debt lane empty state when there are no debt projections" do
+    build_run_group_with_series(family: @family, user: @user, days: 90, months: 36)
+
+    get forecast_url(tab: "timeline")
+
+    assert_response :success
+    assert_select "[data-testid=timeline-debt-empty]"
+  end
+
+  test "timeline tab renders the baseline scenario marker for a baseline run" do
+    build_run_group_with_series(family: @family, user: @user, days: 90, months: 36)
+
+    get forecast_url(tab: "timeline")
+
+    assert_response :success
+    assert_select "[data-testid=timeline-scenario-baseline]",
+      text: /#{Regexp.escape(I18n.t("forecasts.timeline.scenario_lane.baseline"))}/
+  end
+
+  test "timeline tab shows the empty state when the family has no completed run" do
+    get forecast_url(tab: "timeline")
+
+    assert_response :success
+    # A family with no run sees onboarding (the workspace has no run group), so
+    # the tab scaffolding is not even rendered; this proves no foreign run leaks.
+    assert_select "[data-testid=timeline-cash-lane]", count: 0
+    assert_select "#forecast-empty-state-title", text: I18n.t("forecasts.empty_state.onboarding.title")
+  end
+
+  test "timeline tab never renders another family's run (cross-family denial)" do
+    other_family = families(:empty)
+    other_family.forecast_run_groups.delete_all
+    build_run_group_with_series(family: other_family, user: users(:empty), days: 90, months: 36)
+
+    get forecast_url(tab: "timeline")
+
+    assert_response :success
+    # Current family has no run of its own, so it must see its own onboarding,
+    # never the other family's timeline.
+    assert_select "[data-testid=timeline-cash-lane]", count: 0
+    assert_select "#forecast-empty-state-title", text: I18n.t("forecasts.empty_state.onboarding.title")
+  end
+
+  test "timeline tab adds no per-day, per-month, or per-projection N+1 queries" do
+    build_timeline_run_with_projections(family: @family, user: @user, months: 36)
+
+    # Warm caches so the assertion focuses on the forecast read path.
+    get forecast_url(tab: "timeline")
+    assert_response :success
+
+    assert_queries_count(matcher: /forecast_days/, max: 1) { get forecast_url(tab: "timeline") }
+    assert_queries_count(matcher: /forecast_months/, max: 1) { get forecast_url(tab: "timeline") }
+    assert_queries_count(matcher: /forecast_category_projections/, max: 1) { get forecast_url(tab: "timeline") }
+    assert_queries_count(matcher: /forecast_debt_projections/, max: 1) { get forecast_url(tab: "timeline") }
+  end
+
   private
+    # Builds a completed baseline run carrying days, months, and per-month
+    # category + debt projections (plus a holdings snapshot) so the timeline tab
+    # can render every lane and a real drilldown. Mirrors the Runner's persist
+    # order: rows written while non-completed, then the run/group flipped.
+    def build_timeline_run_with_projections(family:, user:, months: 6)
+      currency = family.currency
+      group = family.forecast_run_groups.create!(
+        user: user, name: "Manual run", run_type: "manual", currency: currency,
+        horizon_start_on: Date.current, horizon_end_on: Date.current + 36.months,
+        daily_until_on: Date.current + 89.days
+      )
+      run = group.forecast_runs.create!(
+        family: family, user: user, scenario_stack_key: "baseline",
+        scenario_stack_snapshot: { "key" => "baseline" }, status: "running",
+        feasibility_status: "pass", currency: currency,
+        input_snapshot: forecast_valid_input_snapshot(family).merge(
+          "portfolio" => { "holdings" => [ { "ticker" => "AAPL", "qty" => "10.0", "amount" => "1500.0" } ] }
+        )
+      )
+
+      90.times do |i|
+        run.forecast_days.create!(
+          date: Date.current + i.days, scenario_stack_key: "baseline", currency: currency,
+          cash_balance: 1000 + (i * 10), liquid_balance: 2000 + (i * 10), debt_balance: 0,
+          net_worth: 3000 + (i * 10), cash_runway_days: 30,
+          source_breakdown: { "phase" => "daily" }, risk_flags: []
+        )
+      end
+
+      months.times do |i|
+        period_start = Date.current + i.months
+        month = run.forecast_months.create!(
+          period_start_on: period_start, period_end_on: period_start.end_of_month,
+          precision: "monthly", scenario_stack_key: "baseline", currency: currency,
+          expected_income: 5000, expected_spending: 3000, net_cash_flow: 2000,
+          cash_balance: 1000 + (i * 100), liquid_balance: 2000 + (i * 100),
+          portfolio_value: 10000 + (i * 100), debt_balance: 4000 - (i * 100),
+          net_worth: 5000 + (i * 100), cash_runway_days: 30,
+          source_breakdown: { "budget_spend_gap" => "25.0", "uncategorized_spending" => "10.0" },
+          risk_flags: []
+        )
+        month.forecast_category_projections.create!(
+          projection_key: "cat-#{i}", source: "budget_inheritance", currency: currency,
+          budgeted_spending: 500, actual_spending: 100, projected_spending: 300,
+          projected_spending_low: 200, projected_spending_expected: 300, projected_spending_high: 400,
+          available_to_spend: 200, source_snapshot: { "reason" => "budget" },
+          source_breakdown: { "budgeted" => "500.0" }, risk_flags: []
+        )
+        month.forecast_debt_projections.create!(
+          projection_key: "Card #{i}", source: "account_balance_only", currency: currency,
+          opening_balance: 4000 - (i * 100), projected_interest: 50, projected_payment: 150,
+          cash_payment_gap: 0, projected_drawdown: 0, ending_balance: 4000 - ((i + 1) * 100),
+          source_snapshot: { "reason" => "balance" },
+          source_breakdown: { "opening_balance" => "4000.0" }, risk_flags: []
+        )
+      end
+
+      run.update!(status: "completed", finished_at: Time.current)
+      group.update!(status: "completed", finished_at: Time.current)
+      group
+    end
+
     # Counts queries matching a pattern issued during the block and asserts the
     # count stays within bound, guarding against N+1 over forecast runs.
     def assert_queries_count(matcher:, max:)

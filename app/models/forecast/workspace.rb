@@ -31,8 +31,15 @@ module Forecast
     def latest_group
       return @latest_group if defined?(@latest_group)
 
+      # Preload each run's months together with their category/debt projections
+      # so the Overview (baseline run's months) AND the Timeline tab (which the
+      # tab component also renders server-side, reading those same months plus
+      # their per-month projection lanes) share ONE batched load. This keeps the
+      # forecast_months / forecast_category_projections / forecast_debt_projections
+      # query counts at one each regardless of which tab is active (no N+1 over
+      # runs x 36 months x projections).
       @latest_group = family.forecast_run_groups
-        .includes(forecast_runs: :forecast_months)
+        .includes(forecast_runs: { forecast_months: [ :forecast_category_projections, :forecast_debt_projections ] })
         .order(created_at: :desc)
         .first
     end
@@ -321,6 +328,39 @@ module Forecast
     # ScenarioStack filter. Memoized; one query.
     def composable_scenarios
       @composable_scenarios ||= family.forecast_scenarios.active.ordered.to_a
+    end
+
+    # --- Timeline (single-run synchronized lanes) -----------------------------
+
+    # The ForecastRun the Timeline tab renders. Reuses the baseline run of the
+    # latest completed group (the headline projection). Nil when there is no
+    # completed run, so the Timeline tab shows its empty state rather than another
+    # family's run (the run is reached only through `latest_group`, which is
+    # already scoped to this family).
+    def timeline_run
+      baseline_run
+    end
+
+    # Read-only model that assembles the six synchronized timeline lanes from the
+    # timeline run's persisted output. Returns nil when there is no completed run.
+    # Reads persisted rows only (no engine recompute).
+    def timeline_read_model
+      return @timeline_read_model if defined?(@timeline_read_model)
+      return @timeline_read_model = nil unless timeline_run
+
+      # Reuse the workspace's already-loaded daily/monthly rows (the months carry
+      # their category/debt projections from `latest_group`'s preload) so the
+      # Timeline tab adds no per-day/per-month/per-projection query.
+      @timeline_read_model = Forecast::TimelineReadModel.new(
+        timeline_run,
+        days: daily_rows,
+        months: monthly_rows
+      )
+    end
+
+    # True when the Timeline tab has a completed run to render lanes for.
+    def timeline_data?
+      timeline_run.present?
     end
 
     def generated_at

@@ -1,0 +1,50 @@
+<%# locals: (model:) %>
+<%#
+  Portfolio lane: the monthly portfolio value across the horizon (sparkline) plus
+  the holdings captured in the run's input snapshot, so the user can see the
+  composition behind the projected value. Reads persisted rows / snapshot only.
+%>
+<article class="rounded-xl border border-primary bg-container p-4 sm:p-5 space-y-4"
+         aria-labelledby="timeline-portfolio-lane-heading"
+         data-testid="timeline-portfolio-lane">
+  <div class="space-y-1">
+    <h4 id="timeline-portfolio-lane-heading" class="text-primary text-sm font-medium">
+      <%= t("forecasts.timeline.portfolio_lane.heading") %>
+    </h4>
+    <p class="text-secondary text-xs"><%= t("forecasts.timeline.portfolio_lane.subtitle") %></p>
+  </div>
+
+  <% portfolio_series = model.portfolio_series %>
+  <% if portfolio_series&.any? %>
+    <div id="timelinePortfolioSparkline"
+         class="w-full min-h-40 privacy-sensitive"
+         data-controller="time-series-chart"
+         data-time-series-chart-data-value="<%= portfolio_series.to_json %>"></div>
+  <% end %>
+
+  <% if model.portfolio_holdings? %>
+    <div class="overflow-x-auto rounded-lg border border-primary">
+      <table class="w-full text-sm">
+        <caption class="sr-only"><%= t("forecasts.timeline.portfolio_lane.caption") %></caption>
+        <thead>
+          <tr class="border-b border-primary text-secondary text-left">
+            <th scope="col" class="px-3 py-2 font-medium"><%= t("forecasts.timeline.portfolio_lane.holding") %></th>
+            <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.portfolio_lane.qty") %></th>
+            <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.portfolio_lane.value") %></th>
+          </tr>
+        </thead>
+        <tbody class="text-primary">
+          <% model.portfolio_holdings.each do |holding| %>
+            <tr class="border-b border-primary last:border-0">
+              <th scope="row" class="px-3 py-2 font-medium text-left"><%= holding.ticker %></th>
+              <td class="px-3 py-2 text-right tabular-nums"><%= holding.qty %></td>
+              <td class="px-3 py-2 text-right tabular-nums"><%= format_money(holding.amount) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <p class="text-secondary text-sm" data-testid="timeline-portfolio-empty"><%= t("forecasts.timeline.portfolio_lane.empty") %></p>
+  <% end %>
+</article>

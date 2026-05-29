@@ -1,0 +1,53 @@
+<%# locals: (model:) %>
+<%#
+  Goals lane: the goal evaluation status for this run, read from persisted
+  ForecastGoalEvaluation rows. Each row shows the goal name, its evaluation
+  status pill, and (when present) the projected metric vs target.
+%>
+<%# DS::Pill ramps are violet/indigo/fuchsia/amber/gray (no green/red), so we
+    reuse the same status ramp as the overview feasibility badge. %>
+<%
+  status_tones = {
+    "pass" => :indigo,
+    "warn" => :amber,
+    "fail" => :fuchsia,
+    "blocking" => :fuchsia
+  }
+%>
+<article class="rounded-xl border border-primary bg-container p-4 sm:p-5 space-y-4"
+         aria-labelledby="timeline-goals-lane-heading"
+         data-testid="timeline-goals-lane">
+  <div class="space-y-1">
+    <h4 id="timeline-goals-lane-heading" class="text-primary text-sm font-medium">
+      <%= t("forecasts.timeline.goals_lane.heading") %>
+    </h4>
+    <p class="text-secondary text-xs"><%= t("forecasts.timeline.goals_lane.subtitle") %></p>
+  </div>
+
+  <% if model.goals? %>
+    <ul class="space-y-2">
+      <% model.goals_lane.each do |goal| %>
+        <li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary px-3 py-2">
+          <div class="flex items-center gap-2">
+            <%= render DS::Pill.new(
+              label: t("forecasts.goals.evaluation_statuses.#{goal.status}", default: goal.status.to_s.humanize),
+              tone: status_tones.fetch(goal.status, :gray),
+              style: :soft,
+              size: :sm
+            ) %>
+            <span class="text-primary text-sm font-medium"><%= goal.label %></span>
+          </div>
+          <% if goal.metric_value || goal.target_value %>
+            <span class="text-secondary text-xs tabular-nums">
+              <%= t("forecasts.timeline.goals_lane.metric",
+                    metric: goal.metric_value ? format_money(goal.metric_value) : t("forecasts.timeline.goals_lane.metric_unknown"),
+                    target: goal.target_value ? format_money(goal.target_value) : t("forecasts.timeline.goals_lane.metric_unknown")) %>
+            </span>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  <% else %>
+    <p class="text-secondary text-sm" data-testid="timeline-goals-empty"><%= t("forecasts.timeline.goals_lane.empty") %></p>
+  <% end %>
+</article>

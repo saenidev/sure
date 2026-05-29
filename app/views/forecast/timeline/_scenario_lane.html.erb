@@ -1,0 +1,43 @@
+<%# locals: (model:) %>
+<%#
+  Scenario lane: which active scenarios contributed to this run, read from the
+  run's scenario_stack_snapshot. A baseline run (no active scenarios) renders the
+  "baseline" marker so the lane is never blank.
+%>
+<article class="rounded-xl border border-primary bg-container p-4 sm:p-5 space-y-4"
+         aria-labelledby="timeline-scenario-lane-heading"
+         data-testid="timeline-scenario-lane">
+  <div class="space-y-1">
+    <h4 id="timeline-scenario-lane-heading" class="text-primary text-sm font-medium">
+      <%= t("forecasts.timeline.scenario_lane.heading") %>
+    </h4>
+    <p class="text-secondary text-xs"><%= t("forecasts.timeline.scenario_lane.subtitle") %></p>
+  </div>
+
+  <% if model.scenario_lane.any? %>
+    <ul class="flex flex-wrap gap-2">
+      <% model.scenario_lane.each do |scenario| %>
+        <li class="rounded-lg border border-primary px-3 py-2">
+          <div class="flex items-center gap-2">
+            <%= icon "layers", size: "xs" %>
+            <span class="text-primary text-sm font-medium"><%= scenario.name %></span>
+          </div>
+          <% if scenario.starts_on || scenario.ends_on %>
+            <p class="text-secondary text-xs">
+              <%= t("forecasts.timeline.scenario_lane.window",
+                    start_date: scenario.starts_on ? l(scenario.starts_on, format: :long) : t("forecasts.timeline.scenario_lane.open_start"),
+                    end_date: scenario.ends_on ? l(scenario.ends_on, format: :long) : t("forecasts.timeline.scenario_lane.open_end")) %>
+            </p>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  <% else %>
+    <%# Baseline run: no active scenarios contributed. %>
+    <div class="inline-flex items-center gap-2 rounded-lg border border-primary px-3 py-2"
+         data-testid="timeline-scenario-baseline">
+      <%= icon "layers", size: "xs" %>
+      <span class="text-primary text-sm font-medium"><%= t("forecasts.timeline.scenario_lane.baseline") %></span>
+    </div>
+  <% end %>
+</article>
