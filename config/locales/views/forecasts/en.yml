@@ -65,6 +65,10 @@ en:
         approved: "Approved"
         rejected: "Rejected"
       row:
+        events:
+          zero: "Events"
+          one: "Events (%{count})"
+          other: "Events (%{count})"
         edit: "Edit"
         duplicate: "Duplicate"
         archive: "Archive"
@@ -101,6 +105,75 @@ en:
       duplicate:
         success: "Scenario duplicated. The copy is disabled until you turn it on."
         error: "We could not duplicate this scenario: %{message}"
+    events:
+      index:
+        title: "Events"
+        description: "Author the dated effects, one-time or recurring, that drive your scenarios and baseline forecast."
+        scenario_description: "Events for %{name}. These dated effects are projected when this scenario is active."
+        new: "New event"
+      new:
+        title: "New event"
+      edit:
+        title: "Edit event"
+      empty:
+        title: "No events yet"
+        body: "Add an event such as a raise, a one-time purchase, a transfer, a loan drawdown, or a market shock to shape your forecast."
+      effect_types:
+        income: "Income"
+        expense: "Expense"
+        transfer: "Transfer"
+        debt_drawdown: "Debt drawdown"
+        debt_payment: "Debt payment"
+        debt_interest: "Debt interest"
+        portfolio_contribution: "Portfolio contribution"
+        portfolio_withdrawal: "Portfolio withdrawal"
+        market_shock: "Market shock"
+      statuses:
+        planned: "Planned"
+        accepted: "Accepted"
+        ignored: "Ignored"
+        disabled: "Disabled"
+      frequencies:
+        weekly: "Weekly"
+        monthly: "Monthly"
+      row:
+        recurring: "Recurring"
+        one_time: "One-time"
+        until: "until %{date}"
+        scenario: "Scenario: %{name}"
+        edit: "Edit"
+        delete: "Delete"
+      form:
+        name_label: "Name"
+        name_placeholder: "e.g. Annual bonus"
+        effect_type_label: "Effect type"
+        amount_label: "Amount"
+        amount_hint: "Most effects must be positive. Market shocks may be signed."
+        category_label: "Category"
+        account_label: "From account"
+        destination_account_label: "To account"
+        cross_currency_legend: "Cross-currency destination (optional)"
+        destination_amount_label: "Destination amount"
+        destination_currency_label: "Destination currency"
+        starts_on_label: "Starts on"
+        recurring_label: "Repeat this event"
+        frequency_label: "Frequency"
+        interval_label: "Every (interval)"
+        day_of_month_label: "Day of month"
+        ends_on_label: "Ends on"
+        probability_weight_label: "Confidence (0–1)"
+        status_label: "Status"
+        description_label: "Notes"
+        description_placeholder: "Optional details about this event"
+        none: "None"
+        create: "Create event"
+        update: "Save event"
+      create:
+        success: "Event created."
+      update:
+        success: "Event updated."
+      destroy:
+        success: "Event deleted."
     running:
       title: "Generating your forecast"
       body: "We are projecting the next 36 months across your accounts, budgets, debts, and scenarios. This usually takes a moment."

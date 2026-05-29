@@ -1,0 +1,37 @@
+<% content_for :title, t("forecasts.events.index.title") %>
+
+<div class="space-y-6 pb-6 lg:pb-12">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <div class="space-y-1">
+      <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.events.index.title") %></h1>
+      <p class="text-secondary text-sm">
+        <% if @scenario %>
+          <%= t("forecasts.events.index.scenario_description", name: @scenario.name) %>
+        <% else %>
+          <%= t("forecasts.events.index.description") %>
+        <% end %>
+      </p>
+    </div>
+
+    <%= render DS::Button.new(
+      text: t("forecasts.events.index.new"),
+      icon: "plus",
+      href: new_forecast_event_path(scenario_id: @scenario&.id),
+      frame: "modal"
+    ) %>
+  </header>
+
+  <% if @events.any? %>
+    <div class="space-y-3">
+      <% @events.each do |event| %>
+        <%= render "forecast/events/event_row", event: event %>
+      <% end %>
+    </div>
+  <% else %>
+    <div data-testid="events-empty-state"
+         class="rounded-xl border border-primary bg-container p-8 text-center space-y-2">
+      <h2 class="text-primary text-base font-medium"><%= t("forecasts.events.empty.title") %></h2>
+      <p class="text-secondary text-sm max-w-md mx-auto"><%= t("forecasts.events.empty.body") %></p>
+    </div>
+  <% end %>
+</div>

@@ -41,6 +41,65 @@ class ForecastEventTest < ActiveSupport::TestCase
     assert event.valid?
   end
 
+  test "accepts a valid weekly recurrence rule" do
+    event = @family.forecast_events.build(
+      name: "Weekly groceries",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 120,
+      currency: "USD",
+      starts_on: Date.current,
+      recurrence_rule: { "frequency" => "weekly", "interval" => 2 }
+    )
+
+    assert event.valid?, event.errors.full_messages.to_sentence
+  end
+
+  test "rejects a recurrence interval below 1" do
+    event = @family.forecast_events.build(
+      name: "Zero interval",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 120,
+      currency: "USD",
+      starts_on: Date.current,
+      recurrence_rule: { "frequency" => "monthly", "interval" => 0, "day_of_month" => 1 }
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:recurrence_rule], "interval must be between 1 and 60"
+  end
+
+  test "rejects a recurrence interval above 60" do
+    event = @family.forecast_events.build(
+      name: "Huge interval",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 120,
+      currency: "USD",
+      starts_on: Date.current,
+      recurrence_rule: { "frequency" => "monthly", "interval" => 99, "day_of_month" => 1 }
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:recurrence_rule], "interval must be between 1 and 60"
+  end
+
+  test "rejects a monthly recurrence day_of_month outside 1-31" do
+    event = @family.forecast_events.build(
+      name: "Bad day",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 120,
+      currency: "USD",
+      starts_on: Date.current,
+      recurrence_rule: { "frequency" => "monthly", "interval" => 1, "day_of_month" => 45 }
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:recurrence_rule], "day_of_month must be between 1 and 31"
+  end
+
   test "rejects unsupported recurrence metadata" do
     event = @family.forecast_events.build(
       name: "Odd cadence",

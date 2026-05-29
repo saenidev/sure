@@ -1,0 +1,79 @@
+<%# locals: (event:) %>
+
+<%
+  effect_tones = {
+    "income" => :indigo,
+    "expense" => :fuchsia,
+    "transfer" => :violet,
+    "debt_drawdown" => :amber,
+    "debt_payment" => :indigo,
+    "debt_interest" => :fuchsia,
+    "portfolio_contribution" => :indigo,
+    "portfolio_withdrawal" => :amber,
+    "market_shock" => :gray
+  }
+  effect_tone = effect_tones.fetch(event.effect_type, :gray)
+%>
+
+<div id="<%= dom_id(event) %>"
+     class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary bg-container p-4">
+  <div class="min-w-0 space-y-1">
+    <div class="flex flex-wrap items-center gap-2">
+      <h4 class="text-primary text-sm font-medium truncate"><%= event.name %></h4>
+
+      <%= render DS::Pill.new(
+        label: t("forecasts.events.effect_types.#{event.effect_type}"),
+        tone: effect_tone,
+        show_dot: false
+      ) %>
+
+      <span class="inline-flex items-center gap-1 text-secondary text-xs"
+            title="<%= event.recurring? ? t("forecasts.events.row.recurring") : t("forecasts.events.row.one_time") %>">
+        <%= icon(event.recurring? ? "repeat" : "calendar", size: "xs") %>
+        <%= event.recurring? ? t("forecasts.events.row.recurring") : t("forecasts.events.row.one_time") %>
+      </span>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2 text-secondary text-xs">
+      <% if event.amount.present? %>
+        <span><%= Money.new(event.amount, event.currency || Current.family.currency).format %></span>
+        <span aria-hidden="true">&middot;</span>
+      <% end %>
+      <span><%= l(event.starts_on, format: :long) %></span>
+      <% if event.ends_on.present? %>
+        <span aria-hidden="true">&middot;</span>
+        <span><%= t("forecasts.events.row.until", date: l(event.ends_on, format: :long)) %></span>
+      <% end %>
+    </div>
+
+    <% if event.forecast_scenario.present? %>
+      <p class="text-secondary text-xs"><%= t("forecasts.events.row.scenario", name: event.forecast_scenario.name) %></p>
+    <% end %>
+  </div>
+
+  <div class="flex items-center gap-3 shrink-0">
+    <%= render DS::Pill.new(
+      label: t("forecasts.events.statuses.#{event.status}"),
+      tone: event.status == "accepted" ? :indigo : :gray,
+      show_dot: false
+    ) %>
+
+    <%= render DS::Menu.new do |menu| %>
+      <% menu.with_item(
+        variant: "link",
+        text: t("forecasts.events.row.edit"),
+        href: edit_forecast_event_path(event),
+        icon: "pencil",
+        frame: "modal"
+      ) %>
+      <% menu.with_item(
+        variant: "button",
+        text: t("forecasts.events.row.delete"),
+        method: :delete,
+        href: forecast_event_path(event),
+        icon: "trash-2",
+        confirm: CustomConfirm.for_resource_deletion(event.name)
+      ) %>
+    <% end %>
+  </div>
+</div>

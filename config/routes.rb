@@ -302,6 +302,8 @@ Rails.application.routes.draw do
         post :duplicate
       end
     end
+
+    resources :events
   end
 
   resources :reports, only: %i[index] do

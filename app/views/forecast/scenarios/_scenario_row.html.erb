@@ -57,6 +57,12 @@
     <%= render DS::Menu.new do |menu| %>
       <% menu.with_item(
         variant: "link",
+        text: t("forecasts.scenarios.row.events", count: scenario.forecast_events.size),
+        href: forecast_events_path(scenario_id: scenario.id),
+        icon: "list"
+      ) %>
+      <% menu.with_item(
+        variant: "link",
         text: t("forecasts.scenarios.row.edit"),
         href: edit_forecast_scenario_path(scenario),
         icon: "pencil",

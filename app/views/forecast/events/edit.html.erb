@@ -1,0 +1,6 @@
+<%= render DS::Dialog.new(width: "lg") do |dialog| %>
+  <% dialog.with_header(title: t("forecasts.events.edit.title")) %>
+  <% dialog.with_body do %>
+    <%= render "form", event: @event, scenario: @scenario %>
+  <% end %>
+<% end %>

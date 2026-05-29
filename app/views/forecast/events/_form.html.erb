@@ -1,0 +1,170 @@
+<%# locals: (event:, scenario: nil) %>
+
+<%
+  accounts = Current.family.accounts.visible.alphabetically.to_a
+  categories = Current.family.categories.alphabetically.to_a
+  scenarios = Current.family.forecast_scenarios.ordered.to_a
+
+  amount_types = ForecastEvent::AMOUNT_EFFECT_TYPES.join(" ")
+  category_types = "income expense"
+  transfer_types = "transfer"
+%>
+
+<%= styled_form_with model: event,
+                     url: event.persisted? ? forecast_event_path(event) : forecast_events_path(scenario_id: scenario&.id),
+                     class: "space-y-4",
+                     data: { controller: "forecast-event-form" } do |f| %>
+  <% if event.errors.any? %>
+    <%= render "shared/form_errors", model: event %>
+  <% end %>
+
+  <%= f.hidden_field :forecast_scenario_id, value: scenario&.id %>
+
+  <div class="space-y-2">
+    <%= f.text_field :name,
+                     label: t("forecasts.events.form.name_label"),
+                     placeholder: t("forecasts.events.form.name_placeholder"),
+                     required: true,
+                     autofocus: true %>
+
+    <%= f.select :effect_type,
+                 ForecastEvent::EFFECT_TYPES.map { |type| [ t("forecasts.events.effect_types.#{type}"), type ] },
+                 { label: t("forecasts.events.form.effect_type_label") },
+                 {
+                   data: {
+                     forecast_event_form_target: "effectType",
+                     action: "change->forecast-event-form#refreshEffectType"
+                   }
+                 } %>
+  </div>
+
+  <%# Amount + currency: every amount effect type. %>
+  <div data-forecast-event-form-target="field"
+       data-forecast-event-form-fields="<%= amount_types %>">
+    <%= f.money_field :amount,
+                      label: t("forecasts.events.form.amount_label"),
+                      default_currency: event.currency || Current.family.currency %>
+    <p class="text-secondary text-xs mt-1"><%= t("forecasts.events.form.amount_hint") %></p>
+  </div>
+
+  <%# Category: income / expense. %>
+  <div data-forecast-event-form-target="field"
+       data-forecast-event-form-fields="<%= category_types %>">
+    <%= f.collection_select :category_id, categories, :id, :name,
+                            {
+                              label: t("forecasts.events.form.category_label"),
+                              include_blank: t("forecasts.events.form.none"),
+                              searchable: true
+                            } %>
+  </div>
+
+  <%# Source + destination account: transfers. %>
+  <div data-forecast-event-form-target="field"
+       data-forecast-event-form-fields="<%= transfer_types %>"
+       class="space-y-2">
+    <%= f.collection_select :account_id, accounts, :id, :name,
+                            {
+                              label: t("forecasts.events.form.account_label"),
+                              include_blank: t("forecasts.events.form.none")
+                            } %>
+    <%= f.collection_select :destination_account_id, accounts, :id, :name,
+                            {
+                              label: t("forecasts.events.form.destination_account_label"),
+                              include_blank: t("forecasts.events.form.none")
+                            } %>
+
+    <fieldset class="rounded-lg border border-primary p-3 space-y-2">
+      <legend class="text-secondary text-xs px-1"><%= t("forecasts.events.form.cross_currency_legend") %></legend>
+      <%= f.fields_for :source_metadata, OpenStruct.new(event.source_metadata) do |sf| %>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <%= sf.number_field :destination_amount,
+                              label: t("forecasts.events.form.destination_amount_label"),
+                              step: "0.01",
+                              min: 0,
+                              value: event.source_metadata["destination_amount"] %>
+          <%= sf.text_field :destination_currency,
+                            label: t("forecasts.events.form.destination_currency_label"),
+                            placeholder: "EUR",
+                            value: event.source_metadata["destination_currency"] %>
+        </div>
+      <% end %>
+    </fieldset>
+  </div>
+
+  <%# Timing. %>
+  <div class="space-y-2">
+    <%= f.date_field :starts_on,
+                     label: t("forecasts.events.form.starts_on_label"),
+                     required: true %>
+
+    <label class="flex items-center gap-2 text-sm text-primary">
+      <%= check_box_tag "forecast_event[recurring]", "1", event.recurring?,
+                        class: "form-field__checkbox",
+                        data: {
+                          forecast_event_form_target: "recurringToggle",
+                          action: "change->forecast-event-form#refreshRecurrence"
+                        } %>
+      <%= t("forecasts.events.form.recurring_label") %>
+    </label>
+
+    <div data-forecast-event-form-target="recurrence" class="space-y-2">
+      <%= f.fields_for :recurrence_rule, OpenStruct.new(event.recurrence_rule) do |rf| %>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <%= rf.select :frequency,
+                        %w[weekly monthly].map { |freq| [ t("forecasts.events.frequencies.#{freq}"), freq ] },
+                        {
+                          label: t("forecasts.events.form.frequency_label"),
+                          selected: event.recurrence_rule["frequency"] || "monthly"
+                        },
+                        {
+                          data: {
+                            forecast_event_form_target: "frequency",
+                            action: "change->forecast-event-form#refreshFrequency"
+                          }
+                        } %>
+          <%= rf.number_field :interval,
+                              label: t("forecasts.events.form.interval_label"),
+                              min: 1,
+                              max: 60,
+                              step: 1,
+                              value: event.recurrence_rule["interval"] || 1 %>
+        </div>
+
+        <div data-forecast-event-form-target="monthlyField">
+          <%= rf.number_field :day_of_month,
+                              label: t("forecasts.events.form.day_of_month_label"),
+                              min: 1,
+                              max: 31,
+                              step: 1,
+                              value: event.recurrence_rule["day_of_month"] %>
+        </div>
+      <% end %>
+
+      <div data-forecast-event-form-target="endsOn">
+        <%= f.date_field :ends_on, label: t("forecasts.events.form.ends_on_label") %>
+      </div>
+    </div>
+  </div>
+
+  <%# Confidence + status. %>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <%= f.number_field :probability_weight,
+                       label: t("forecasts.events.form.probability_weight_label"),
+                       min: 0,
+                       max: 1,
+                       step: 0.05 %>
+
+    <%= f.select :status,
+                 ForecastEvent::STATUSES.map { |status| [ t("forecasts.events.statuses.#{status}"), status ] },
+                 { label: t("forecasts.events.form.status_label") } %>
+  </div>
+
+  <%= f.text_area :description,
+                  label: t("forecasts.events.form.description_label"),
+                  placeholder: t("forecasts.events.form.description_placeholder"),
+                  rows: 2 %>
+
+  <div class="flex items-center justify-end gap-2 pt-2">
+    <%= f.submit event.persisted? ? t("forecasts.events.form.update") : t("forecasts.events.form.create") %>
+  </div>
+<% end %>
