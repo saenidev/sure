@@ -28,16 +28,25 @@
   </div>
 
   <% if errors.any? %>
-    <%= render DS::Alert.new(variant: :error) do %>
-      <div class="space-y-1">
-        <p class="font-semibold"><%= t("forecasts.templates.apply.error_title") %></p>
-        <ul class="list-disc list-inside text-sm space-y-0.5">
-          <% errors.each do |message| %>
-            <li><%= message %></li>
-          <% end %>
-        </ul>
-      </div>
-    <% end %>
+    <%# Apply-failure surface: re-rendered at 422 when the Applier rejects params.
+        Announced (aria-live=assertive + DS::Alert live: :assertive) and focusable
+        (tabindex=-1 id) so screen-reader/keyboard users hear the failure and a
+        focus target exists for the re-render. Mirrors the run-failure surface in
+        forecasts/show.html.erb. %>
+    <section id="forecast-templates-apply-error"
+             tabindex="-1"
+             aria-live="assertive">
+      <%= render DS::Alert.new(variant: :error, live: :assertive) do %>
+        <div class="space-y-1">
+          <p class="font-semibold"><%= t("forecasts.templates.apply.error_title") %></p>
+          <ul class="list-disc list-inside text-sm space-y-0.5">
+            <% errors.each do |message| %>
+              <li><%= message %></li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+    </section>
   <% end %>
 
   <% if templates.empty? %>
