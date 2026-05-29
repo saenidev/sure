@@ -442,6 +442,17 @@ class Forecast::ScenarioTemplate
       sanitized[spec.key] = value
     end
 
+    # Cross-field gate: an optional ends_on must not predate starts_on. The
+    # per-field loop only coerces/validates each value in isolation, so a
+    # chronologically-inverted range would otherwise slip through and only be
+    # caught by the child record's create! (an unhandled 500). Catching it here
+    # keeps the failure in the deterministic validation gate (a graceful 422).
+    starts_on = sanitized["starts_on"]
+    ends_on = sanitized["ends_on"]
+    if starts_on.is_a?(Date) && ends_on.is_a?(Date) && ends_on < starts_on
+      errors << error_message("ends_on", :ends_before_start)
+    end
+
     raise InvalidParams, errors if errors.any?
 
     sanitized.freeze

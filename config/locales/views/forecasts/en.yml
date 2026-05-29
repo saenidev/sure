@@ -248,6 +248,7 @@ en:
         blank: "%{param} is required"
         invalid: "%{param} is invalid"
         invalid_type: "%{param} is not the right type"
+        ends_before_start: "%{param} must be on or after the start date"
       params:
         move_on:
           label: "Move date"
