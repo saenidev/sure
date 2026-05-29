@@ -83,6 +83,7 @@ module Forecast
           debt_delta: effect.fetch(:debt_delta),
           portfolio_delta: effect.fetch(:portfolio_delta),
           net_worth_delta: effect.fetch(:net_worth_delta),
+          refinance: refinance_metadata_for(event),
           source_snapshot: {
             "id" => event.id,
             "name" => event.name,
@@ -93,8 +94,9 @@ module Forecast
             "destination_account_id" => event.destination_account_id,
             "category" => category_snapshot(event.category),
             "date" => date.iso8601,
-            "money" => money_converter.snapshot_for(converted)
-          },
+            "money" => money_converter.snapshot_for(converted),
+            "refinance" => refinance_metadata_for(event)
+          }.compact,
           risk_flags: converted.risk_flags + effect.fetch(:risk_flags, []) + probability_flags(event)
         }
       end
@@ -119,6 +121,11 @@ module Forecast
           balance_effect(cash_delta: amount, liquid_delta: amount, portfolio_delta: -amount, net_worth_delta: 0.to_d)
         when "market_shock"
           balance_effect(portfolio_delta: amount, net_worth_delta: amount, budget_flow_type: "none")
+        when "debt_terms_override"
+          # Refinancing assumptions are balance-neutral at the event layer; the debt
+          # adapter consumes the refinance metadata to re-rate/re-pay the loan and to
+          # apply any cash-out drawdown deterministically from effective_on onward.
+          balance_effect(budget_flow_type: "none")
         else
           balance_effect(budget_flow_type: "none")
         end
@@ -181,6 +188,24 @@ module Forecast
             "reason" => "foundation keeps scenarios toggleable instead of blending them into baseline"
           }
         ]
+      end
+
+      # Surface the scenario-supplied refinance assumptions for debt_terms_override
+      # events so the debt adapter can re-rate/re-pay the loan. Returns nil for all
+      # other effect types so the baseline stack is never touched.
+      def refinance_metadata_for(event)
+        return nil unless event.effect_type == "debt_terms_override"
+
+        refinance = event.source_metadata.is_a?(Hash) ? event.source_metadata["refinance"] : nil
+        return nil unless refinance.is_a?(Hash)
+
+        {
+          "effective_on" => refinance["effective_on"],
+          "new_annual_rate" => refinance["new_annual_rate"]&.to_s,
+          "new_monthly_payment" => refinance["new_monthly_payment"]&.to_s,
+          "new_principal" => refinance["new_principal"]&.to_s,
+          "currency" => refinance["currency"]
+        }.compact
       end
 
       def category_snapshot(category)

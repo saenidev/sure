@@ -3,8 +3,11 @@ class ForecastEvent < ApplicationRecord
 
   EFFECT_TYPES = %w[
     income expense transfer debt_drawdown debt_payment debt_interest
-    portfolio_contribution portfolio_withdrawal market_shock
+    portfolio_contribution portfolio_withdrawal market_shock debt_terms_override
   ].freeze
+  # debt_terms_override carries its refinance assumptions in source_metadata
+  # (rate/payment/effective date) rather than an `amount`, so it is intentionally
+  # excluded from the amount-based effect families.
   AMOUNT_EFFECT_TYPES = %w[
     income expense transfer debt_drawdown debt_payment debt_interest
     portfolio_contribution portfolio_withdrawal market_shock
@@ -37,6 +40,7 @@ class ForecastEvent < ApplicationRecord
   validate :transfer_has_accounts
   validate :cross_currency_transfer_has_destination_amount
   validate :recurrence_rule_supported
+  validate :debt_terms_override_has_refinance_metadata
 
   def recurring?
     recurrence_rule.present?
@@ -105,6 +109,47 @@ class ForecastEvent < ApplicationRecord
 
     def positive_decimal?(value)
       BigDecimal(value.to_s).positive?
+    rescue ArgumentError, TypeError
+      false
+    end
+
+    def debt_terms_override_has_refinance_metadata
+      return unless effect_type == "debt_terms_override"
+
+      errors.add(:account, "must be present for debt_terms_override events") if account.blank?
+
+      refinance = source_metadata["refinance"]
+      unless refinance.respond_to?(:fetch)
+        errors.add(:source_metadata, "must include a refinance object for debt_terms_override events")
+        return
+      end
+
+      if refinance["effective_on"].blank?
+        errors.add(:source_metadata, "refinance must include effective_on for debt_terms_override events")
+      end
+
+      new_rate = refinance["new_annual_rate"]
+      new_payment = refinance["new_monthly_payment"]
+      if new_rate.blank? && new_payment.blank?
+        errors.add(:source_metadata, "refinance must include new_annual_rate or new_monthly_payment for debt_terms_override events")
+      end
+
+      if new_rate.present? && !non_negative_decimal?(new_rate)
+        errors.add(:source_metadata, "refinance new_annual_rate must be a non-negative number")
+      end
+
+      if new_payment.present? && !non_negative_decimal?(new_payment)
+        errors.add(:source_metadata, "refinance new_monthly_payment must be a non-negative number")
+      end
+
+      new_principal = refinance["new_principal"]
+      if new_principal.present? && !non_negative_decimal?(new_principal)
+        errors.add(:source_metadata, "refinance new_principal must be a non-negative number")
+      end
+    end
+
+    def non_negative_decimal?(value)
+      BigDecimal(value.to_s) >= 0
     rescue ArgumentError, TypeError
       false
     end

@@ -1921,4 +1921,252 @@ class Forecast::DebtProjectionAdapterTest < ActiveSupport::TestCase
     assert_equal rows.last.fetch(:period_end_on), payoff_row.fetch(:period_end_on)
     refute rows.first.fetch(:risk_flags).any? { |flag| flag["type"] == "amortization_strategy_unsupported_for_variable" }
   end
+
+  # --- Balloon payments + scenario refinancing assumptions (slice 6) ----------
+
+  test "balloon due mid-horizon drops the balance to zero on its period and emits debt_balloon_due" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 5000)
+    start_on = Date.current.next_month.beginning_of_month
+    balloon_due = (start_on + 2.months).change(day: 10)
+    profile = build_amortization_profile(account, start_on: start_on, minimum_payment_amount: 100, annual_rate: 0)
+    profile.update!(extra: { "balloon" => { "due_on" => balloon_due.iso8601, "amount" => "100000", "currency" => family.currency } })
+    periods = amortization_periods(start_on, 4)
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    balloon_row = rows.find { |row| row.fetch(:period_start_on) <= balloon_due && balloon_due <= row.fetch(:period_end_on) }
+    assert_equal 0.to_d, balloon_row.fetch(:ending_balance)
+    assert balloon_row.fetch(:risk_flags).any? { |flag| flag["type"] == "debt_balloon_due" }
+    assert_equal balloon_due.iso8601, balloon_row.fetch(:source_snapshot).fetch("debt_balloon_due").fetch("due_on")
+    # The balloon is capped to the balance owed (5000 - 2 prior minimum payments).
+    assert balloon_row.fetch(:source_snapshot).fetch("debt_balloon_due").fetch("balloon_capped_to_balance")
+    # No cash modeled to cover the balloon, so the full balloon surfaces as a gap.
+    assert_operator balloon_row.fetch(:cash_payment_gap), :>, 4000.to_d
+    # Periods before the balloon never schedule it.
+    earlier_rows = rows.select { |row| row.fetch(:period_end_on) < balloon_row.fetch(:period_start_on) }
+    earlier_rows.each { |row| assert_empty row.fetch(:source_snapshot).fetch("debt_balloon_due") }
+  end
+
+  test "balloon due outside the horizon is ignored" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 5000)
+    start_on = Date.current.next_month.beginning_of_month
+    profile = build_amortization_profile(account, start_on: start_on, minimum_payment_amount: 100, annual_rate: 0)
+    profile.update!(extra: { "balloon" => { "due_on" => (start_on + 10.years).iso8601, "amount" => "100000", "currency" => family.currency } })
+    periods = amortization_periods(start_on, 3)
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    rows.each do |row|
+      assert_empty row.fetch(:source_snapshot).fetch("debt_balloon_due")
+      refute row.fetch(:risk_flags).any? { |flag| flag["type"] == "debt_balloon_due" }
+    end
+  end
+
+  test "foreign-currency balloon missing an FX rate fails loud" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 5000)
+    start_on = Date.current.next_month.beginning_of_month
+    balloon_due = (start_on + 1.month).change(day: 5)
+    profile = build_amortization_profile(account, start_on: start_on, minimum_payment_amount: 100, annual_rate: 0)
+    profile.update!(extra: { "balloon" => { "due_on" => balloon_due.iso8601, "amount" => "100000", "currency" => "JPY" } })
+    periods = amortization_periods(start_on, 3)
+    ExchangeRate.expects(:find_or_fetch_rate)
+      .with(from: "JPY", to: family.currency, date: Date.current, cache: false)
+      .returns(nil)
+
+    assert_raises(Forecast::MoneyConverter::MissingRate) do
+      Forecast::DebtProjectionAdapter.new(
+        family: family,
+        user: user,
+        periods: periods,
+        money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+        recurring_items: [],
+        included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+        run_date: Date.current
+      ).call
+    end
+  end
+
+  test "scenario refinance lowers the rate from effective_on so interest after uses the new rate" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    account.loan.update!(interest_rate: nil)
+    start_on = Date.current.next_month.beginning_of_month
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 0,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 120, starts_on: start_on)
+    refinance_on = (start_on + 1.month).beginning_of_month
+    periods = amortization_periods(start_on, 3)
+    refinance_event = {
+      account_id: account.id,
+      effect_type: "debt_terms_override",
+      transaction_kind: "standard",
+      date: refinance_on,
+      debt_delta: 0.to_d,
+      refinance: { "effective_on" => refinance_on.iso8601, "new_annual_rate" => "12" },
+      risk_flags: [],
+      source_snapshot: { "id" => "refi-1", "effective_on" => refinance_on.iso8601 }
+    }
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current,
+      forecast_debt_events: [ refinance_event ]
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    before_row = rows.find { |row| row.fetch(:period_start_on) == periods.first.start_date }
+    after_row = rows.find { |row| row.fetch(:period_start_on) == refinance_on }
+    # Before the refinance the original 120% rate applies; from effective_on the 12%
+    # rate applies. Same opening balance, fewer-rate after, so interest drops sharply.
+    assert_equal "120.0", before_row.fetch(:source_snapshot).fetch("projected_interest").fetch("rate_spans").last.fetch("annual_rate")
+    assert_equal "12.0", after_row.fetch(:source_snapshot).fetch("projected_interest").fetch("rate_spans").last.fetch("annual_rate")
+    assert_equal "12.0", after_row.fetch(:source_snapshot).fetch("refinance").fetch("new_annual_rate")
+    assert after_row.fetch(:source_snapshot).fetch("refinance").fetch("applied")
+    assert_operator after_row.fetch(:projected_interest), :<, before_row.fetch(:projected_interest)
+  end
+
+  test "scenario refinance cash-out adds a drawdown on effective_on increasing the opening balance" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    start_on = Date.current.next_month.beginning_of_month
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 0,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 0, starts_on: start_on)
+    refinance_on = (start_on + 1.month).beginning_of_month
+    periods = amortization_periods(start_on, 3)
+    refinance_event = {
+      account_id: account.id,
+      effect_type: "debt_terms_override",
+      transaction_kind: "standard",
+      date: refinance_on,
+      debt_delta: 0.to_d,
+      refinance: { "effective_on" => refinance_on.iso8601, "new_annual_rate" => "0", "new_principal" => "2500", "currency" => family.currency },
+      risk_flags: [],
+      source_snapshot: { "id" => "refi-cashout", "effective_on" => refinance_on.iso8601 }
+    }
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current,
+      forecast_debt_events: [ refinance_event ]
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    before_row = rows.find { |row| row.fetch(:period_start_on) == periods.first.start_date }
+    cashout_row = rows.find { |row| row.fetch(:period_start_on) == refinance_on }
+    assert_equal 2500.to_d, cashout_row.fetch(:projected_drawdown)
+    # Opening balance after the cash-out equals the prior ending balance plus the draw.
+    assert_equal before_row.fetch(:ending_balance) + 2500.to_d, cashout_row.fetch(:opening_balance)
+  end
+
+  test "refinance scenario event under a disabled scenario leaves the baseline stack unaffected" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    account.loan.update!(interest_rate: nil)
+    start_on = Date.current.next_month.beginning_of_month
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 0,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 120, starts_on: start_on)
+    refinance_on = (start_on + 1.month).beginning_of_month
+    periods = amortization_periods(start_on, 3)
+    refinance_event = {
+      account_id: account.id,
+      effect_type: "debt_terms_override",
+      transaction_kind: "standard",
+      date: refinance_on,
+      debt_delta: 0.to_d,
+      refinance: { "effective_on" => refinance_on.iso8601, "new_annual_rate" => "12" },
+      risk_flags: [],
+      source_snapshot: { "id" => "refi-scoped", "effective_on" => refinance_on.iso8601 }
+    }
+
+    build = lambda do |events|
+      Forecast::DebtProjectionAdapter.new(
+        family: family,
+        user: user,
+        periods: periods,
+        money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+        recurring_items: [],
+        included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+        run_date: Date.current,
+        forecast_debt_events: events
+      ).call.select { |projection| projection.fetch(:account_id) == account.id }
+    end
+
+    # Baseline stack = no debt-sensitive events threaded (scenario disabled).
+    baseline_rows = build.call([])
+    scenario_rows = build.call([ refinance_event ])
+
+    baseline_after = baseline_rows.find { |row| row.fetch(:period_start_on) == refinance_on }
+    scenario_after = scenario_rows.find { |row| row.fetch(:period_start_on) == refinance_on }
+
+    refute baseline_after.fetch(:source_snapshot).fetch("refinance").fetch("applied")
+    assert scenario_after.fetch(:source_snapshot).fetch("refinance").fetch("applied")
+    # Turning the scenario off removes only its effect: baseline keeps the 120% rate.
+    assert_equal "120.0", baseline_after.fetch(:source_snapshot).fetch("projected_interest").fetch("rate_spans").last.fetch("annual_rate")
+    assert_operator baseline_after.fetch(:projected_interest), :>, scenario_after.fetch(:projected_interest)
+  end
 end

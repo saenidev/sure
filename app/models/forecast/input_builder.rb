@@ -159,7 +159,7 @@ module Forecast
       end
 
       def debt_sensitive_events(events)
-        events.select { |row| row.fetch(:effect_type, nil).in?(%w[debt_drawdown debt_payment debt_interest]) || row.fetch(:transaction_kind, nil).in?(%w[loan_payment debt_interest]) }
+        events.select { |row| row.fetch(:effect_type, nil).in?(%w[debt_drawdown debt_payment debt_interest debt_terms_override]) || row.fetch(:transaction_kind, nil).in?(%w[loan_payment debt_interest]) }
       end
 
       def forecast_goals(stack, converter)

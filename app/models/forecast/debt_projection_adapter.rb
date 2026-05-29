@@ -55,46 +55,58 @@ module Forecast
             next row
           end
 
-          payment = terms.monthly_payment.present? ? money_converter.convert(amount: terms.monthly_payment, currency: terms.currency, source: "debt_account:#{account.id}:monthly_payment:#{period.end_date}") : nil
+          refinance = refinance_override_for(account, period)
+          effective_terms = refinance.fetch(:active) ? refinance.fetch(:terms) : terms
+          payment = effective_terms.monthly_payment.present? ? money_converter.convert(amount: effective_terms.monthly_payment, currency: effective_terms.currency, source: "debt_account:#{account.id}:monthly_payment:#{period.end_date}") : nil
           scenario_effect = debt_scenario_effect_for(account, period)
-          opening_balance = [ balance + scenario_effect.fetch(:drawdown), 0.to_d ].max
-          projected_interest = projected_interest_for(
-            account,
-            profile,
-            terms,
-            period,
-            opening_balance,
-            opening,
-            forecast_last_accrued_on: forecast_last_accrued_on,
-            native_interest_bearing_balance: native_interest_bearing_balance,
-            native_accrued_interest_balance: native_accrued_interest_balance
-          )
+          opening_balance = [ balance + scenario_effect.fetch(:drawdown) + refinance.fetch(:drawdown), 0.to_d ].max
+          projected_interest = if refinance.fetch(:active)
+            refinanced_projected_interest(account, profile, effective_terms, period, opening_balance, opening, forecast_last_accrued_on: forecast_last_accrued_on, refinance: refinance)
+          else
+            projected_interest_for(
+              account,
+              profile,
+              terms,
+              period,
+              opening_balance,
+              opening,
+              forecast_last_accrued_on: forecast_last_accrued_on,
+              native_interest_bearing_balance: native_interest_bearing_balance,
+              native_accrued_interest_balance: native_accrued_interest_balance
+            )
+          end
           projected_interest_amount = projected_interest.fetch(:amount)
           forecast_last_accrued_on = projected_interest.fetch(:forecast_last_accrued_on) || forecast_last_accrued_on
           native_accrued_interest_balance += projected_native_amount(projected_interest_amount, opening)
           projected_interest_amount += scenario_effect.fetch(:interest)
           native_accrued_interest_balance += projected_native_amount(scenario_effect.fetch(:interest), opening)
-          scenario_payment = [ scenario_effect.fetch(:payment), opening_balance + projected_interest_amount ].min
+          balance_with_interest = opening_balance + projected_interest_amount
+          scenario_payment = [ scenario_effect.fetch(:payment), balance_with_interest ].min
+          balloon = balloon_payment_for(account, profile, opening, period, balance_with_interest)
+          balloon_amount = balloon.fetch(:amount)
           required_payment = required_payment_for(account, period, payment, opening_balance, include_overdue: period == periods.first)
-          required_payment_amount = [ required_payment.fetch(:amount), opening_balance + projected_interest_amount ].min
+          required_payment_amount = [ required_payment.fetch(:amount) + balloon_amount, balance_with_interest ].min
           actual_payment = actual_payment_for(account, period)
           recurring_payment = recurring_payment_for(account, period)
           actual_payment_credit = required_payment.fetch(:already_net_of_actuals) ? 0.to_d : actual_payment.fetch(:amount)
           fulfilled_payment = actual_payment_credit + recurring_payment + scenario_payment
           cash_payment_gap = [ required_payment_amount - fulfilled_payment, 0.to_d ].max
-          baseline_projected_payment = [ scenario_payment + recurring_payment + cash_payment_gap, opening_balance + projected_interest_amount ].min
+          # The balloon is a contractually scheduled lump sum: it reduces the balance
+          # in its due period regardless of whether cash covers it (the shortfall is
+          # surfaced separately via cash_payment_gap above).
+          baseline_projected_payment = [ scenario_payment + recurring_payment + cash_payment_gap + balloon_amount, balance_with_interest ].min
           amortization = amortization_extra_payment_for(
             account,
             profile,
-            terms,
+            effective_terms,
             period,
             opening_balance,
             projected_interest_amount,
             baseline_projected_payment
           )
           applied_extra_payment = amortization.fetch(:applied_extra_payment)
-          projected_payment = [ baseline_projected_payment + applied_extra_payment, opening_balance + projected_interest_amount ].min
-          ending_balance = [ opening_balance + projected_interest_amount - projected_payment, 0.to_d ].max
+          projected_payment = [ baseline_projected_payment + applied_extra_payment, balance_with_interest ].min
+          ending_balance = [ balance_with_interest - projected_payment, 0.to_d ].max
           if native_interest_bearing_balance.present?
             native_balances = reduce_native_federal_balances(native_interest_bearing_balance, native_accrued_interest_balance, projected_payment, opening)
             native_interest_bearing_balance = native_balances.fetch(:interest_bearing_principal)
@@ -115,12 +127,12 @@ module Forecast
             projected_interest: projected_interest_amount,
             projected_payment: projected_payment,
             cash_payment_gap: cash_payment_gap,
-            projected_drawdown: scenario_effect.fetch(:drawdown),
+            projected_drawdown: scenario_effect.fetch(:drawdown) + refinance.fetch(:drawdown),
             ending_balance: ending_balance,
             balance_trend: balance_trend,
             source: "debt_profile_snapshot",
-            risk_flags: opening.risk_flags + projected_interest.fetch(:risk_flags) + scenario_effect.fetch(:risk_flags) + Array(payment&.risk_flags) + required_payment.fetch(:risk_flags) + actual_payment.fetch(:risk_flags) + payment_missing_flags(account, terms) + balance_growing_flags(account, balance_trend, projected_payment, projected_interest_amount) + amortization.fetch(:risk_flags),
-            source_snapshot: source_snapshot_for(account, profile, opening, payment, terms).merge(
+            risk_flags: opening.risk_flags + projected_interest.fetch(:risk_flags) + scenario_effect.fetch(:risk_flags) + Array(payment&.risk_flags) + required_payment.fetch(:risk_flags) + actual_payment.fetch(:risk_flags) + payment_missing_flags(account, effective_terms) + balance_growing_flags(account, balance_trend, projected_payment, projected_interest_amount) + amortization.fetch(:risk_flags) + balloon.fetch(:risk_flags) + refinance.fetch(:risk_flags),
+            source_snapshot: source_snapshot_for(account, profile, opening, payment, effective_terms).merge(
               "projected_interest" => projected_interest.fetch(:source_snapshot),
               "forecast_debt_events" => scenario_effect.fetch(:source_snapshot),
               "required_payment" => required_payment.fetch(:source_snapshot),
@@ -132,7 +144,9 @@ module Forecast
               "cash_payment_gap" => cash_payment_gap.to_s,
               "baseline_projected_payment" => baseline_projected_payment.to_s,
               "amortization" => amortization.fetch(:source_snapshot),
-              "balance_trend" => balance_trend
+              "balance_trend" => balance_trend,
+              "debt_balloon_due" => balloon.fetch(:source_snapshot),
+              "refinance" => refinance.fetch(:source_snapshot)
             )
           }
         end
@@ -592,6 +606,199 @@ module Forecast
 
       def debt_effect_account_id(row)
         row.fetch(:destination_account_id, nil) || row.fetch(:account_id, nil)
+      end
+
+      # Read an optional one-time balloon payment from the profile's
+      # extra["balloon"] = { "due_on", "amount", "currency" }. On the forecast
+      # period whose window contains due_on, the FX-converted balloon is scheduled
+      # as a lump-sum payment capped at the balance owed; outside the horizon it is
+      # ignored. Foreign-currency balloons fail loud via MissingRate (the converter
+      # raises) so a balloon is never silently assumed 1:1. Deterministic: due_on
+      # is a fixed date and the amount is converted at the run-date as_of.
+      def balloon_payment_for(account, profile, opening, period, balance_with_interest)
+        config = balloon_config_for(profile)
+        return no_balloon unless config
+
+        due_on = parse_date(config["due_on"])
+        return no_balloon if due_on.blank?
+        return no_balloon unless period.start_date <= due_on && due_on <= period.end_date
+
+        currency = config["currency"].presence || money_converter.currency
+        converted = money_converter.convert(
+          amount: config["amount"].to_d,
+          currency: currency,
+          source: "debt_account:#{account.id}:balloon_payment:#{due_on}"
+        )
+        capped = [ converted.amount, balance_with_interest ].min
+
+        {
+          amount: capped,
+          risk_flags: converted.risk_flags + [
+            {
+              "type" => "debt_balloon_due",
+              "account_id" => account.id,
+              "due_on" => due_on.iso8601,
+              "balloon_amount" => capped.to_s
+            }
+          ],
+          source_snapshot: {
+            "due_on" => due_on.iso8601,
+            "configured_balloon" => money_converter.snapshot_for(converted),
+            "scheduled_balloon_payment" => capped.to_s,
+            "balloon_capped_to_balance" => capped < converted.amount
+          }
+        }
+      end
+
+      def balloon_config_for(profile)
+        return nil if profile.blank?
+
+        config = profile.extra.is_a?(Hash) ? profile.extra["balloon"] : nil
+        return nil unless config.is_a?(Hash)
+        return nil if config["due_on"].blank? || config["amount"].blank?
+
+        config
+      end
+
+      def no_balloon
+        { amount: 0.to_d, risk_flags: [], source_snapshot: {} }
+      end
+
+      # Resolve the scenario-supplied refinance override (a debt_terms_override
+      # forecast event) that applies to this account on this period. The override
+      # takes effect from effective_on onward: the latest override whose
+      # effective_on <= period.end_date wins. Returns deterministic, scenario-scoped
+      # overridden terms (rate/payment) plus a one-time cash-out drawdown applied
+      # only on the period containing effective_on. Outside a scenario these events
+      # are never present (input builder threads them via debt_sensitive_events) so
+      # the baseline stack is unaffected.
+      def refinance_override_for(account, period)
+        candidates = forecast_debt_events.select do |row|
+          row.fetch(:effect_type, nil) == "debt_terms_override" &&
+            debt_effect_account_id(row) == account.id &&
+            row.fetch(:refinance, nil).is_a?(Hash) &&
+            (effective = parse_date(row.dig(:refinance, "effective_on"))).present? &&
+            effective <= period.end_date
+        end
+
+        return no_refinance if candidates.empty?
+
+        # Stable tie-break: latest effective_on wins; ties resolve by event id so the
+        # result never depends on DB/array row order.
+        winner = candidates.max_by do |row|
+          [ parse_date(row.dig(:refinance, "effective_on")), row.dig(:source_snapshot, "id").to_s ]
+        end
+        refinance = winner.fetch(:refinance)
+        effective_on = parse_date(refinance["effective_on"])
+
+        overridden_terms = refinanced_terms(account, refinance)
+        drawdown = refinance_drawdown_for(account, refinance, effective_on, period)
+
+        {
+          active: true,
+          terms: overridden_terms,
+          drawdown: drawdown.fetch(:amount),
+          risk_flags: drawdown.fetch(:risk_flags),
+          source_snapshot: {
+            "applied" => true,
+            "effective_on" => effective_on.iso8601,
+            "new_annual_rate" => overridden_terms.annual_rate&.to_s,
+            "new_monthly_payment" => overridden_terms.monthly_payment&.to_s,
+            "new_principal_drawdown" => drawdown.fetch(:source_snapshot),
+            "forecast_event_id" => winner.dig(:source_snapshot, "id")
+          }
+        }
+      end
+
+      def no_refinance
+        { active: false, terms: nil, drawdown: 0.to_d, risk_flags: [], source_snapshot: { "applied" => false } }
+      end
+
+      # Build a frozen, deterministic terms struct from the refinance metadata. The
+      # overridden rate/payment replace the resolved rate-period terms from
+      # effective_on onward; currency defaults to the family currency. Falls back to
+      # nil rate/payment when the metadata omits one so the adapter keeps modeling
+      # the other dimension.
+      def refinanced_terms(account, refinance)
+        currency = refinance["currency"].presence || money_converter.currency
+        annual_rate = refinance["new_annual_rate"].present? ? refinance["new_annual_rate"].to_d : nil
+        monthly_payment = refinance["new_monthly_payment"].present? ? refinance["new_monthly_payment"].to_d : nil
+
+        Debt::AccountTerms::Result.new(
+          account: account,
+          accrual_ready: annual_rate.present?,
+          missing_fields: [],
+          rate_type: "fixed",
+          annual_rate: annual_rate,
+          monthly_payment: monthly_payment,
+          opening_balance: account.balance.to_d,
+          currency: currency,
+          source: "scenario_refinance"
+        )
+      end
+
+      def refinance_drawdown_for(account, refinance, effective_on, period)
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: {} } if refinance["new_principal"].blank?
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: {} } unless period.start_date <= effective_on && effective_on <= period.end_date
+
+        currency = refinance["currency"].presence || money_converter.currency
+        converted = money_converter.convert(
+          amount: refinance["new_principal"].to_d,
+          currency: currency,
+          source: "debt_account:#{account.id}:refinance_cash_out:#{effective_on}"
+        )
+
+        {
+          amount: converted.amount,
+          risk_flags: converted.risk_flags,
+          source_snapshot: money_converter.snapshot_for(converted).merge("effective_on" => effective_on.iso8601)
+        }
+      end
+
+      # Interest under a scenario refinance: a single fixed overridden rate applied
+      # across the accrual window for this period. Deterministic (no clock/RNG) and
+      # explainable via the rate_spans snapshot, mirroring the single-rate path.
+      def refinanced_projected_interest(account, profile, terms, period, opening_balance, opening_conversion, forecast_last_accrued_on:, refinance:)
+        unless terms.annual_rate.present?
+          return zero_projected_interest("refinance_rate_not_provided", forecast_last_accrued_on: forecast_last_accrued_on)
+        end
+
+        window = forecast_accrual_window(profile, as_of: period.end_date, forecast_last_accrued_on: forecast_last_accrued_on)
+        return zero_projected_interest("accrual_schedule_not_due") unless window.fetch(:due)
+
+        effective_on = parse_date(refinance.dig(:source_snapshot, "effective_on"))
+        period_end = [ period.end_date, window.fetch(:period_end_on) ].min
+        start_date = [ run_date, window.fetch(:period_start_on), profile.effective_start_on, effective_on ].compact.max
+        return zero_projected_interest("no_days_in_period") if start_date > period_end
+
+        federal_handler = Debt::FederalStudentLoan::AccrualHandler.new(profile)
+        denominator = federal_handler.day_count_denominator
+        days = (period_end - start_date).to_i + 1
+        basis = non_federal_interest_basis(account, terms, opening_balance, projected_native_opening_balance(terms, opening_balance, opening_conversion), period_end)
+        interest = (basis.fetch(:amount) * (terms.annual_rate.to_d / 100) * days / denominator).round(4)
+
+        {
+          amount: interest,
+          forecast_last_accrued_on: period_end,
+          risk_flags: basis.fetch(:risk_flags),
+          source_snapshot: basis.fetch(:source_snapshot).merge(
+            "amount" => interest.to_s,
+            "currency" => money_converter.currency,
+            "period_start_on" => start_date.iso8601,
+            "period_end_on" => period_end.iso8601,
+            "terms_source" => "scenario_refinance",
+            "rate_spans" => [
+              {
+                "start_on" => start_date.iso8601,
+                "end_on" => period_end.iso8601,
+                "days" => days,
+                "annual_rate" => terms.annual_rate.to_s,
+                "terms_source" => "scenario_refinance",
+                "interest" => interest.to_s
+              }
+            ]
+          )
+        }
       end
 
       def required_payment_for(account, period, payment, opening_balance, include_overdue: false)
