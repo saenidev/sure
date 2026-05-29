@@ -1,0 +1,34 @@
+<%# locals: (workspace:) %>
+<%#
+  Templates tab (scaffolding stub).
+
+  Surface for the Scenario Template Library: browse preset life-event templates
+  (country move, job change, income loss, major purchase, market drawdown,
+  liquidity stress, tax placeholder) and apply one to instantiate a normal,
+  editable ForecastScenario plus its events/goals.
+
+  This is an EMPTY-STATE STUB only — the browse/apply UI lands in its own slice.
+  It establishes the panel, aria labelling, and i18n key tree so the feature
+  slice stays a vertical, reviewable diff.
+%>
+<section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.templates") %>">
+  <div class="space-y-1">
+    <h3 class="text-primary text-base font-medium"><%= t("forecasts.templates.heading") %></h3>
+    <p class="text-secondary text-sm"><%= t("forecasts.templates.description") %></p>
+  </div>
+
+  <div class="rounded-xl border border-primary bg-container p-8 text-center"
+       aria-labelledby="forecast-templates-empty-title">
+    <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+      <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+        <%= icon "layout-template", size: "lg", color: "default" %>
+      </span>
+      <div class="space-y-1">
+        <h4 id="forecast-templates-empty-title" class="text-primary text-lg font-medium">
+          <%= t("forecasts.templates.empty.title") %>
+        </h4>
+        <p class="text-secondary text-sm"><%= t("forecasts.templates.empty.body") %></p>
+      </div>
+    </div>
+  </div>
+</section>

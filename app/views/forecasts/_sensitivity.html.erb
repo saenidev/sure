@@ -1,0 +1,34 @@
+<%# locals: (workspace:) %>
+<%#
+  Sensitivity tab (scaffolding stub).
+
+  Surface for the deterministic single-variable sensitivity analysis
+  (Forecast::SensitivityAnalyzer): perturb one input at a time (income -10%,
+  expenses +10%, market return -20%, debt rate +200bps) and report the impact on
+  end-of-horizon balances, the minimum cash runway, and goal status changes.
+
+  This is an EMPTY-STATE STUB only — the sensitivity panel lands in its own
+  slice. It establishes the panel, aria labelling, and i18n key tree so the
+  feature slice stays a vertical, reviewable diff.
+%>
+<section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.sensitivity") %>">
+  <div class="space-y-1">
+    <h3 class="text-primary text-base font-medium"><%= t("forecasts.sensitivity.heading") %></h3>
+    <p class="text-secondary text-sm"><%= t("forecasts.sensitivity.description") %></p>
+  </div>
+
+  <div class="rounded-xl border border-primary bg-container p-8 text-center"
+       aria-labelledby="forecast-sensitivity-empty-title">
+    <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+      <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+        <%= icon "sliders-horizontal", size: "lg", color: "default" %>
+      </span>
+      <div class="space-y-1">
+        <h4 id="forecast-sensitivity-empty-title" class="text-primary text-lg font-medium">
+          <%= t("forecasts.sensitivity.empty.title") %>
+        </h4>
+        <p class="text-secondary text-sm"><%= t("forecasts.sensitivity.empty.body") %></p>
+      </div>
+    </div>
+  </div>
+</section>

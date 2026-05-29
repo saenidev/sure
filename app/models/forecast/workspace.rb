@@ -15,7 +15,7 @@ module Forecast
   # The "most recent wins" rule means a newer failed group supersedes an older
   # completed one, so users are never shown a stale success.
   class Workspace
-    TAB_IDS = %w[overview comparison timeline scenarios goals reconciliation review].freeze
+    TAB_IDS = %w[overview comparison timeline scenarios goals templates sensitivity reconciliation review].freeze
     BASELINE_STACK_KEY = "baseline".freeze
 
     attr_reader :family
@@ -44,11 +44,19 @@ module Forecast
       # this, TimelineReadModel#category_label / #debt_label issue one categories
       # / accounts query per projection row on every forecast page load (DS::Tabs
       # renders the Timeline panel server-side regardless of the active tab).
+      #
+      # Also eager-load each run's `forecast_goal_evaluations` so the
+      # GoalTradeoffExplorer (which reads one evaluation set per run x goal) never
+      # N+1s over runs x goals when the Tradeoff surface lands. Adding it to the
+      # SAME preload keeps the evaluation load at one query for the whole group.
       @latest_group = family.forecast_run_groups
-        .includes(forecast_runs: { forecast_months: [
-          { forecast_category_projections: [ :category, :parent_category ] },
-          { forecast_debt_projections: :account }
-        ] })
+        .includes(forecast_runs: [
+          { forecast_months: [
+            { forecast_category_projections: [ :category, :parent_category ] },
+            { forecast_debt_projections: :account }
+          ] },
+          :forecast_goal_evaluations
+        ])
         .order(created_at: :desc)
         .first
     end
@@ -330,6 +338,58 @@ module Forecast
     # as the baseline overview). A failed run maps to the blocked/fuchsia tone.
     def feasibility_tone_for(status)
       FEASIBILITY_TONES.fetch(status, :gray)
+    end
+
+    # --- Distribution bands & goal tradeoffs (read-only surfaces) -------------
+
+    # Read-only builder that derives deterministic scenario bands (low/mid/high
+    # per metric per common month) from the latest group's runs. Reuses the
+    # months already eager-loaded by `latest_group` (no extra query) and excludes
+    # failed stacks. Returns nil when there is no run group to band yet, so the
+    # view can fall back to the band empty state instead of constructing a builder
+    # over nothing.
+    def distribution_band_builder
+      return @distribution_band_builder if defined?(@distribution_band_builder)
+      return @distribution_band_builder = nil if comparison_runs.empty?
+
+      @distribution_band_builder = Forecast::DistributionBandBuilder.new(runs: comparison_runs)
+    end
+
+    # True only when there is more than one CONTRIBUTING (completed, populated)
+    # stack to band: a single baseline-only group, an empty group, or a group
+    # whose only non-baseline stack failed produces no meaningful band (a single
+    # stack collapses low==mid==high), so the predicate is false and the view
+    # shows the band empty state rather than a degenerate single-value band.
+    def distribution_band_data?
+      contributing_stack_count > 1 && (distribution_band_builder&.any? || false)
+    end
+
+    # Read-only explorer that ranks the latest group's scenario stacks by how many
+    # goals they keep on-track and surfaces the tradeoffs each makes vs baseline.
+    # Reuses the runs' `forecast_goal_evaluations` eager-loaded by `latest_group`
+    # (no N+1 over runs x goals). Returns nil when there is no run group yet.
+    def goal_tradeoff_explorer
+      return @goal_tradeoff_explorer if defined?(@goal_tradeoff_explorer)
+      return @goal_tradeoff_explorer = nil if comparison_runs.empty?
+
+      @goal_tradeoff_explorer = Forecast::GoalTradeoffExplorer.new(runs: comparison_runs)
+    end
+
+    # True only when there is more than one CONTRIBUTING (completed) stack AND at
+    # least one was actually ranked (i.e. goals were evaluated). A single-
+    # baseline-only group, an empty group, or a group whose only non-baseline
+    # stack failed has nothing to trade off, so the predicate is false and the
+    # view shows the tradeoff empty state.
+    def goal_tradeoff_data?
+      contributing_stack_count > 1 && (goal_tradeoff_explorer&.any? || false)
+    end
+
+    # Number of latest-group stacks that actually contribute to the band/tradeoff
+    # surfaces: completed (not failed) runs only. A failed stack is excluded so a
+    # group whose only non-baseline stack failed reads as a single contributing
+    # stack (no real comparison). Reuses the eager-loaded comparison runs.
+    def contributing_stack_count
+      @contributing_stack_count ||= comparison_runs.count { |run| run.status == "completed" }
     end
 
     # Active scenarios the user can compose into stacks, ordered for the compose

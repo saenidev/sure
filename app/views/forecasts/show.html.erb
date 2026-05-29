@@ -78,6 +78,10 @@
             <%= render "forecasts/scenarios", workspace: @workspace %>
           <% elsif tab_id == "goals" %>
             <%= render "forecasts/goals", workspace: @workspace %>
+          <% elsif tab_id == "templates" %>
+            <%= render "forecasts/templates", workspace: @workspace %>
+          <% elsif tab_id == "sensitivity" %>
+            <%= render "forecasts/sensitivity", workspace: @workspace %>
           <% elsif tab_id == "reconciliation" %>
             <%= render "forecasts/reconciliation", workspace: @workspace %>
           <% elsif tab_id == "review" %>

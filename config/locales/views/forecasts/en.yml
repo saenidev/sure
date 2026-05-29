@@ -11,6 +11,8 @@ en:
         timeline: "Timeline"
         scenarios: "Scenarios"
         goals: "Goals"
+        templates: "Templates"
+        sensitivity: "Sensitivity"
         reconciliation: "Reconciliation"
         review: "Review"
       tab_placeholder: "This section becomes available in an upcoming release."
@@ -119,6 +121,68 @@ en:
     distribution:
       empty_band_note: "No common projected months across these scenario stacks yet."
       trimmed_to_common_months_note: "Bands span only the months projected by every scenario stack."
+      heading: "Scenario bands"
+      description: "See the deterministic low, middle, and high outcome across your scenario stacks for each projected month. These are scenario bands, not statistical percentiles."
+      band_labels:
+        deterministic_low: "Low"
+        deterministic_mid: "Middle"
+        deterministic_high: "High"
+      metrics:
+        net_worth: "Net worth"
+        cash_balance: "Cash balance"
+        debt_balance: "Debt balance"
+      empty:
+        title: "No scenario bands yet"
+        body: "Compare more than one scenario stack in a single forecast run to see the deterministic low, middle, and high outcome bands across the horizon."
+    sensitivity:
+      heading: "Sensitivity"
+      description: "See how one change at a time — lower income, higher expenses, a market drawdown, or a higher debt rate — moves your end-of-horizon balances, your cash runway, and your goals."
+      perturbations:
+        income_minus_10pct: "Income -10%"
+        expenses_plus_10pct: "Expenses +10%"
+        market_return_minus_20pct: "Market return -20%"
+        debt_rate_plus_200bps: "Debt rate +200bps"
+      table:
+        caption: "Impact of each single-variable perturbation on end-of-horizon balances, minimum cash runway, and goal status."
+        perturbation: "Change"
+        cash_balance: "End cash"
+        net_worth: "End net worth"
+        debt_balance: "End debt"
+        minimum_cash_runway_days: "Min runway"
+        goal_changes: "Goal changes"
+        no_goal_changes: "No change"
+        unavailable: "—"
+      runway_days:
+        one: "%{count} day"
+        other: "%{count} days"
+      empty:
+        title: "No sensitivity analysis yet"
+        body: "Generate a forecast, then we will perturb one input at a time to show how income, spending, market returns, and debt rates each move your projected outcomes and goals."
+    tradeoff:
+      heading: "Goal tradeoffs"
+      description: "Rank your scenario stacks by how many goals they keep on track, and see the explicit tradeoffs each stack makes against the baseline."
+      table:
+        caption: "Scenario stacks ranked by goals kept on track, with the satisfied, at-risk, and blocked goal counts and tradeoffs versus baseline."
+        rank: "Rank"
+        stack: "Scenario stack"
+        satisfied: "On track"
+        at_risk: "At risk"
+        blocked: "Blocked"
+        tradeoffs: "Tradeoffs vs baseline"
+        no_tradeoffs: "—"
+      directions:
+        improvement: "Improvement"
+        regression: "Regression"
+        unchanged: "Unchanged"
+      empty:
+        title: "No goal tradeoffs yet"
+        body: "Add goals, then compare more than one scenario stack in a single forecast run to rank the stacks by the goals they keep on track."
+    templates:
+      heading: "Scenario templates"
+      description: "Start from a preset life-event template — a country move, a job change, a market drawdown, and more — then tailor the generated scenario, events, and goals to your situation."
+      empty:
+        title: "Scenario templates are coming soon"
+        body: "Browse preset life-event templates and apply one to instantiate an editable scenario with its events and goals, ready for you to tailor and project."
     timeline:
       heading: "Timeline"
       description: "Follow every projected lane on one synchronized timeline. Switch between daily and monthly resolution, then drill into any period to see what drives the number."
@@ -186,6 +250,26 @@ en:
         ending: "Ending"
         unnamed: "Debt account"
         empty: "No debt projections are available for this forecast."
+        payoff:
+          heading: "Payoff"
+          on: "Paid off %{date}"
+          within_horizon: "Paid off in month %{month}"
+          not_within_horizon: "Not paid off within the horizon"
+        trend:
+          heading: "Trend"
+          shrinking: "Balance shrinking"
+          growing: "Balance growing"
+          flat: "Balance flat"
+        structure:
+          heading: "Structure"
+          balloon: "Balloon payment"
+          refinance: "Refinance"
+          variable_rate: "Variable rate"
+          fixed_rate: "Fixed rate"
+        pressure:
+          flag: "Debt pressure"
+          tooltip: "Projected debt payments outpace available cash, shortening your runway."
+          none: "No debt pressure"
       goals_lane:
         heading: "Goals"
         subtitle: "How this forecast scores against your goals."

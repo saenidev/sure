@@ -68,6 +68,21 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "renders the new templates and sensitivity tab buttons and empty-state stubs" do
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    get forecast_url
+
+    assert_response :success
+    # Both new tab nav buttons render.
+    assert_select "button[data-id='templates']", text: I18n.t("forecasts.show.tabs.templates")
+    assert_select "button[data-id='sensitivity']", text: I18n.t("forecasts.show.tabs.sensitivity")
+    # Their panels render the scaffolding empty-state stubs (not the generic
+    # "available in an upcoming release" placeholder).
+    assert_select "#forecast-templates-empty-title", text: I18n.t("forecasts.templates.empty.title")
+    assert_select "#forecast-sensitivity-empty-title", text: I18n.t("forecasts.sensitivity.empty.title")
+  end
+
   test "surfaces failure alert with error message when latest run failed" do
     build_failed_run_group(family: @family, user: @user, error_message: "MoneyConverter::MissingRate: USD->EUR")
 
