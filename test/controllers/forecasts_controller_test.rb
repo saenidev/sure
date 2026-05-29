@@ -80,8 +80,10 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     # The templates panel now renders the real apply-card catalog (not a stub).
     assert_select "[data-testid=forecast-templates-list]"
     assert_select "[data-testid=forecast-template-card]", count: Forecast::ScenarioTemplate.all.size
-    # Sensitivity still renders its scaffolding empty-state stub.
-    assert_select "#forecast-sensitivity-empty-title", text: I18n.t("forecasts.sensitivity.empty.title")
+    # With a completed run, sensitivity renders its lazy analysis Turbo Frame
+    # (the empty-state only shows when there is no completed run to analyze).
+    assert_select "turbo-frame#forecast_sensitivity"
+    assert_select "[data-testid=forecast-sensitivity-loading]"
   end
 
   test "surfaces failure alert with error message when latest run failed" do
