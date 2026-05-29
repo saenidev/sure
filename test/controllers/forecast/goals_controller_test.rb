@@ -10,6 +10,24 @@ class Forecast::GoalsControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
   end
 
+  # Regression: new/edit open in the "modal" turbo frame, so the response must
+  # contain a <turbo-frame id="modal"> or Turbo renders "content missing".
+  test "new renders the form inside the modal turbo frame" do
+    get new_forecast_goal_url
+
+    assert_response :success
+    assert_select "turbo-frame#modal form"
+  end
+
+  test "edit renders the form inside the modal turbo frame" do
+    goal = @family.forecast_goals.create!(name: "Editable", goal_type: "minimum_cash_runway", target_duration_days: 90, blocking_behavior: "warn", status: "active")
+
+    get edit_forecast_goal_url(goal)
+
+    assert_response :success
+    assert_select "turbo-frame#modal form"
+  end
+
   def runway_params(overrides = {})
     {
       name: "Six month runway",

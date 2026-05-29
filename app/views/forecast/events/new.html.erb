@@ -1,6 +1,8 @@
-<%= render DS::Dialog.new(width: "lg") do |dialog| %>
-  <% dialog.with_header(title: t("forecasts.events.new.title")) %>
-  <% dialog.with_body do %>
-    <%= render "form", event: @event, scenario: @scenario %>
+<%= turbo_frame_tag "modal" do %>
+  <%= render DS::Dialog.new(width: "lg") do |dialog| %>
+    <% dialog.with_header(title: t("forecasts.events.new.title")) %>
+    <% dialog.with_body do %>
+      <%= render "form", event: @event, scenario: @scenario %>
+    <% end %>
   <% end %>
 <% end %>

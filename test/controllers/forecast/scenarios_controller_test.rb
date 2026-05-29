@@ -8,6 +8,26 @@ class Forecast::ScenariosControllerTest < ActionDispatch::IntegrationTest
     sign_in @user
   end
 
+  # --- new / edit render inside the modal turbo frame ------------------------
+  # Regression: the new/edit links open with frame: "modal", so the response
+  # MUST contain a <turbo-frame id="modal"> or Turbo shows "content missing".
+
+  test "new renders the form inside the modal turbo frame" do
+    get new_forecast_scenario_url
+
+    assert_response :success
+    assert_select "turbo-frame#modal form"
+  end
+
+  test "edit renders the form inside the modal turbo frame" do
+    scenario = @family.forecast_scenarios.create!(name: "Editable", status: "active", created_by_user: @user)
+
+    get edit_forecast_scenario_url(scenario)
+
+    assert_response :success
+    assert_select "turbo-frame#modal form"
+  end
+
   # --- index -----------------------------------------------------------------
 
   test "index lists only the current family's scenarios grouped by status" do
