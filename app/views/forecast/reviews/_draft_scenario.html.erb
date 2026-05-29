@@ -1,0 +1,31 @@
+<%# locals: (run_group:, review:, draft:, index:) %>
+<%#
+  One Hermes draft scenario suggestion with approve / reject affordances.
+  Approving converts it into a real, DISABLED, user-owned ForecastScenario
+  (approval_status approved) so it never auto-activates. Rejecting (transitioning
+  the whole review to rejected) creates nothing. The draft is identified by its
+  index in the stored response_packet; family is always set server-side.
+%>
+<div class="space-y-2 rounded-lg border border-primary p-4">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0 space-y-1">
+      <h4 class="text-primary text-sm font-medium"><%= draft["name"].presence || t("forecast.reviews.draft_scenario.untitled") %></h4>
+      <% if draft["description"].present? %>
+        <p class="text-secondary text-sm"><%= draft["description"] %></p>
+      <% end %>
+      <% events = Array(draft["events"]) %>
+      <% if events.any? %>
+        <p class="text-secondary text-xs"><%= t("forecast.reviews.draft_scenario.event_count", count: events.size) %></p>
+      <% end %>
+    </div>
+
+    <div class="flex items-center gap-2 shrink-0">
+      <%= render DS::Button.new(
+        text: t("forecast.reviews.draft_scenario.approve"),
+        icon: "check",
+        size: :sm,
+        href: approve_draft_forecast_review_path(run_group, draft_index: index)
+      ) %>
+    </div>
+  </div>
+</div>

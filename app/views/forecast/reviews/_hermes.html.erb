@@ -1,0 +1,77 @@
+<%# locals: (run_group:, review:) %>
+<%#
+  Hermes integration panel. The external send/receive round-trip is a STUBBED
+  boundary: the "Send to Hermes" button builds + saves the deterministic packet
+  and calls the client, which (with no endpoint configured) is handled
+  gracefully by the controller — never a 500.
+
+  Renders any stored response_packet: draft scenarios (approve/edit/reject),
+  recommendations, and follow-up questions. A Hermes draft NEVER auto-activates;
+  approving one converts it into a real, DISABLED, user-owned scenario.
+%>
+<%
+  draft_scenarios = Array(review.response_packet["draft_scenarios"])
+  recommendations = Array(review.response_packet["recommendations"])
+  follow_up_questions = Array(review.response_packet["follow_up_questions"])
+  hermes_responded = draft_scenarios.any? || recommendations.any? || follow_up_questions.any?
+%>
+<section class="space-y-4 rounded-xl border border-primary bg-container p-4 lg:p-6"
+         aria-labelledby="forecast-review-hermes-heading">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="space-y-1">
+      <h2 id="forecast-review-hermes-heading" class="text-primary text-base font-medium">
+        <%= t("forecast.reviews.hermes.heading") %>
+      </h2>
+      <p class="text-secondary text-sm"><%= t("forecast.reviews.hermes.description") %></p>
+    </div>
+
+    <% if run_group.completed? %>
+      <%= render DS::Button.new(
+        text: t("forecast.reviews.hermes.submit"),
+        icon: "send",
+        variant: "outline",
+        size: :sm,
+        href: submit_to_hermes_forecast_review_path(run_group)
+      ) %>
+    <% end %>
+  </div>
+
+  <% unless Forecast::HermesClient.configured? %>
+    <%= render DS::Alert.new(variant: :info, live: :none) do %>
+      <p><%= t("forecast.reviews.hermes.not_configured_notice") %></p>
+    <% end %>
+  <% end %>
+
+  <% if hermes_responded %>
+    <% if draft_scenarios.any? %>
+      <div class="space-y-3">
+        <h3 class="text-primary text-sm font-medium"><%= t("forecast.reviews.hermes.draft_scenarios_heading") %></h3>
+        <% draft_scenarios.each_with_index do |draft, index| %>
+          <%= render "forecast/reviews/draft_scenario", run_group: run_group, review: review, draft: draft, index: index %>
+        <% end %>
+      </div>
+    <% end %>
+
+    <% if recommendations.any? %>
+      <div class="space-y-3">
+        <h3 class="text-primary text-sm font-medium"><%= t("forecast.reviews.hermes.recommendations_heading") %></h3>
+        <% recommendations.each do |recommendation| %>
+          <%= render "forecast/reviews/recommendation", recommendation: recommendation %>
+        <% end %>
+      </div>
+    <% end %>
+
+    <% if follow_up_questions.any? %>
+      <div class="space-y-2">
+        <h3 class="text-primary text-sm font-medium"><%= t("forecast.reviews.hermes.questions_heading") %></h3>
+        <ul class="list-disc space-y-1 pl-5 text-secondary text-sm">
+          <% follow_up_questions.each do |question| %>
+            <li><%= question.is_a?(Hash) ? question["text"] : question %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+  <% else %>
+    <p class="text-secondary text-sm"><%= t("forecast.reviews.hermes.no_response") %></p>
+  <% end %>
+</section>

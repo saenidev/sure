@@ -1,0 +1,65 @@
+<%# locals: (run_group:, review:) %>
+<%#
+  Deterministic facts panel: the current balances + horizon + monthly budget
+  totals the engine produced for this run group. Built from the same
+  Forecast::PacketBuilder the Hermes packet uses, so the human sees exactly the
+  facts Hermes would. If the group is not completed (failed / still running) we
+  surface a clear notice instead of a blank/stale panel.
+%>
+<section class="space-y-4" aria-labelledby="forecast-review-facts-heading">
+  <h2 id="forecast-review-facts-heading" class="text-primary text-base font-medium">
+    <%= t("forecast.reviews.facts.heading") %>
+  </h2>
+
+  <% if run_group.completed? %>
+    <% packet = Forecast::PacketBuilder.new(run_group).build %>
+    <% balances = packet["current_balances"] %>
+    <% currency = packet["currency"] %>
+
+    <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <% [
+        [ "cash_balance", balances["cash_balance"] ],
+        [ "liquid_balance", balances["liquid_balance"] ],
+        [ "portfolio_value", balances["portfolio_value"] ],
+        [ "net_worth", balances["net_worth"] ]
+      ].each do |key, amount| %>
+        <div class="rounded-xl border border-primary bg-container p-4">
+          <dt class="text-secondary text-xs uppercase tracking-wide"><%= t("forecast.reviews.facts.#{key}") %></dt>
+          <dd class="text-primary mt-1 text-lg font-semibold">
+            <%= Money.new(amount.to_d, currency).format %>
+          </dd>
+        </div>
+      <% end %>
+    </dl>
+
+    <div class="rounded-xl border border-primary bg-container p-4">
+      <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+        <div>
+          <dt class="text-secondary"><%= t("forecast.reviews.facts.horizon") %></dt>
+          <dd class="text-primary font-medium">
+            <%= t("forecast.reviews.facts.horizon_range",
+                  start_date: l(run_group.horizon_start_on, format: :long),
+                  end_date: l(run_group.horizon_end_on, format: :long)) %>
+          </dd>
+        </div>
+        <div>
+          <dt class="text-secondary"><%= t("forecast.reviews.facts.months_projected") %></dt>
+          <dd class="text-primary font-medium"><%= packet["monthly_budget"].size %></dd>
+        </div>
+        <div>
+          <dt class="text-secondary"><%= t("forecast.reviews.facts.scenario_stacks") %></dt>
+          <dd class="text-primary font-medium"><%= packet["run"]["scenario_stack_count"] %></dd>
+        </div>
+      </dl>
+    </div>
+  <% elsif run_group.failed? %>
+    <%= render DS::Alert.new(variant: :error, live: :polite) do %>
+      <p class="font-semibold"><%= t("forecast.reviews.facts.failed_title") %></p>
+      <p><%= run_group.error_message.presence || t("forecast.reviews.facts.failed_body") %></p>
+    <% end %>
+  <% else %>
+    <%= render DS::Alert.new(variant: :info, live: :polite) do %>
+      <p><%= t("forecast.reviews.facts.incomplete") %></p>
+    <% end %>
+  <% end %>
+</section>

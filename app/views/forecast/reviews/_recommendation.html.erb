@@ -1,0 +1,18 @@
+<%# locals: (recommendation:) %>
+<%#
+  One Hermes recommendation. Recommendations are advisory text (optionally with
+  a title); they do not mutate anything until the user acts on them via the
+  draft scenario / status controls. Tolerant of both a bare string and a hash.
+%>
+<%
+  title = recommendation.is_a?(Hash) ? recommendation["title"] : nil
+  body = recommendation.is_a?(Hash) ? recommendation["body"] : recommendation
+%>
+<div class="rounded-lg border border-primary p-4">
+  <% if title.present? %>
+    <p class="text-primary text-sm font-medium"><%= title %></p>
+  <% end %>
+  <% if body.present? %>
+    <p class="text-secondary text-sm <%= "mt-1" if title.present? %>"><%= body %></p>
+  <% end %>
+</div>

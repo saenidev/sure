@@ -26,6 +26,7 @@
             <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.review.table.status") %></th>
             <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.review.table.review_status") %></th>
             <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.review.table.generated_at") %></th>
+            <th scope="col" class="px-4 py-2 font-medium"><span class="sr-only"><%= t("forecasts.review.table.actions") %></span></th>
           </tr>
         </thead>
         <tbody>
@@ -65,6 +66,16 @@
                   <%= l(group.finished_at, format: :long) %>
                 <% else %>
                   <%= l(group.created_at, format: :long) %>
+                <% end %>
+              </td>
+              <td class="px-4 py-2 text-right">
+                <%# Review surface is available once the group reached a terminal
+                    state (completed/failed); pending/running groups have nothing
+                    to review yet. %>
+                <% if group.completed? || group.failed? %>
+                  <%= link_to t("forecasts.review.table.open"),
+                        forecast_review_path(group),
+                        class: "text-primary font-medium hover:underline whitespace-nowrap" %>
                 <% end %>
               </td>
             </tr>

@@ -1,0 +1,34 @@
+<%# locals: (run_group:) %>
+<%#
+  Deterministic risk flags raised across this run group, normalized to their
+  type token and humanized via i18n. Reads the group's persisted risk_flags (no
+  recompute). Empty state is explicit so the section is never blank.
+%>
+<%
+  flag_types = Array(run_group.risk_flags)
+    .map { |flag| flag.is_a?(Hash) ? flag["type"] : flag }
+    .compact_blank
+    .uniq
+    .sort
+%>
+<section class="space-y-3" aria-labelledby="forecast-review-risk-heading">
+  <h2 id="forecast-review-risk-heading" class="text-primary text-base font-medium">
+    <%= t("forecast.reviews.risk_flags.heading") %>
+  </h2>
+
+  <% if flag_types.any? %>
+    <ul class="flex flex-wrap gap-2">
+      <% flag_types.each do |type| %>
+        <li>
+          <%= render DS::Pill.new(
+            label: t("forecast.reviews.risk_flags.types.#{type}", default: type.to_s.humanize),
+            tone: :amber,
+            show_dot: false
+          ) %>
+        </li>
+      <% end %>
+    </ul>
+  <% else %>
+    <p class="text-secondary text-sm"><%= t("forecast.reviews.risk_flags.none") %></p>
+  <% end %>
+</section>

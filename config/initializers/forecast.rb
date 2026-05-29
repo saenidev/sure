@@ -32,5 +32,11 @@ Rails.application.configure do
       ActiveModel::Type::Boolean.new.cast(
         ENV.fetch("FORECAST_MATERIAL_ON_MISSING_BASELINE", "true")
       )
+
+    # Endpoint for the external Hermes planning agent. Blank by default — the
+    # external send/receive round-trip is a STUBBED boundary in this build, so
+    # Forecast::HermesClient#submit raises NotConfigured (handled gracefully by
+    # the review UI) until an operator wires up a real endpoint.
+    forecast.hermes_endpoint = ENV["FORECAST_HERMES_ENDPOINT"].presence
   end
 end

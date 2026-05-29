@@ -1,0 +1,45 @@
+<%# locals: (run_group:, review:) %>
+<%#
+  Status transition controls for the review (the only mutable part — the run
+  group itself stays immutable). Each control PATCHes the review with a single
+  permitted :status value; the model's inclusion validation rejects anything
+  outside the allowed set (-> 422). We only OFFER the sensible next transitions
+  for the current status; the server is the authority either way.
+%>
+<%
+  next_statuses = {
+    "draft" => %w[awaiting_approval],
+    "awaiting_approval" => %w[approved rejected],
+    "approved" => %w[applied superseded],
+    "rejected" => %w[draft],
+    "applied" => %w[superseded],
+    "superseded" => %w[]
+  }.fetch(review.status, [])
+%>
+<section class="space-y-3 rounded-xl border border-primary bg-container p-4 lg:p-6"
+         aria-labelledby="forecast-review-status-heading">
+  <h2 id="forecast-review-status-heading" class="text-primary text-base font-medium">
+    <%= t("forecast.reviews.status_controls.heading") %>
+  </h2>
+
+  <p class="text-secondary text-sm">
+    <%= t("forecast.reviews.status_controls.current",
+          status: t("forecast.reviews.statuses.#{review.status}", default: review.status.humanize)) %>
+  </p>
+
+  <% if next_statuses.any? %>
+    <div class="flex flex-wrap gap-2">
+      <% next_statuses.each do |status| %>
+        <%= render DS::Button.new(
+          text: t("forecast.reviews.status_controls.transition.#{status}", default: status.humanize),
+          variant: status == "rejected" ? "outline" : "primary",
+          size: :sm,
+          href: forecast_review_path(run_group, forecast_review: { status: status }),
+          method: :patch
+        ) %>
+      <% end %>
+    </div>
+  <% else %>
+    <p class="text-secondary text-sm"><%= t("forecast.reviews.status_controls.terminal") %></p>
+  <% end %>
+</section>

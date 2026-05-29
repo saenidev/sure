@@ -309,6 +309,16 @@ Rails.application.routes.draw do
     resources :account_liquidity_settings
     resources :budget_overrides
     resources :event_links, only: %i[index create update destroy]
+
+    # Reviews are keyed by their run group id (one review per group). The
+    # controller scopes via Current.family.forecast_run_groups.find -> its
+    # forecast_review, so a cross-family id is a 404.
+    resources :reviews, only: %i[show update] do
+      member do
+        post :submit_to_hermes
+        post :approve_draft
+      end
+    end
   end
 
   resources :reports, only: %i[index] do

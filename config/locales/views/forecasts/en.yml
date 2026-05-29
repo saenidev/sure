@@ -53,6 +53,8 @@ en:
         status: "Status"
         review_status: "Review"
         generated_at: "Generated"
+        actions: "Actions"
+        open: "Open review"
       run_types:
         manual: "Manual"
         weekly: "Weekly review"
@@ -613,3 +615,82 @@ en:
         net_worth: "Net worth"
         debt_balance: "Debt balance"
         empty: "No monthly projections are available for this forecast."
+
+  # Singular `forecast` namespace: keys for the Forecast:: controllers (whose
+  # controller_path is `forecast/...`, so lazy `t(".key")` lookups resolve here)
+  # and the review approval views. Lives under the SAME top-level `en:` as
+  # `forecasts:` above (a second `en:` key would overwrite it on parse).
+  forecast:
+    reviews:
+      show:
+        title: "Forecast review"
+        description: "Review the deterministic facts and risk flags for this forecast, send them to Hermes, and approve or reject the result."
+        back: "Back to forecast"
+      statuses:
+        draft: "Draft"
+        awaiting_approval: "Awaiting approval"
+        approved: "Approved"
+        rejected: "Rejected"
+        applied: "Applied"
+        superseded: "Superseded"
+      facts:
+        heading: "Forecast facts"
+        cash_balance: "Cash balance"
+        liquid_balance: "Liquid balance"
+        portfolio_value: "Portfolio value"
+        net_worth: "Net worth"
+        horizon: "Horizon"
+        horizon_range: "%{start_date} to %{end_date}"
+        months_projected: "Months projected"
+        scenario_stacks: "Scenario stacks"
+        failed_title: "This forecast failed to generate"
+        failed_body: "The forecast could not be generated, so there are no facts to review."
+        incomplete: "This forecast is still generating. Facts will appear once it completes."
+      risk_flags:
+        heading: "Risk flags"
+        none: "No risk flags were raised for this forecast."
+        types:
+          stale_fx_rate: "Stale exchange rate"
+          missing_rate: "Missing exchange rate"
+          negative_cash: "Projected negative cash"
+          cash_shortfall: "Projected cash shortfall"
+          debt_payment_gap: "Debt payment shortfall"
+          goal_missed: "A goal is projected to be missed"
+      hermes:
+        heading: "Hermes"
+        description: "Send these facts to the Hermes planning agent for draft scenarios and recommendations. Drafts never apply automatically — you approve each one."
+        submit: "Send to Hermes"
+        not_configured_notice: "Hermes is not configured, so forecasts cannot be sent yet. The packet is still built and saved, ready to send once Hermes is wired up."
+        no_response: "No Hermes response yet. Send this forecast to Hermes to request draft scenarios and recommendations."
+        draft_scenarios_heading: "Draft scenarios"
+        recommendations_heading: "Recommendations"
+        questions_heading: "Follow-up questions"
+      draft_scenario:
+        untitled: "Untitled draft scenario"
+        default_name: "Hermes draft scenario"
+        default_event_name: "Hermes draft event"
+        event_count:
+          one: "%{count} draft event"
+          other: "%{count} draft events"
+        approve: "Approve & add"
+      status_controls:
+        heading: "Review status"
+        current: "Current status: %{status}"
+        terminal: "This review has reached a final status and cannot be transitioned further."
+        transition:
+          awaiting_approval: "Submit for approval"
+          approved: "Approve"
+          rejected: "Reject"
+          applied: "Mark applied"
+          superseded: "Supersede"
+          draft: "Reopen as draft"
+      update:
+        success: "Review status updated."
+      submit_to_hermes:
+        success: "Forecast sent to Hermes."
+        not_configured: "Hermes is not configured. The forecast packet was built and saved, ready to send once Hermes is available."
+        incomplete: "This forecast has not completed, so it cannot be sent to Hermes yet."
+      approve_draft:
+        success: "Added \"%{name}\" as a disabled scenario. Activate it to include it in your forecast."
+        error: "Could not add the draft scenario: %{message}"
+        draft_not_found: "That draft scenario could not be found. It may have already been processed."
