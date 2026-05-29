@@ -148,6 +148,7 @@ en:
       heading: "Sensitivity"
       description: "See how one change at a time — lower income, higher expenses, a market drawdown, or a higher debt rate — moves your end-of-horizon balances, your cash runway, and your goals."
       disclaimer: "Each row perturbs exactly one input and re-runs the forecast. These are deterministic one-at-a-time stress tests against your latest baseline run — not a statistical distribution or Monte Carlo simulation."
+      stale_baseline_note: "This analysis recomputes a baseline from your current accounts, budgets, and recurring activity, which has changed since the displayed forecast was generated. The baseline and changes below describe that current-state baseline, so they may differ from the run summarized above. Regenerate your forecast to realign them."
       loading: "Running sensitivity analysis…"
       perturbations:
         income_minus_10pct: "Income -10%"

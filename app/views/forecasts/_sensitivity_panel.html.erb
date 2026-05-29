@@ -92,6 +92,21 @@
     <p class="text-secondary text-xs"><%= t("forecasts.sensitivity.disclaimer") %></p>
   </div>
 
+  <%# Staleness note: this analysis rebuilds a baseline from the family's CURRENT
+      accounts/budgets/recurring data, so if that changed since the displayed run
+      was generated the baseline (and every delta below) describes a re-derived
+      current-state baseline that differs from the immutable run shown elsewhere
+      on the page. Surfaced explicitly rather than presenting silently. %>
+  <% if rows.any? && workspace.sensitivity_baseline_stale? %>
+    <div class="flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/10 p-3"
+         data-testid="forecast-sensitivity-stale-note" role="note">
+      <span class="mt-0.5 shrink-0" aria-hidden="true">
+        <%= icon "triangle-alert", size: "sm", color: "warning" %>
+      </span>
+      <p class="text-secondary text-xs"><%= t("forecasts.sensitivity.stale_baseline_note") %></p>
+    </div>
+  <% end %>
+
   <% if rows.any? %>
     <div class="overflow-x-auto rounded-xl border border-primary">
       <table class="w-full text-sm" data-testid="forecast-sensitivity-table">

@@ -455,8 +455,14 @@ module Forecast
     # The deterministic single-variable sensitivity rows for the latest completed
     # baseline run. Builds ONE Forecast::InputBuilder result for the baseline
     # scenario stack (no scenarios) AT THE RUN'S OWN START DATE — never the wall
-    # clock — so the analysis is reproducible against the run it summarizes, then
-    # runs Forecast::SensitivityAnalyzer over the default perturbation catalog.
+    # clock — then runs Forecast::SensitivityAnalyzer over the default
+    # perturbation catalog. The result is deterministic for a fixed family state,
+    # but the input is rebuilt from the LIVE family rather than the persisted run's
+    # snapshot, so if accounts/budgets/recurring data changed since the run was
+    # persisted the baseline (and deltas) re-derive a current-state baseline that
+    # can diverge from the immutable run shown elsewhere on the page. The panel
+    # surfaces that via `sensitivity_baseline_stale?` instead of presenting
+    # silently.
     #
     # Memoized so the analyzer (which re-runs the engine N+1 times) executes at
     # most once per workspace instance. Returns [] when there is no completed
@@ -483,6 +489,40 @@ module Forecast
 
     def sensitivity_metrics
       SENSITIVITY_METRICS
+    end
+
+    # True when the recomputed sensitivity baseline diverges from the persisted
+    # baseline run it claims to summarize. `sensitivity_rows` rebuilds a fresh
+    # InputBuilder result from the live family (current accounts/budgets/recurring
+    # data) at the run's own start date, so if that data changed since the run was
+    # persisted the analyzer's baseline — and therefore every delta — describes a
+    # different, re-derived baseline than the immutable run rendered everywhere
+    # else on the page (Overview/Comparison/Timeline). When that happens the panel
+    # surfaces an explicit staleness note rather than presenting silently.
+    #
+    # Compares the analyzer's unperturbed baseline (carried identically on every
+    # row's `baseline_metric`) against the persisted baseline run's end-of-horizon
+    # month. Reuses the already-loaded `monthly_rows` (no extra query) and the
+    # memoized `sensitivity_rows`. False when there is nothing to compare.
+    def sensitivity_baseline_stale?
+      rows = sensitivity_rows
+      return false if rows.empty?
+
+      last_month = monthly_rows.last
+      return false if last_month.nil?
+
+      recomputed = rows.first.baseline_metric
+      persisted = {
+        "cash_balance" => last_month.cash_balance,
+        "net_worth" => last_month.net_worth,
+        "debt_balance" => last_month.debt_balance
+      }
+
+      persisted.any? do |metric, persisted_value|
+        next false if persisted_value.nil?
+
+        recomputed[metric].to_d != persisted_value.to_d
+      end
     end
 
     # Map of forecast_goal id => human goal name, so a sensitivity goal-status
