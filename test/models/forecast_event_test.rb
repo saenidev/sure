@@ -124,4 +124,27 @@ class ForecastEventTest < ActiveSupport::TestCase
     assert_not event.valid?
     assert_includes event.errors[:status], "is not included in the list"
   end
+
+  test "cross-currency transfer requires a positive numeric destination amount" do
+    destination = accounts(:credit_card)
+    destination.currency = "EUR" # in-memory only; exercises the cross-currency branch
+
+    event = @family.forecast_events.build(
+      name: "Move funds abroad",
+      effect_type: "transfer",
+      behavior: "additive",
+      amount: 500,
+      currency: "USD",
+      starts_on: Date.current,
+      account: @account,
+      destination_account: destination,
+      source_metadata: { "destination_amount" => "not-a-number", "destination_currency" => "EUR" }
+    )
+
+    assert_not event.valid?
+    assert_includes event.errors[:source_metadata], "destination_amount must be a positive number for cross-currency transfer events"
+
+    event.source_metadata = { "destination_amount" => "450.0", "destination_currency" => "EUR" }
+    assert event.valid?, event.errors.full_messages.to_sentence
+  end
 end

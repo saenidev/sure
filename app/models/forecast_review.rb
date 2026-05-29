@@ -13,8 +13,15 @@ class ForecastReview < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validates :forecast_run_group_id, uniqueness: true
   validate :records_belong_to_family
+  validate :run_group_is_immutable, on: :update
 
   private
+    def run_group_is_immutable
+      return unless will_save_change_to_forecast_run_group_id?
+
+      errors.add(:forecast_run_group_id, "cannot be changed after the review is created")
+    end
+
     def records_belong_to_family
       if forecast_run_group.present? && forecast_run_group.family_id != family_id
         errors.add(:forecast_run_group, "must belong to the forecast family")

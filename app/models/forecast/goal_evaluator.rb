@@ -46,7 +46,27 @@ module Forecast
 
       def evaluate_runway(goal, relevant_months, field)
         target = goal.fetch("target_duration_days").to_d
-        minimum = relevant_months.filter_map { |month| month.public_send(field) }.min || 0
+        runway_values = relevant_months.filter_map { |month| month.public_send(field) }
+
+        # A nil runway means the engine projected no spending in that month, so cash is
+        # never exhausted (unbounded runway). If no evaluated month has a finite runway,
+        # the goal is satisfied — coercing the absent minimum to 0 would falsely block it.
+        if runway_values.empty?
+          return Evaluation.new(
+            forecast_goal_id: goal.fetch("id"),
+            goal_key: goal_key_for(goal),
+            scenario_stack_key: scenario_stack_key,
+            status: "pass",
+            currency: currency,
+            metric_value: nil,
+            target_value: target,
+            evaluated_on: relevant_months.last.period_end_on,
+            goal_snapshot: goal,
+            details: evaluation_window_details(goal, relevant_months).merge("field" => field.to_s, "reason" => "runway_unbounded_no_spend")
+          )
+        end
+
+        minimum = runway_values.min
 
         Evaluation.new(
           forecast_goal_id: goal.fetch("id"),

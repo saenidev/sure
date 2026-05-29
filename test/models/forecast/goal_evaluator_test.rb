@@ -98,6 +98,43 @@ class Forecast::GoalEvaluatorTest < ActiveSupport::TestCase
     assert_equal target_month.period_end_on, result.first.evaluated_on
   end
 
+  test "required runway goals pass when no month has a finite runway (no projected spend)" do
+    goal = {
+      "id" => SecureRandom.uuid,
+      "goal_type" => "minimum_cash_runway",
+      "target_duration_days" => 180,
+      "required" => true,
+      "blocking_behavior" => "blocks_scenario"
+    }
+    month = Forecast::Engine::MonthRow.new(
+      period_start_on: Date.current.beginning_of_month,
+      period_end_on: Date.current.end_of_month,
+      precision: "daily_backed",
+      scenario_stack_key: "baseline",
+      currency: "USD",
+      expected_income: 0,
+      expected_spending: 0,
+      net_cash_flow: 0,
+      cash_balance: 100,
+      liquid_balance: 100,
+      portfolio_value: 0,
+      debt_balance: 0,
+      net_worth: 100,
+      cash_runway_days: nil,
+      liquid_runway_days: nil,
+      category_projections: [],
+      debt_projections: [],
+      source_breakdown: {},
+      risk_flags: []
+    )
+
+    result = Forecast::GoalEvaluator.new(goals: [ goal ], months: [ month ], scenario_stack_key: "baseline").call
+
+    assert_equal "pass", result.first.status
+    assert_nil result.first.metric_value
+    assert_equal "runway_unbounded_no_spend", result.first.details.fetch("reason")
+  end
+
   test "unsupported required blocking goals block until implemented" do
     goal = {
       "id" => SecureRandom.uuid,

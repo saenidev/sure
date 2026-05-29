@@ -87,9 +87,26 @@ class ForecastEvent < ApplicationRecord
       return unless effect_type == "transfer"
       return if account.blank? || destination_account.blank?
       return if account.currency == destination_account.currency
-      return if source_metadata["destination_amount"].present? && source_metadata["destination_currency"].present?
 
-      errors.add(:source_metadata, "must include destination_amount and destination_currency for cross-currency transfer events")
+      destination_amount = source_metadata["destination_amount"]
+      destination_currency = source_metadata["destination_currency"]
+
+      if destination_amount.blank? || destination_currency.blank?
+        errors.add(:source_metadata, "must include destination_amount and destination_currency for cross-currency transfer events")
+        return
+      end
+
+      # Guard the JSON shape so a malformed destination amount cannot slip through
+      # present? and be treated as a same-currency transfer downstream.
+      unless positive_decimal?(destination_amount)
+        errors.add(:source_metadata, "destination_amount must be a positive number for cross-currency transfer events")
+      end
+    end
+
+    def positive_decimal?(value)
+      BigDecimal(value.to_s).positive?
+    rescue ArgumentError, TypeError
+      false
     end
 
     def recurrence_rule_supported
