@@ -276,6 +276,7 @@ en:
         subtitle: "Projected debt balance, interest, and payments by month."
         caption: "Projected debt movement for %{month}."
         account: "Account"
+        status: "Status"
         opening: "Opening"
         interest: "Interest"
         payment: "Payment"
@@ -284,7 +285,8 @@ en:
         empty: "No debt projections are available for this forecast."
         payoff:
           heading: "Payoff"
-          on: "Paid off %{date}"
+          badge: "Paid off"
+          projected_on: "Projected payoff %{date}"
           within_horizon: "Paid off in month %{month}"
           not_within_horizon: "Not paid off within the horizon"
         trend:
@@ -292,6 +294,11 @@ en:
           shrinking: "Balance shrinking"
           growing: "Balance growing"
           flat: "Balance flat"
+          interest_exceeds_payment: "Interest is outrunning the payment"
+        balloon:
+          due_on: "Balloon payment due %{date}"
+        refinance:
+          effective_on: "Refinance effective %{date}"
         structure:
           heading: "Structure"
           balloon: "Balloon payment"
@@ -300,8 +307,13 @@ en:
           fixed_rate: "Fixed rate"
         pressure:
           flag: "Debt pressure"
+          title: "Debt is pressuring your runway"
           tooltip: "Projected debt payments outpace available cash, shortening your runway."
           none: "No debt pressure"
+        incomplete:
+          caveat: "Incomplete terms — interest not fully modeled"
+          payment_schedule: "Payment schedule incomplete"
+          not_modeled: "Not modeled"
       goals_lane:
         heading: "Goals"
         subtitle: "How this forecast scores against your goals."

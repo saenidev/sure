@@ -573,6 +573,55 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=timeline-debt-empty]"
   end
 
+  test "timeline tab surfaces payoff date, growing-trend, and the debt-pressure callout" do
+    build_debt_lane_run(family: @family, user: @user)
+
+    get forecast_url(tab: "timeline")
+
+    assert_response :success
+    # Growing-balance trend indicator (pill label).
+    assert_select "[data-testid=timeline-debt-lane]",
+      text: /#{Regexp.escape(I18n.t("forecasts.timeline.debt_lane.trend.growing"))}/
+    # Projected payoff date renders the real translated label (not a
+    # missing-translation fallback) with the formatted date interpolated.
+    expected_payoff = I18n.t("forecasts.timeline.debt_lane.payoff.projected_on",
+                             date: I18n.l(Date.new(2028, 12, 31), format: :long))
+    assert_select "[data-testid=timeline-debt-payoff-date]", text: /#{Regexp.escape(expected_payoff)}/
+    # Debt-pressure runway warning callout renders for the flagged month.
+    assert_select "[data-testid=timeline-debt-pressure-callout]"
+    # Growing reason (interest outran payment).
+    assert_select "[data-testid=timeline-debt-trend-reason]"
+  end
+
+  test "timeline tab renders the incomplete caveat and never claims a payoff for an incomplete row" do
+    build_debt_lane_run(family: @family, user: @user, incomplete: true)
+
+    get forecast_url(tab: "timeline")
+
+    assert_response :success
+    assert_select "[data-testid=timeline-debt-incomplete]"
+    # An incomplete row must not present a payoff date.
+    assert_select "[data-testid=timeline-debt-payoff-date]", count: 0
+    # Interest is shown as "not modeled" rather than a fully-modeled figure.
+    assert_select "[data-testid=timeline-debt-lane]",
+      text: /#{Regexp.escape(I18n.t("forecasts.timeline.debt_lane.incomplete.not_modeled"))}/
+  end
+
+  test "timeline debt lane never renders another family's debt numbers (cross-family denial)" do
+    other_family = families(:empty)
+    other_family.forecast_run_groups.delete_all
+    build_debt_lane_run(family: other_family, user: users(:empty), account_label: "Foreign Loan")
+
+    get forecast_url(tab: "timeline")
+
+    assert_response :success
+    # Current family has no run of its own -> onboarding, never the other
+    # family's debt lane / its account label.
+    assert_select "[data-testid=timeline-debt-lane]", count: 0
+    assert_select "body", text: /Foreign Loan/, count: 0
+    assert_select "#forecast-empty-state-title", text: I18n.t("forecasts.empty_state.onboarding.title")
+  end
+
   test "timeline tab renders the baseline scenario marker for a baseline run" do
     build_run_group_with_series(family: @family, user: @user, days: 90, months: 36)
 
@@ -820,6 +869,77 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
           cash_payment_gap: 0, projected_drawdown: 0, ending_balance: 4000 - ((i + 1) * 100),
           source_snapshot: { "reason" => "balance" },
           source_breakdown: { "opening_balance" => "4000.0" }, risk_flags: []
+        )
+      end
+
+      run.update!(status: "completed", finished_at: Time.current)
+      group.update!(status: "completed", finished_at: Time.current)
+      group
+    end
+
+    # Builds a completed baseline run with one month carrying a debt projection
+    # whose persisted source_snapshot + risk_flags mirror what the
+    # DebtProjectionAdapter stamps (payoff/trend/balloon/refinance) plus the
+    # month-level debt_pressures_runway flag, so the debt-lane view renders every
+    # surface. `incomplete: true` produces an account_balance_only row flagged
+    # debt_projection_incomplete (interest not fully modeled).
+    def build_debt_lane_run(family:, user:, account_label: "Visa Card", incomplete: false)
+      currency = family.currency
+      group = family.forecast_run_groups.create!(
+        user: user, name: "Manual run", run_type: "manual", currency: currency,
+        horizon_start_on: Date.current, horizon_end_on: Date.current + 36.months,
+        daily_until_on: Date.current + 89.days
+      )
+      run = group.forecast_runs.create!(
+        family: family, user: user, scenario_stack_key: "baseline",
+        scenario_stack_snapshot: { "key" => "baseline" }, status: "running",
+        feasibility_status: "pass", currency: currency,
+        input_snapshot: forecast_valid_input_snapshot(family)
+      )
+
+      90.times do |i|
+        run.forecast_days.create!(
+          date: Date.current + i.days, scenario_stack_key: "baseline", currency: currency,
+          cash_balance: 1000 + (i * 10), liquid_balance: 2000 + (i * 10), debt_balance: 4000,
+          net_worth: 3000 + (i * 10), cash_runway_days: 30,
+          source_breakdown: { "phase" => "daily" }, risk_flags: []
+        )
+      end
+
+      period_start = Date.current
+      month = run.forecast_months.create!(
+        period_start_on: period_start, period_end_on: period_start.end_of_month,
+        precision: "monthly", scenario_stack_key: "baseline", currency: currency,
+        expected_income: 5000, expected_spending: 3000, net_cash_flow: 2000,
+        cash_balance: 1000, liquid_balance: 2000, portfolio_value: 0,
+        debt_balance: 4000, net_worth: 5000, cash_runway_days: 30,
+        source_breakdown: { "debt_payment_cash_gap" => "200.0" },
+        risk_flags: [ { "type" => "debt_pressures_runway", "account_ids" => [ 1 ] } ]
+      )
+
+      if incomplete
+        month.forecast_debt_projections.create!(
+          projection_key: account_label, source: "account_balance_only", currency: currency,
+          opening_balance: 4000, projected_interest: 0, projected_payment: 150,
+          cash_payment_gap: 0, projected_drawdown: 0, ending_balance: 3850,
+          source_snapshot: { "balance_trend" => "amortizing", "incomplete_reasons" => [ "auto_accrual_disabled" ] },
+          source_breakdown: { "opening_balance" => "4000.0" },
+          risk_flags: [ { "type" => "debt_projection_incomplete", "account_id" => 1, "reason" => "auto_accrual_disabled" } ]
+        )
+      else
+        month.forecast_debt_projections.create!(
+          projection_key: account_label, source: "debt_profile_snapshot", currency: currency,
+          opening_balance: 4000, projected_interest: 200, projected_payment: 150,
+          cash_payment_gap: 50, projected_drawdown: 0, ending_balance: 4050,
+          source_snapshot: {
+            "balance_trend" => "growing",
+            "payoff_projected_on" => "2028-12-31",
+            "is_payoff_period" => false,
+            "debt_balloon_due" => {},
+            "refinance" => { "applied" => false }
+          },
+          source_breakdown: { "opening_balance" => "4000.0" },
+          risk_flags: [ { "type" => "debt_balance_growing", "account_id" => 1, "reason" => "interest_exceeds_payment" } ]
         )
       end
 

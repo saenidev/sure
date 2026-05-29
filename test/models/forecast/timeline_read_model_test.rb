@@ -139,6 +139,148 @@ class Forecast::TimelineReadModelTest < ActiveSupport::TestCase
     assert_equal Money.new(3900, @family.currency), row.ending_balance
   end
 
+  # --- debt lane: payoff / trend / balloon / refinance / risk flags ----------
+
+  # Builds a completed baseline run whose single month carries one debt
+  # projection stamped with the source_snapshot keys + risk_flags the
+  # DebtProjectionAdapter normally writes, so we can assert the read model
+  # surfaces them without recomputing anything. `month_risk_flags` lets a test
+  # stamp the month-level debt_pressures_runway flag.
+  def build_run_with_debt_snapshot(family:, user:, debt_source:, debt_source_snapshot:, debt_risk_flags: [], month_risk_flags: [])
+    currency = family.currency
+    group = family.forecast_run_groups.create!(
+      user: user, name: "Manual run", run_type: "manual", currency: currency,
+      horizon_start_on: Date.current, horizon_end_on: Date.current + 36.months,
+      daily_until_on: Date.current + 89.days
+    )
+    run = group.forecast_runs.create!(
+      family: family, user: user, scenario_stack_key: "baseline",
+      scenario_stack_snapshot: { "key" => "baseline" },
+      status: "running", feasibility_status: "pass", currency: currency,
+      input_snapshot: forecast_valid_input_snapshot(family)
+    )
+    period_start = Date.current
+    month = run.forecast_months.create!(
+      period_start_on: period_start, period_end_on: period_start.end_of_month,
+      precision: "monthly", scenario_stack_key: "baseline", currency: currency,
+      expected_income: 5000, expected_spending: 3000, net_cash_flow: 2000,
+      cash_balance: 1000, liquid_balance: 2000, portfolio_value: 0,
+      debt_balance: 4000, net_worth: 5000, cash_runway_days: 30,
+      source_breakdown: {}, risk_flags: month_risk_flags
+    )
+    month.forecast_debt_projections.create!(
+      projection_key: "Visa", source: debt_source, currency: currency,
+      opening_balance: 4000, projected_interest: 50, projected_payment: 150,
+      cash_payment_gap: 0, projected_drawdown: 0, ending_balance: 3900,
+      source_snapshot: debt_source_snapshot,
+      source_breakdown: { "opening_balance" => "4000.0" }, risk_flags: debt_risk_flags
+    )
+    run.update!(status: "completed", finished_at: Time.current)
+    group.update!(status: "completed", finished_at: Time.current)
+    [ group, run ]
+  end
+
+  test "DebtRow exposes payoff/trend/balloon/refinance/risk_flags from the source_snapshot" do
+    _group, run = build_run_with_debt_snapshot(
+      family: @family, user: @user, debt_source: "debt_profile_snapshot",
+      debt_source_snapshot: {
+        "payoff_projected_on" => "2027-03-31",
+        "is_payoff_period" => true,
+        "balance_trend" => "growing",
+        "debt_balloon_due" => { "due_on" => "2026-06-30", "scheduled_balloon_payment" => "1000.0" },
+        "refinance" => { "applied" => true, "effective_on" => "2026-09-30" }
+      },
+      debt_risk_flags: [ { "type" => "debt_balance_growing", "account_id" => 1, "reason" => "interest_exceeds_payment" } ]
+    )
+    model = Forecast::TimelineReadModel.new(run)
+    row = model.debt_rows_for(model.all_monthly_entries.first).first
+
+    assert_equal Date.new(2027, 3, 31), row.payoff_projected_on
+    assert row.is_payoff_period
+    assert row.payoff?
+    assert_equal "growing", row.balance_trend
+    assert row.balance_growing?
+    assert row.interest_exceeds_payment?
+    assert_equal Date.new(2026, 6, 30), row.balloon_due_on
+    assert row.balloon_due?
+    assert_equal Date.new(2026, 9, 30), row.refinance_effective_on
+    assert row.refinance?
+    assert_not row.incomplete?
+  end
+
+  test "DebtRow returns nil payoff when the snapshot carries no payoff date" do
+    _group, run = build_run_with_debt_snapshot(
+      family: @family, user: @user, debt_source: "debt_profile_snapshot",
+      debt_source_snapshot: {
+        "payoff_projected_on" => nil,
+        "is_payoff_period" => false,
+        "balance_trend" => "amortizing",
+        "debt_balloon_due" => {},
+        "refinance" => { "applied" => false }
+      }
+    )
+    model = Forecast::TimelineReadModel.new(run)
+    row = model.debt_rows_for(model.all_monthly_entries.first).first
+
+    assert_nil row.payoff_projected_on
+    assert_not row.payoff?
+    assert_not row.is_payoff_period
+    assert_nil row.balloon_due_on
+    assert_not row.balloon_due?
+    assert_nil row.refinance_effective_on
+    assert_not row.refinance?
+    assert_equal "amortizing", row.balance_trend
+  end
+
+  test "debt_pressure? is true only when the month risk_flags include debt_pressures_runway" do
+    _group, pressured = build_run_with_debt_snapshot(
+      family: @family, user: @user, debt_source: "debt_profile_snapshot",
+      debt_source_snapshot: { "balance_trend" => "growing" },
+      month_risk_flags: [ { "type" => "debt_pressures_runway", "account_ids" => [ 1 ] } ]
+    )
+    pressured_model = Forecast::TimelineReadModel.new(pressured)
+    assert pressured_model.debt_pressure?(pressured_model.all_monthly_entries.first)
+
+    _group2, calm = build_run_with_debt_snapshot(
+      family: @family, user: @user, debt_source: "debt_profile_snapshot",
+      debt_source_snapshot: { "balance_trend" => "amortizing" }
+    )
+    calm_model = Forecast::TimelineReadModel.new(calm)
+    assert_not calm_model.debt_pressure?(calm_model.all_monthly_entries.first)
+  end
+
+  test "an incomplete account_balance_only row surfaces the caveat and never claims a payoff" do
+    _group, run = build_run_with_debt_snapshot(
+      family: @family, user: @user, debt_source: "account_balance_only",
+      debt_source_snapshot: {
+        # Even if a payoff date were somehow present, an incomplete row must not
+        # claim it (zero interest is not "fully modeled").
+        "payoff_projected_on" => "2027-03-31",
+        "is_payoff_period" => true,
+        "incomplete_reasons" => [ "auto_accrual_disabled" ]
+      },
+      debt_risk_flags: [ { "type" => "debt_projection_incomplete", "account_id" => 1, "reason" => "auto_accrual_disabled" } ]
+    )
+    model = Forecast::TimelineReadModel.new(run)
+    row = model.debt_rows_for(model.all_monthly_entries.first).first
+
+    assert row.incomplete?
+    assert_not row.payoff?, "an incomplete row must not claim a payoff"
+  end
+
+  test "DebtRow tolerates a non-hash / bare-string risk flag without crashing" do
+    _group, run = build_run_with_debt_snapshot(
+      family: @family, user: @user, debt_source: "account_balance_only",
+      debt_source_snapshot: { "balance_trend" => "flat" },
+      debt_risk_flags: [ "debt_projection_incomplete" ]
+    )
+    model = Forecast::TimelineReadModel.new(run)
+    row = model.debt_rows_for(model.all_monthly_entries.first).first
+
+    assert row.incomplete?
+    assert_equal [ { "type" => "debt_projection_incomplete" } ], row.risk_flags
+  end
+
   test "budget lane reflects forecast_category_projection rows" do
     _group, run = build_run_with_projections(family: @family, user: @user, months: 4, with_budget: true)
     model = Forecast::TimelineReadModel.new(run)

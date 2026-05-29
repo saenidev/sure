@@ -31,7 +31,44 @@ module Forecast
     MonthEntry = Data.define(:period_start_on, :period_end_on, :expected_income, :expected_spending, :net_cash_flow, :cash_balance, :liquid_balance, :portfolio_value, :debt_balance, :net_worth, :cash_runway_days, :source_breakdown, :risk_flags, :category_projections, :debt_projections)
     BudgetRow = Data.define(:label, :source, :budgeted, :projected, :available, :source_breakdown)
     PortfolioHolding = Data.define(:ticker, :qty, :amount)
-    DebtRow = Data.define(:label, :opening_balance, :projected_interest, :projected_payment, :projected_drawdown, :ending_balance, :cash_payment_gap, :source, :source_breakdown)
+    DebtRow = Data.define(:label, :opening_balance, :projected_interest, :projected_payment, :projected_drawdown, :ending_balance, :cash_payment_gap, :source, :source_breakdown, :payoff_projected_on, :is_payoff_period, :balance_trend, :balloon_due_on, :refinance_effective_on, :risk_flags) do
+      # True when the engine classified this period's balance as growing because
+      # interest outran the payment (the explainable runaway-debt case). Reads the
+      # persisted row risk_flags only; never re-derives the trend.
+      def balance_growing?
+        balance_trend == "growing"
+      end
+
+      def interest_exceeds_payment?
+        risk_flags.any? { |flag| flag["type"] == "debt_balance_growing" && flag["reason"] == "interest_exceeds_payment" }
+      end
+
+      # True when this profile-backed/balance-only row could not be fully modeled
+      # (missing terms, disabled accrual, unparseable refinance, ...). The view
+      # shows the incomplete caveat instead of presenting zero interest as fully
+      # modeled, and suppresses any payoff claim.
+      def incomplete?
+        risk_flags.any? { |flag| flag["type"].in?(%w[debt_projection_incomplete debt_payment_schedule_incomplete]) }
+      end
+
+      def payment_schedule_incomplete?
+        risk_flags.any? { |flag| flag["type"] == "debt_payment_schedule_incomplete" }
+      end
+
+      # A payoff date is only meaningful when it was actually reached AND the row
+      # was fully modeled; an incomplete row never claims a payoff.
+      def payoff?
+        payoff_projected_on.present? && !incomplete?
+      end
+
+      def balloon_due?
+        balloon_due_on.present?
+      end
+
+      def refinance?
+        refinance_effective_on.present?
+      end
+    end
     GoalRow = Data.define(:label, :status, :metric_value, :target_value, :currency, :evaluated_on)
     ScenarioRow = Data.define(:name, :starts_on, :ends_on, :approval_status)
 
@@ -161,9 +198,14 @@ module Forecast
     end
 
     # debt lane: the debt projection rows for a given month entry, mapped to
-    # display rows (opening/interest/payment/drawdown/ending). No query.
+    # display rows (opening/interest/payment/drawdown/ending) PLUS the
+    # payoff/trend/balloon/refinance metadata and row risk flags the
+    # DebtProjectionAdapter already stamped onto each row's persisted
+    # source_snapshot. No query (reads the eager-loaded association + JSON only).
     def debt_rows_for(month_entry)
       month_entry.debt_projections.map do |projection|
+        snapshot = projection.source_snapshot.is_a?(Hash) ? projection.source_snapshot : {}
+
         DebtRow.new(
           label: debt_label(projection),
           opening_balance: money(projection.opening_balance),
@@ -173,7 +215,13 @@ module Forecast
           ending_balance: money(projection.ending_balance),
           cash_payment_gap: money(projection.cash_payment_gap),
           source: projection.source,
-          source_breakdown: projection.source_breakdown || {}
+          source_breakdown: projection.source_breakdown || {},
+          payoff_projected_on: parse_date(snapshot["payoff_projected_on"]),
+          is_payoff_period: snapshot["is_payoff_period"] == true,
+          balance_trend: snapshot["balance_trend"].presence,
+          balloon_due_on: balloon_due_on_from(snapshot),
+          refinance_effective_on: refinance_effective_on_from(snapshot),
+          risk_flags: debt_risk_flag_hashes(projection.risk_flags)
         )
       end
     end
@@ -182,6 +230,13 @@ module Forecast
     # lane empty state (a run with no debt renders an empty-state, not a crash).
     def debt_projections?
       all_monthly_entries.any? { |month| month.debt_projections.any? }
+    end
+
+    # True when the engine flagged this month's runway as pressured by debt
+    # (the month-level `debt_pressures_runway` risk flag). Drives the per-month
+    # debt-pressure warning callout. Reads the persisted month risk_flags only.
+    def debt_pressure?(month_entry)
+      month_entry.risk_flags.include?("debt_pressures_runway")
     end
 
     # goals lane: one row per goal evaluation, labelled and statused.
@@ -305,6 +360,41 @@ module Forecast
         projection.account&.name.presence ||
           projection.projection_key.presence ||
           I18n.t("forecasts.timeline.debt_lane.unnamed")
+      end
+
+      # The adapter stamps `source_snapshot["debt_balloon_due"]` as {} when no
+      # balloon falls in the period and as a hash carrying "due_on" on the period
+      # whose window contains it. Surface the due date only when one is present.
+      def balloon_due_on_from(snapshot)
+        config = snapshot["debt_balloon_due"]
+        return nil unless config.is_a?(Hash)
+
+        parse_date(config["due_on"])
+      end
+
+      # The adapter stamps `source_snapshot["refinance"]` as { "applied" => false }
+      # outside a refinance and { "applied" => true, "effective_on" => ... } on the
+      # period a scenario refinance takes effect. Surface the effective date only
+      # when the override was actually applied.
+      def refinance_effective_on_from(snapshot)
+        config = snapshot["refinance"]
+        return nil unless config.is_a?(Hash)
+        return nil unless config["applied"] == true
+
+        parse_date(config["effective_on"])
+      end
+
+      # Normalize the persisted row risk_flags (hashes with a "type", or bare
+      # strings) into hashes the DebtRow predicates can read by "type"/"reason"
+      # without re-deriving anything.
+      def debt_risk_flag_hashes(flags)
+        Array(flags).filter_map do |flag|
+          if flag.is_a?(Hash)
+            flag
+          elsif flag.present?
+            { "type" => flag.to_s }
+          end
+        end
       end
 
       def goal_label(evaluation)

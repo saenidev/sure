@@ -2,11 +2,26 @@
 <%#
   Debt lane: monthly debt projection rows. One disclosure per month that carries
   debt projections, listing each account's opening balance, projected interest,
-  projected payment, drawdown, and ending balance. The debt projections are
-  eager-loaded per month so this lane issues no per-month query.
+  projected payment, drawdown, and ending balance, PLUS the payoff/trend/
+  balloon/refinance metadata and the debt-pressure runway flag the engine and
+  DebtProjectionAdapter already stamped onto the persisted rows. The debt
+  projections are eager-loaded per month so this lane issues no per-month query
+  and recomputes nothing.
 
   Empty/edge: a run with no debt projections renders the empty-state below
-  (never a crash).
+  (never a crash). A row that could not be fully modeled (incomplete terms)
+  renders the incomplete-data caveat instead of presenting zero interest as
+  fully modeled, and never claims a payoff.
+%>
+<%
+  # DS::Pill ramps are violet/indigo/fuchsia/amber/gray (no green/red). A
+  # shrinking (amortizing) balance is the healthy case -> indigo; a growing
+  # balance is the warning case -> amber; flat -> gray.
+  trend_tones = {
+    "amortizing" => :indigo,
+    "growing" => :amber,
+    "flat" => :gray
+  }
 %>
 <article class="rounded-xl border border-primary bg-container p-4 sm:p-5 space-y-4"
          aria-labelledby="timeline-debt-lane-heading"
@@ -23,38 +38,137 @@
     <div class="space-y-2">
       <% months_with_debt.each do |month| %>
         <% rows = model.debt_rows_for(month) %>
+        <% debt_pressure = model.debt_pressure?(month) %>
         <details class="rounded-lg border border-primary">
           <summary class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2">
             <span class="text-primary text-sm font-medium"><%= l(month.period_start_on, format: :month_year) %></span>
             <span class="flex items-center gap-2">
+              <% if debt_pressure %>
+                <%= render DS::Pill.new(
+                  label: t("forecasts.timeline.debt_lane.pressure.flag"),
+                  tone: :fuchsia,
+                  style: :soft,
+                  size: :sm
+                ) %>
+              <% end %>
               <span class="text-secondary text-xs tabular-nums"><%= format_money(month.debt_balance) %></span>
               <%= icon "chevron-down", size: "sm" %>
             </span>
           </summary>
-          <div class="border-t border-primary overflow-x-auto">
-            <table class="w-full text-sm">
-              <caption class="sr-only"><%= t("forecasts.timeline.debt_lane.caption", month: l(month.period_start_on, format: :month_year)) %></caption>
-              <thead>
-                <tr class="border-b border-primary text-secondary text-left">
-                  <th scope="col" class="px-3 py-2 font-medium"><%= t("forecasts.timeline.debt_lane.account") %></th>
-                  <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.opening") %></th>
-                  <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.interest") %></th>
-                  <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.payment") %></th>
-                  <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.ending") %></th>
-                </tr>
-              </thead>
-              <tbody class="text-primary">
-                <% rows.each do |row| %>
-                  <tr class="border-b border-primary last:border-0">
-                    <th scope="row" class="px-3 py-2 font-medium text-left"><%= row.label %></th>
-                    <td class="px-3 py-2 text-right tabular-nums"><%= format_money(row.opening_balance) %></td>
-                    <td class="px-3 py-2 text-right tabular-nums"><%= format_money(row.projected_interest) %></td>
-                    <td class="px-3 py-2 text-right tabular-nums"><%= format_money(row.projected_payment) %></td>
-                    <td class="px-3 py-2 text-right tabular-nums"><%= format_money(row.ending_balance) %></td>
+          <div class="border-t border-primary p-3 space-y-3">
+            <% if debt_pressure %>
+              <%# Debt-pressure runway warning callout: the engine flagged this
+                  month's runway as pressured by debt. Semantic alert region so
+                  screen readers announce it. %>
+              <div class="flex items-start gap-2 rounded-lg border border-primary bg-surface-inset px-3 py-2"
+                   role="note"
+                   data-testid="timeline-debt-pressure-callout">
+                <span class="shrink-0" aria-hidden="true">
+                  <%= icon "alert-triangle", size: "sm", color: "warning" %>
+                </span>
+                <div class="space-y-0.5">
+                  <p class="text-primary text-xs font-medium"><%= t("forecasts.timeline.debt_lane.pressure.title") %></p>
+                  <p class="text-secondary text-xs"><%= t("forecasts.timeline.debt_lane.pressure.tooltip") %></p>
+                </div>
+              </div>
+            <% end %>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <caption class="sr-only"><%= t("forecasts.timeline.debt_lane.caption", month: l(month.period_start_on, format: :month_year)) %></caption>
+                <thead>
+                  <tr class="border-b border-primary text-secondary text-left">
+                    <th scope="col" class="px-3 py-2 font-medium"><%= t("forecasts.timeline.debt_lane.account") %></th>
+                    <th scope="col" class="px-3 py-2 font-medium"><%= t("forecasts.timeline.debt_lane.status") %></th>
+                    <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.opening") %></th>
+                    <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.interest") %></th>
+                    <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.payment") %></th>
+                    <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.debt_lane.ending") %></th>
                   </tr>
-                <% end %>
-              </tbody>
-            </table>
+                </thead>
+                <tbody class="text-primary">
+                  <% rows.each do |row| %>
+                    <tr class="border-b border-primary last:border-0">
+                      <th scope="row" class="px-3 py-2 font-medium text-left align-top"><%= row.label %></th>
+                      <td class="px-3 py-2 align-top">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <%# Trend indicator: shrinking / growing / flat. %>
+                          <% if row.balance_trend.present? %>
+                            <%= render DS::Pill.new(
+                              label: t("forecasts.timeline.debt_lane.trend.#{row.balance_trend == "amortizing" ? "shrinking" : row.balance_trend}"),
+                              tone: trend_tones.fetch(row.balance_trend, :gray),
+                              style: :soft,
+                              size: :sm
+                            ) %>
+                          <% end %>
+
+                          <%# Payoff: a date everywhere it is known; a stronger
+                              badge on the actual payoff month. Suppressed when the
+                              row is incomplete (it never claims a payoff). %>
+                          <% if row.payoff? %>
+                            <% if row.is_payoff_period %>
+                              <span data-testid="timeline-debt-payoff-badge">
+                                <%= render DS::Pill.new(
+                                  label: t("forecasts.timeline.debt_lane.payoff.badge"),
+                                  tone: :indigo,
+                                  style: :filled,
+                                  size: :sm
+                                ) %>
+                              </span>
+                            <% end %>
+                            <span class="text-secondary text-xs" data-testid="timeline-debt-payoff-date">
+                              <%= t("forecasts.timeline.debt_lane.payoff.projected_on", date: l(row.payoff_projected_on, format: :long)) %>
+                            </span>
+                          <% end %>
+
+                          <%# Balloon-due annotation. %>
+                          <% if row.balloon_due? %>
+                            <span class="inline-flex items-center gap-1 text-secondary text-xs" data-testid="timeline-debt-balloon">
+                              <%= icon "circle-dollar-sign", size: "sm" %>
+                              <%= t("forecasts.timeline.debt_lane.balloon.due_on", date: l(row.balloon_due_on, format: :long)) %>
+                            </span>
+                          <% end %>
+
+                          <%# Refinance-effective annotation. %>
+                          <% if row.refinance? %>
+                            <span class="inline-flex items-center gap-1 text-secondary text-xs" data-testid="timeline-debt-refinance">
+                              <%= icon "refresh-cw", size: "sm" %>
+                              <%= t("forecasts.timeline.debt_lane.refinance.effective_on", date: l(row.refinance_effective_on, format: :long)) %>
+                            </span>
+                          <% end %>
+
+                          <%# Growing-balance reason: interest outran the payment. %>
+                          <% if row.interest_exceeds_payment? %>
+                            <span class="text-secondary text-xs" data-testid="timeline-debt-trend-reason">
+                              <%= t("forecasts.timeline.debt_lane.trend.interest_exceeds_payment") %>
+                            </span>
+                          <% end %>
+
+                          <%# Incomplete caveat: terms missing -> interest not fully
+                              modeled. Shown instead of presenting zero as modeled. %>
+                          <% if row.incomplete? %>
+                            <span class="inline-flex items-center gap-1 text-warning text-xs" data-testid="timeline-debt-incomplete">
+                              <%= icon "alert-triangle", size: "sm", color: "warning" %>
+                              <%= row.payment_schedule_incomplete? ? t("forecasts.timeline.debt_lane.incomplete.payment_schedule") : t("forecasts.timeline.debt_lane.incomplete.caveat") %>
+                            </span>
+                          <% end %>
+                        </div>
+                      </td>
+                      <td class="px-3 py-2 text-right tabular-nums align-top"><%= format_money(row.opening_balance) %></td>
+                      <td class="px-3 py-2 text-right tabular-nums align-top">
+                        <% if row.incomplete? %>
+                          <span class="text-secondary"><%= t("forecasts.timeline.debt_lane.incomplete.not_modeled") %></span>
+                        <% else %>
+                          <%= format_money(row.projected_interest) %>
+                        <% end %>
+                      </td>
+                      <td class="px-3 py-2 text-right tabular-nums align-top"><%= format_money(row.projected_payment) %></td>
+                      <td class="px-3 py-2 text-right tabular-nums align-top"><%= format_money(row.ending_balance) %></td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
           </div>
         </details>
       <% end %>
