@@ -58,7 +58,7 @@ module Forecast
         recurring_items: recurring_items,
         pending_entries: (pending_entries + linked_future_entries).sort_by { |row| [ row.fetch(:date), row.fetch(:status), row.fetch(:account_id).to_s, row.fetch(:id).to_s ] },
         portfolio: Forecast::PortfolioSnapshotBuilder.new(family: family, user: user, money_converter: converter).call,
-        debt_rows: Forecast::DebtProjectionAdapter.new(family: family, user: user, periods: period_result.months, money_converter: converter, recurring_items: recurring_items, included_account_scope: included_scope, forecast_debt_events: debt_sensitive_events(events)).call,
+        debt_rows: Forecast::DebtProjectionAdapter.new(family: family, user: user, periods: period_result.months, money_converter: converter, recurring_items: recurring_items, included_account_scope: included_scope, forecast_debt_events: debt_sensitive_events(events), run_date: start_on).call,
         goals: forecast_goals(stack, converter),
         events: events,
         source_data_versions: source_data_versions,

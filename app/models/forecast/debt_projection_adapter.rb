@@ -1,6 +1,6 @@
 module Forecast
   class DebtProjectionAdapter
-    def initialize(family:, user:, periods:, money_converter:, recurring_items:, included_account_scope:, forecast_debt_events: [])
+    def initialize(family:, user:, periods:, money_converter:, recurring_items:, included_account_scope:, forecast_debt_events: [], run_date: nil)
       @family = family
       @user = user
       @periods = periods
@@ -8,6 +8,7 @@ module Forecast
       @recurring_items = recurring_items
       @included_account_scope = included_account_scope
       @forecast_debt_events = forecast_debt_events
+      @run_date = run_date || money_converter.as_of
     end
 
     def call
@@ -15,7 +16,7 @@ module Forecast
     end
 
     private
-      attr_reader :family, :user, :periods, :money_converter, :recurring_items, :included_account_scope, :forecast_debt_events
+      attr_reader :family, :user, :periods, :money_converter, :recurring_items, :included_account_scope, :forecast_debt_events, :run_date
 
       def accounts
         family.accounts.visible.liabilities
@@ -239,7 +240,7 @@ module Forecast
         return zero_projected_interest("accrual_schedule_not_due") unless window.fetch(:due)
 
         period_end = [ period.end_date, window.fetch(:period_end_on) ].min
-        start_date = [ Date.current, window.fetch(:period_start_on), terms_valid_from ].compact.max
+        start_date = [ run_date, window.fetch(:period_start_on), terms_valid_from ].compact.max
         return zero_projected_interest("no_days_in_period") if start_date > period_end
         federal_handler = Debt::FederalStudentLoan::AccrualHandler.new(profile)
         unless federal_handler.accrues_interest?
@@ -576,7 +577,7 @@ module Forecast
       end
 
       def eligible_paid_allocation?(allocation, as_of)
-        cutoff_date = [ as_of, Date.current ].min
+        cutoff_date = [ as_of, run_date ].min
         return false unless allocation.status.in?(%w[allocated estimated])
         return false if allocation.entry.blank?
         return false if allocation.entry.date.blank? || allocation.entry.date > cutoff_date
@@ -602,7 +603,7 @@ module Forecast
       end
 
       def readiness_date
-        [ periods.first.start_date, Date.current ].max
+        [ periods.first.start_date, run_date ].max
       end
 
       def actual_payment_for(account, period)
@@ -610,7 +611,7 @@ module Forecast
           .joins(:entry)
           .includes(:entry)
           .where(status: %w[allocated estimated])
-          .where(entries: { date: period.start_date..[ period.end_date, Date.current ].min })
+          .where(entries: { date: period.start_date..[ period.end_date, run_date ].min })
           .order("entries.date ASC", "debt_payment_allocations.id ASC")
           .to_a
           .reject { |allocation| allocation.entry.excluded? || (allocation.entry.transaction? && allocation.entry.transaction.pending?) }

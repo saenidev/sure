@@ -1008,4 +1008,181 @@ class Forecast::DebtProjectionAdapterTest < ActiveSupport::TestCase
     assert_equal 500.to_d, first_row.fetch(:projected_drawdown)
     assert_operator second_row.fetch(:projected_interest), :>, 10.to_d
   end
+
+  test "explicit past run date produces identical rows regardless of wall clock" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    start_on = Date.current - 200.days
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "daily",
+      compounding_cadence: "daily",
+      minimum_payment_amount: 100,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 365, starts_on: start_on)
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: start_on, end_date: start_on.end_of_month, precision: "daily_backed")
+
+    build_rows = lambda do
+      Forecast::DebtProjectionAdapter.new(
+        family: family,
+        user: user,
+        periods: [ period ],
+        money_converter: Forecast::MoneyConverter.new(family: family, as_of: start_on),
+        recurring_items: [],
+        included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+        run_date: start_on
+      ).call.find { |projection| projection.fetch(:account_id) == account.id }
+    end
+
+    first = build_rows.call
+    second = nil
+    travel_to(Date.current + 45.days) { second = build_rows.call }
+
+    assert_equal "debt_profile_snapshot", first.fetch(:source)
+    %i[projected_interest projected_payment ending_balance cash_payment_gap].each do |key|
+      assert_equal first.fetch(key), second.fetch(key), "expected #{key} to be deterministic across wall clocks"
+    end
+  end
+
+  test "run date earlier than rate period start clamps interest accrual start to period start" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    account.loan.update!(interest_rate: nil)
+    run_date = Date.current - 200.days
+    rate_start = run_date + 10.days
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "daily",
+      compounding_cadence: "daily",
+      minimum_payment_amount: 0,
+      effective_start_on: run_date
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 365, starts_on: rate_start)
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: run_date, end_date: rate_start.end_of_month, precision: "daily_backed")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: run_date),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: run_date
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    assert_equal rate_start.iso8601, row.fetch(:source_snapshot).fetch("projected_interest").fetch("period_start_on")
+  end
+
+  test "allocation dated after run date but before wall clock is excluded from paid amount" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    run_date = Date.current - 200.days
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "daily",
+      compounding_cadence: "daily",
+      minimum_payment_amount: 500,
+      effective_start_on: run_date
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 0, starts_on: run_date)
+    obligation = account.debt_obligations.create!(
+      debt_profile: profile,
+      status: "partially_paid",
+      due_on: run_date,
+      currency: account.currency,
+      minimum_payment_amount: 500,
+      paid_amount: 0
+    )
+    # Entry dated after run_date but well before the wall clock (Date.current).
+    # The cutoff must use run_date, so this allocation should NOT reduce the gap.
+    allocation_date = run_date + 10.days
+    transaction = Transaction.create!(kind: "loan_payment")
+    entry = Entry.create!(account: account, entryable: transaction, name: "Post-run-date payment", date: allocation_date, amount: -200, currency: account.currency)
+    DebtPaymentAllocation.create!(
+      account: account,
+      entry: entry,
+      debt_profile: profile,
+      debt_obligation: obligation,
+      allocation_method: "manual",
+      status: "allocated",
+      principal_amount: 200,
+      currency: account.currency
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: run_date, end_date: allocation_date.end_of_month, precision: "daily_backed")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: run_date),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: run_date
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    assert_equal 500.to_d, row.fetch(:cash_payment_gap)
+  end
+
+  test "run date defaults to money converter as_of for backward compatibility" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    start_on = Date.current - 200.days
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "daily",
+      compounding_cadence: "daily",
+      minimum_payment_amount: 100,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 365, starts_on: start_on)
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: start_on, end_date: start_on.end_of_month, precision: "daily_backed")
+    converter = Forecast::MoneyConverter.new(family: family, as_of: start_on)
+
+    explicit = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: converter,
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: start_on
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    defaulted = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: converter,
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    %i[projected_interest projected_payment ending_balance cash_payment_gap].each do |key|
+      assert_equal explicit.fetch(key), defaulted.fetch(key), "expected #{key} default to match explicit run_date"
+    end
+  end
 end
