@@ -9,6 +9,13 @@ module Forecast
       override = overrides_for(on)[account.id]
       return override if override.present?
 
+      default_class(account)
+    end
+
+    # The classification an account reverts to when no liquidity setting window is
+    # active. Pure function of the account's own attributes (no dates, no settings),
+    # so reclassification windows have a stable bucket to revert into.
+    def default_class(account)
       return "debt" if account.liability?
       return "restricted" if family.tax_advantaged_account_ids.include?(account.id)
 
