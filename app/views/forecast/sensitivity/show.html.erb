@@ -1,0 +1,9 @@
+<%#
+  Lazy-loaded sensitivity panel target. Wrapped in the SAME turbo frame id the
+  workspace tab placeholder uses, so Turbo swaps this rendered analysis in place
+  of the loading spinner. The heavy work (N+1 engine runs) happens in
+  workspace.sensitivity_rows, reached only here.
+%>
+<%= turbo_frame_tag "forecast_sensitivity" do %>
+  <%= render "forecasts/sensitivity_panel", workspace: @workspace %>
+<% end %>

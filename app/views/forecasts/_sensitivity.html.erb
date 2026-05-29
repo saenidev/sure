@@ -1,15 +1,19 @@
 <%# locals: (workspace:) %>
 <%#
-  Sensitivity tab (scaffolding stub).
+  Sensitivity tab entry point.
 
   Surface for the deterministic single-variable sensitivity analysis
   (Forecast::SensitivityAnalyzer): perturb one input at a time (income -10%,
   expenses +10%, market return -20%, debt rate +200bps) and report the impact on
   end-of-horizon balances, the minimum cash runway, and goal status changes.
 
-  This is an EMPTY-STATE STUB only — the sensitivity panel lands in its own
-  slice. It establishes the panel, aria labelling, and i18n key tree so the
-  feature slice stays a vertical, reviewable diff.
+  The analyzer re-runs the forecast Engine ONCE PER PERTURBATION, so this panel
+  is NOT computed on the main workspace page load. When there is a completed
+  baseline run to analyze, we render a LAZY Turbo Frame that GETs
+  Forecast::SensitivityController#show — the only place the N engine runs happen
+  — so opening the Forecast page never pays for the analysis unless this tab is
+  viewed. When there is no completed run, we render the empty state directly (no
+  frame, no work).
 %>
 <section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.sensitivity") %>">
   <div class="space-y-1">
@@ -17,18 +21,36 @@
     <p class="text-secondary text-sm"><%= t("forecasts.sensitivity.description") %></p>
   </div>
 
-  <div class="rounded-xl border border-primary bg-container p-8 text-center"
-       aria-labelledby="forecast-sensitivity-empty-title">
-    <div class="mx-auto flex max-w-md flex-col items-center gap-3">
-      <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
-        <%= icon "sliders-horizontal", size: "lg", color: "default" %>
-      </span>
-      <div class="space-y-1">
-        <h4 id="forecast-sensitivity-empty-title" class="text-primary text-lg font-medium">
-          <%= t("forecasts.sensitivity.empty.title") %>
-        </h4>
-        <p class="text-secondary text-sm"><%= t("forecasts.sensitivity.empty.body") %></p>
+  <% if workspace.sensitivity_data? %>
+    <%# Lazy frame: the analysis (N+1 engine runs) only fires when this tab is
+        opened, keeping the main workspace load cheap. The frame's loading
+        placeholder is announced for assistive tech while the analysis runs. %>
+    <%= turbo_frame_tag "forecast_sensitivity",
+          src: forecast_sensitivity_path,
+          loading: :lazy do %>
+      <div class="flex items-center justify-center gap-2 rounded-xl border border-primary bg-container p-8"
+           role="status" aria-live="polite" data-testid="forecast-sensitivity-loading">
+        <span class="animate-spin" aria-hidden="true">
+          <%= icon "loader-circle", size: "sm", color: "default" %>
+        </span>
+        <span class="text-secondary text-sm"><%= t("forecasts.sensitivity.loading") %></span>
+      </div>
+    <% end %>
+  <% else %>
+    <div class="rounded-xl border border-primary bg-container p-8 text-center"
+         data-testid="forecast-sensitivity-empty"
+         aria-labelledby="forecast-sensitivity-empty-title">
+      <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+        <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+          <%= icon "sliders-horizontal", size: "lg", color: "default" %>
+        </span>
+        <div class="space-y-1">
+          <h4 id="forecast-sensitivity-empty-title" class="text-primary text-lg font-medium">
+            <%= t("forecasts.sensitivity.empty.title") %>
+          </h4>
+          <p class="text-secondary text-sm"><%= t("forecasts.sensitivity.empty.body") %></p>
+        </div>
       </div>
     </div>
-  </div>
+  <% end %>
 </section>

@@ -315,6 +315,12 @@ Rails.application.routes.draw do
     resources :budget_overrides
     resources :event_links, only: %i[index create update destroy]
 
+    # Deterministic sensitivity analysis, lazy-loaded into the workspace via a
+    # Turbo Frame. A singular GET-only resource: the controller resolves the
+    # latest completed baseline run through Current.family (no id trusted from
+    # params), so a cross-family request can never analyze another family's run.
+    resource :sensitivity, only: :show, controller: :sensitivity
+
     # Reviews are keyed by their run group id (one review per group). The
     # controller scopes via Current.family.forecast_run_groups.find -> its
     # forecast_review, so a cross-family id is a 404.

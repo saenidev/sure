@@ -1,0 +1,193 @@
+<%# locals: (workspace:) %>
+<%#
+  Deterministic single-variable sensitivity rows for the latest completed
+  baseline run, rendered inside the Sensitivity tab's lazy Turbo Frame.
+
+  Each row is ONE perturbation (income -10%, expenses +10%, market return -20%,
+  debt rate +200bps) applied alone, with the resulting change in end-of-horizon
+  cash / net worth / debt, the minimum cash runway, and any goal-status changes,
+  versus the unperturbed baseline. Reads workspace.sensitivity_rows, which builds
+  ONE InputBuilder result at the run's own start date (deterministic, no wall
+  clock) and runs Forecast::SensitivityAnalyzer once (memoized).
+
+  IMPORTANT (mirrors Forecast::SensitivityAnalyzer's contract): these are
+  DETERMINISTIC one-at-a-time stress tests — not statistical percentiles,
+  confidence intervals, or a Monte Carlo simulation. The disclaimer states this.
+
+  Renders the empty state when there are no rows (a completed run can still
+  produce no perturbation output, e.g. an empty catalog), so the panel never
+  shows an empty table.
+%>
+<% rows = workspace.sensitivity_rows %>
+<% currency = workspace.currency %>
+<% metrics = workspace.sensitivity_metrics %>
+<% money_metrics = %w[cash_balance net_worth debt_balance] %>
+<%
+  # Evaluation status -> DS::Pill tone, mirroring forecast/goals/_goal_row so the
+  # goal-status-change badges read consistently across the workspace.
+  evaluation_tones = {
+    "pass" => :indigo,
+    "warn" => :amber,
+    "fail" => :fuchsia,
+    "blocking" => :fuchsia
+  }
+%>
+<%
+  # Format a money amount in the run's currency; nil reads as unavailable.
+  format_metric_money = lambda do |amount|
+    next t("forecasts.sensitivity.table.unavailable") if amount.nil?
+
+    format_money(Money.new(amount, currency))
+  end
+%>
+<%
+  # Format a runway value (days). nil means unbounded (no projected spend).
+  format_runway = lambda do |days|
+    next t("forecasts.sensitivity.runway.unbounded") if days.nil?
+
+    t("forecasts.sensitivity.runway.days", count: days.to_i)
+  end
+%>
+<%
+  # Render one perturbed-value cell with its signed delta versus baseline and a
+  # directional color/aria. A nil delta (e.g. a runway transition to/from
+  # unbounded, which is not a finite numeric change) shows the value with an
+  # "unchanged"/"—" delta rather than a misleading arrow.
+  delta_cell = lambda do |metric, baseline_value, perturbed_value, delta_value|
+    is_money = money_metrics.include?(metric)
+    value_text = is_money ? format_metric_money.call(perturbed_value) : format_runway.call(perturbed_value)
+
+    if delta_value.nil? || delta_value.zero?
+      delta_text = t("forecasts.sensitivity.table.unavailable")
+      delta_aria = delta_value.nil? && baseline_value != perturbed_value ?
+        t("forecasts.sensitivity.table.unavailable") :
+        t("forecasts.sensitivity.delta.unchanged_aria")
+      delta_class = "text-secondary"
+    else
+      magnitude = is_money ?
+        format_money(Money.new(delta_value.abs, currency)) :
+        t("forecasts.sensitivity.runway.delta_days", count: delta_value.abs.to_i)
+      increased = delta_value.positive?
+      sign = increased ? "+" : "−"
+      delta_text = "#{sign}#{magnitude}"
+      delta_aria = increased ?
+        t("forecasts.sensitivity.delta.increase_aria", value: magnitude) :
+        t("forecasts.sensitivity.delta.decrease_aria", value: magnitude)
+      delta_class = increased ? "text-success" : "text-destructive"
+    end
+
+    [ value_text, delta_text, delta_aria, delta_class ]
+  end
+%>
+
+<section class="space-y-4" aria-labelledby="forecast-sensitivity-results-heading"
+         data-testid="forecast-sensitivity-results">
+  <%# Deterministic-stress-test disclaimer: states explicitly that these are NOT
+      statistical percentiles / Monte Carlo, mirroring the analyzer's contract. %>
+  <div class="flex items-start gap-2 rounded-lg border border-primary bg-surface-inset p-3"
+       data-testid="forecast-sensitivity-disclaimer" role="note">
+    <span class="mt-0.5 shrink-0" aria-hidden="true">
+      <%= icon "info", size: "sm", color: "default" %>
+    </span>
+    <p class="text-secondary text-xs"><%= t("forecasts.sensitivity.disclaimer") %></p>
+  </div>
+
+  <% if rows.any? %>
+    <div class="overflow-x-auto rounded-xl border border-primary">
+      <table class="w-full text-sm" data-testid="forecast-sensitivity-table">
+        <caption class="sr-only"><%= t("forecasts.sensitivity.table.caption") %></caption>
+        <thead>
+          <tr class="border-b border-primary text-secondary text-left">
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.sensitivity.table.perturbation") %></th>
+            <% metrics.each do |metric| %>
+              <th scope="col" class="px-4 py-2 font-medium text-right">
+                <%= t("forecasts.sensitivity.table.#{metric}") %>
+              </th>
+            <% end %>
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.sensitivity.table.goal_changes") %></th>
+          </tr>
+        </thead>
+        <tbody class="text-primary">
+          <% rows.each do |row| %>
+            <tr class="border-b border-primary last:border-0 align-top"
+                data-testid="forecast-sensitivity-row-<%= row.perturbation_key %>">
+              <th scope="row" class="px-4 py-3 font-medium text-left">
+                <%= t("forecasts.sensitivity.perturbations.#{row.perturbation_key}",
+                      default: row.description.to_s) %>
+              </th>
+
+              <% metrics.each do |metric| %>
+                <% value_text, delta_text, delta_aria, delta_class =
+                     delta_cell.call(
+                       metric,
+                       row.baseline_metric[metric],
+                       row.perturbed_metric[metric],
+                       row.delta[metric]
+                     ) %>
+                <td class="px-4 py-3 text-right tabular-nums"
+                    data-testid="forecast-sensitivity-cell-<%= row.perturbation_key %>-<%= metric %>">
+                  <div class="flex flex-col items-end gap-0.5">
+                    <span class="text-primary"><%= value_text %></span>
+                    <span class="text-xs <%= delta_class %>" aria-label="<%= delta_aria %>">
+                      <%= delta_text %>
+                    </span>
+                  </div>
+                </td>
+              <% end %>
+
+              <td class="px-4 py-3">
+                <% if row.goal_status_changes.any? %>
+                  <ul class="space-y-1.5">
+                    <% row.goal_status_changes.each do |change| %>
+                      <% goal_name = workspace.sensitivity_goal_labels[change["forecast_goal_id"]] %>
+                      <% from_key = change["from"].presence || "unknown" %>
+                      <% to_key = change["to"].presence || "unknown" %>
+                      <li class="flex flex-col gap-1 text-xs">
+                        <span class="text-primary">
+                          <%= goal_name.presence || t("forecasts.sensitivity.goal_change.unknown_goal") %>
+                        </span>
+                        <span class="flex items-center gap-1.5">
+                          <%= render DS::Pill.new(
+                            label: t("forecasts.goals.evaluation_statuses.#{from_key}"),
+                            tone: evaluation_tones.fetch(from_key, :gray),
+                            style: :soft,
+                            size: :sm
+                          ) %>
+                          <span aria-hidden="true" class="text-secondary"><%= icon "arrow-right", size: "xs", color: "default" %></span>
+                          <%= render DS::Pill.new(
+                            label: t("forecasts.goals.evaluation_statuses.#{to_key}"),
+                            tone: evaluation_tones.fetch(to_key, :gray),
+                            style: :soft,
+                            size: :sm
+                          ) %>
+                        </span>
+                      </li>
+                    <% end %>
+                  </ul>
+                <% else %>
+                  <span class="text-secondary text-xs"><%= t("forecasts.sensitivity.table.no_goal_changes") %></span>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <div class="rounded-xl border border-primary bg-container p-8 text-center"
+         data-testid="forecast-sensitivity-no-rows"
+         aria-labelledby="forecast-sensitivity-no-rows-title">
+      <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+        <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+          <%= icon "sliders-horizontal", size: "lg", color: "default" %>
+        </span>
+        <div class="space-y-1">
+          <h4 id="forecast-sensitivity-no-rows-title" class="text-primary text-lg font-medium">
+            <%= t("forecasts.sensitivity.empty.title") %>
+          </h4>
+          <p class="text-secondary text-sm"><%= t("forecasts.sensitivity.empty.body") %></p>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</section>

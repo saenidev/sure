@@ -441,6 +441,61 @@ module Forecast
       @composable_scenarios ||= family.forecast_scenarios.active.ordered.to_a
     end
 
+    # --- Sensitivity (deterministic single-variable analysis) -----------------
+
+    # True when there is a completed baseline run to analyze, so the Sensitivity
+    # tab/frame renders the perturbation rows rather than its empty state. The
+    # analyzer re-runs the engine once per perturbation, so this only reads the
+    # cheap baseline_run lookup; the heavy work is deferred to `sensitivity_rows`,
+    # which the lazy Turbo Frame triggers (see Forecast::SensitivityController).
+    def sensitivity_data?
+      baseline_run.present?
+    end
+
+    # The deterministic single-variable sensitivity rows for the latest completed
+    # baseline run. Builds ONE Forecast::InputBuilder result for the baseline
+    # scenario stack (no scenarios) AT THE RUN'S OWN START DATE — never the wall
+    # clock — so the analysis is reproducible against the run it summarizes, then
+    # runs Forecast::SensitivityAnalyzer over the default perturbation catalog.
+    #
+    # Memoized so the analyzer (which re-runs the engine N+1 times) executes at
+    # most once per workspace instance. Returns [] when there is no completed
+    # baseline run, so callers fall back to the empty state. The original input is
+    # never mutated by the analyzer (each perturbation runs on a deep clone), and
+    # the input is built fresh here — applying nothing to the persisted run rows.
+    def sensitivity_rows
+      return @sensitivity_rows if defined?(@sensitivity_rows)
+      return @sensitivity_rows = [] unless sensitivity_data?
+
+      input = Forecast::InputBuilder.new(
+        family: family,
+        user: sensitivity_user,
+        scenario_ids: [],
+        start_on: sensitivity_start_on
+      ).call
+
+      @sensitivity_rows = Forecast::SensitivityAnalyzer.new(input: input).call
+    end
+
+    # The metrics, in display order, each sensitivity row reports a delta for.
+    # Centralized here so the view never re-derives the column set.
+    SENSITIVITY_METRICS = %w[cash_balance net_worth debt_balance minimum_cash_runway_days].freeze
+
+    def sensitivity_metrics
+      SENSITIVITY_METRICS
+    end
+
+    # Map of forecast_goal id => human goal name, so a sensitivity goal-status
+    # change can be labeled by the goal's own name rather than its opaque id.
+    # Scoped to THIS family's goals only (a foreign goal name can never appear)
+    # and built in ONE query. A goal evaluated but since deleted falls back to its
+    # id at the call site. Memoized.
+    def sensitivity_goal_labels
+      return @sensitivity_goal_labels if defined?(@sensitivity_goal_labels)
+
+      @sensitivity_goal_labels = family.forecast_goals.pluck(:id, :name).to_h
+    end
+
     # --- Timeline (single-run synchronized lanes) -----------------------------
 
     # The ForecastRun the Timeline tab renders. Reuses the baseline run of the
@@ -541,6 +596,26 @@ module Forecast
     end
 
     private
+      # The deterministic start date the sensitivity input is built at: the run
+      # group's persisted horizon start, falling back to the baseline run's own
+      # start snapshot, and only then to today. Threading the persisted run date
+      # (never the live wall clock) keeps the analysis reproducible against the
+      # run it summarizes — re-opening the tab tomorrow yields identical results.
+      def sensitivity_start_on
+        latest_group&.horizon_start_on ||
+          baseline_run&.input_snapshot&.dig("periods", "start_on")&.then { |d| Date.parse(d) rescue nil } ||
+          Date.current
+      end
+
+      # The user whose visibility/scope the sensitivity input is built under: the
+      # baseline run's own user snapshot, falling back to the group's user. Both
+      # are guaranteed to belong to this family by ForecastRun/ForecastRunGroup
+      # validations, so the InputBuilder's IncludedAccountScope never leaks
+      # another family's accounts.
+      def sensitivity_user
+        baseline_run&.user || latest_group&.user
+      end
+
       # Map of goal_key -> status string from the latest completed run group.
       # Prefers the baseline run's evaluation (the headline projection) and falls
       # back to any run's evaluation for that key. Returns {} when no completed

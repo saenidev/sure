@@ -280,7 +280,102 @@ class Forecast::WorkspaceTest < ActiveSupport::TestCase
     end
   end
 
+  # --- sensitivity (deterministic single-variable analysis) ------------------
+
+  test "sensitivity_data? is false and sensitivity_rows is empty with no completed run" do
+    @family.forecast_run_groups.delete_all
+
+    workspace = Forecast::Workspace.new(family: @family)
+
+    assert_not workspace.sensitivity_data?
+    assert_empty workspace.sensitivity_rows
+  end
+
+  test "sensitivity_data? is false for a totally failed group (no completed run to analyze)" do
+    @family.forecast_run_groups.delete_all
+    build_failed_run_group(family: @family, user: @user, error_message: "boom")
+
+    workspace = Forecast::Workspace.new(family: @family)
+
+    assert_not workspace.sensitivity_data?
+    assert_empty workspace.sensitivity_rows
+  end
+
+  test "sensitivity_data? is true and sensitivity_rows yields the default-catalog perturbations for a completed baseline run" do
+    @family.forecast_run_groups.delete_all
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    workspace = Forecast::Workspace.new(family: @family)
+
+    assert workspace.sensitivity_data?
+    rows = workspace.sensitivity_rows
+    # One row per default-catalog perturbation, in the catalog's deterministic order.
+    assert_equal Forecast::SensitivityAnalyzer::DEFAULT_CATALOG.map(&:key), rows.map(&:perturbation_key)
+    # Every row reports a delta for each tracked metric so the panel can render it.
+    rows.each do |row|
+      assert_equal workspace.sensitivity_metrics.sort, row.delta.keys.sort
+    end
+  end
+
+  test "sensitivity_rows runs the analyzer at most once (memoized)" do
+    @family.forecast_run_groups.delete_all
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    workspace = Forecast::Workspace.new(family: @family)
+
+    # The analyzer re-runs the engine N+1 times, so it must execute at most once.
+    # InputBuilder is only invoked when the rows are first built; a second read
+    # returns the memoized array without rebuilding the input.
+    Forecast::InputBuilder.any_instance.expects(:call).once.returns(sensitivity_stub_input)
+    Forecast::SensitivityAnalyzer.any_instance.expects(:call).once.returns([])
+
+    workspace.sensitivity_rows
+    workspace.sensitivity_rows
+  end
+
+  test "sensitivity_rows is deterministic: identical results on repeat (no wall clock, threaded run date)" do
+    @family.forecast_run_groups.delete_all
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    first = Forecast::Workspace.new(family: @family).sensitivity_rows
+    second = Forecast::Workspace.new(family: @family).sensitivity_rows
+
+    assert_equal first.map(&:perturbation_key), second.map(&:perturbation_key)
+    first.zip(second).each do |a, b|
+      assert_equal a.baseline_metric, b.baseline_metric
+      assert_equal a.perturbed_metric, b.perturbed_metric
+      assert_equal a.delta, b.delta
+      assert_equal a.goal_status_changes, b.goal_status_changes
+    end
+  end
+
+  test "sensitivity_goal_labels maps only this family's goal ids to names" do
+    @family.forecast_goals.delete_all
+    goal = @family.forecast_goals.create!(
+      name: "Keep six months of cash", goal_type: "minimum_cash_runway",
+      status: "active", target_duration_days: 180
+    )
+    # Another family's goal must never appear in this family's label map.
+    other_family = families(:empty)
+    other_goal = other_family.forecast_goals.create!(
+      name: "Foreign goal", goal_type: "minimum_cash_runway",
+      status: "active", target_duration_days: 90
+    )
+
+    workspace = Forecast::Workspace.new(family: @family)
+    labels = workspace.sensitivity_goal_labels
+
+    assert_equal "Keep six months of cash", labels[goal.id]
+    assert_nil labels[other_goal.id]
+  end
+
   private
+    # A minimal InputBuilder::Result stand-in for the memoization test, where the
+    # analyzer is stubbed and never actually reads the input.
+    def sensitivity_stub_input
+      Object.new
+    end
+
     # Builds a completed comparison group with one ForecastRun per stack key, each
     # carrying 3 ascending months plus one goal evaluation, so the band builder
     # and tradeoff explorer have real, deterministic data to read. Failed stacks

@@ -147,13 +147,15 @@ en:
     sensitivity:
       heading: "Sensitivity"
       description: "See how one change at a time — lower income, higher expenses, a market drawdown, or a higher debt rate — moves your end-of-horizon balances, your cash runway, and your goals."
+      disclaimer: "Each row perturbs exactly one input and re-runs the forecast. These are deterministic one-at-a-time stress tests against your latest baseline run — not a statistical distribution or Monte Carlo simulation."
+      loading: "Running sensitivity analysis…"
       perturbations:
         income_minus_10pct: "Income -10%"
         expenses_plus_10pct: "Expenses +10%"
         market_return_minus_20pct: "Market return -20%"
         debt_rate_plus_200bps: "Debt rate +200bps"
       table:
-        caption: "Impact of each single-variable perturbation on end-of-horizon balances, minimum cash runway, and goal status."
+        caption: "Impact of each single-variable perturbation on end-of-horizon balances, minimum cash runway, and goal status, versus the baseline run."
         perturbation: "Change"
         cash_balance: "End cash"
         net_worth: "End net worth"
@@ -162,12 +164,30 @@ en:
         goal_changes: "Goal changes"
         no_goal_changes: "No change"
         unavailable: "—"
-      runway_days:
-        one: "%{count} day"
-        other: "%{count} days"
+      delta:
+        baseline_aria: "Baseline %{value}"
+        increase_aria: "%{value} higher than baseline"
+        decrease_aria: "%{value} lower than baseline"
+        unchanged_aria: "Unchanged from baseline"
+      goal_change:
+        # %{goal} is the goal's name, %{from}/%{to} are humanized evaluation
+        # statuses (On track, At risk, Missed, Blocking, Not yet evaluated).
+        summary: "%{goal}: %{from} → %{to}"
+        unknown_goal: "A goal"
+      runway:
+        unbounded: "No limit"
+        days:
+          one: "%{count} day"
+          other: "%{count} days"
+        delta_days:
+          one: "%{count} day"
+          other: "%{count} days"
       empty:
         title: "No sensitivity analysis yet"
         body: "Generate a forecast, then we will perturb one input at a time to show how income, spending, market returns, and debt rates each move your projected outcomes and goals."
+      failure:
+        title: "Sensitivity analysis could not be run"
+        body: "We could not perturb this forecast. Try regenerating it, then reopen this tab."
     tradeoff:
       heading: "Goal tradeoffs"
       description: "Rank your scenario stacks by how many goals they keep on track, and see the explicit tradeoffs each stack makes against the baseline."
