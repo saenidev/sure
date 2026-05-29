@@ -1157,4 +1157,258 @@ class Forecast::EngineTest < ActiveSupport::TestCase
     assert_equal first.risk_flags, second.risk_flags
     assert_equal first.source_breakdown, second.source_breakdown
   end
+
+  test "cash to restricted reclassification at month 5 drops cash and cash runway while net worth stays flat" do
+    months = reclassification_months(6)
+    move_month = months[4] # month 5 (1-based)
+    input = monthly_reclassification_input(
+      months: months,
+      opening_cash: 6000.to_d,
+      reclassifications: [
+        reclassification_row(date: move_month.start_date, cash_delta: -6000.to_d, liquid_delta: -6000.to_d)
+      ]
+    )
+
+    result = Forecast::Engine.new(input).call
+    rows = result.months
+
+    # Before the move: full cash and a 60-day runway (6000 / (3000/30)).
+    assert_equal 6000.to_d, rows[3].cash_balance
+    assert_equal 6000.to_d, rows[3].liquid_balance
+    assert_equal 60, rows[3].cash_runway_days
+
+    # From month 5 onward the same money is bucketed as restricted: cash and runway drop.
+    assert_equal 0.to_d, rows[4].cash_balance
+    assert_equal 0.to_d, rows[4].liquid_balance
+    assert_equal 0, rows[4].cash_runway_days
+    assert_equal 0.to_d, rows[5].cash_balance
+
+    # Net worth is unchanged across the boundary: reclassification only re-buckets money.
+    assert_equal rows[3].net_worth, rows[4].net_worth
+    assert_equal 6000.to_d, rows[4].net_worth
+
+    # Explainability: the move's cash net is surfaced on the effect month only.
+    assert_equal "-6000.0", rows[4].source_breakdown.fetch("liquidity_reclassification_net")
+    assert_equal "0.0", rows[3].source_breakdown.fetch("liquidity_reclassification_net")
+    assert_equal "0.0", rows[5].source_breakdown.fetch("liquidity_reclassification_net")
+  end
+
+  test "minimum_cash_runway goal that passed before the move is blocked after the move" do
+    months = reclassification_months(6)
+    move_month = months[4]
+    input = monthly_reclassification_input(
+      months: months,
+      opening_cash: 6000.to_d,
+      reclassifications: [
+        reclassification_row(date: move_month.start_date, cash_delta: -6000.to_d, liquid_delta: -6000.to_d)
+      ],
+      goals: [
+        {
+          "id" => SecureRandom.uuid,
+          "goal_type" => "minimum_cash_runway",
+          "target_duration_days" => 30.to_d,
+          "required" => true,
+          "blocking_behavior" => "blocks",
+          "evaluation_starts_on" => months.first.start_date.iso8601,
+          "evaluation_ends_on" => months.last.end_date.iso8601
+        }
+      ]
+    )
+
+    result = Forecast::Engine.new(input).call
+    evaluation = result.goal_evaluations.first
+
+    # Min runway over the window is 0 (post-move), below the 30-day target -> blocking.
+    assert_equal "blocking", evaluation.status
+    assert_equal 0.to_d, evaluation.metric_value
+    assert_equal "blocked", result.feasibility_status
+
+    # Sanity: without the move the same goal would pass at a 60-day runway.
+    baseline = Forecast::Engine.new(
+      monthly_reclassification_input(
+        months: months,
+        opening_cash: 6000.to_d,
+        reclassifications: [],
+        goals: input.goals
+      )
+    ).call
+    assert_equal "pass", baseline.goal_evaluations.first.status
+    assert_equal 60.to_d, baseline.goal_evaluations.first.metric_value
+  end
+
+  test "liquid to cash reclassification increases cash runway" do
+    months = reclassification_months(6)
+    move_month = months[4]
+    # Money already in the liquid bucket (liquid includes cash) moves INTO cash, so only
+    # the cash bucket gains balance; the liquid total is unchanged.
+    input = monthly_reclassification_input(
+      months: months,
+      opening_cash: 3000.to_d,
+      opening_liquid_extra: 3000.to_d,
+      reclassifications: [
+        reclassification_row(date: move_month.start_date, cash_delta: 3000.to_d, liquid_delta: 0.to_d)
+      ]
+    )
+
+    result = Forecast::Engine.new(input).call
+    rows = result.months
+
+    assert_equal 3000.to_d, rows[3].cash_balance
+    assert_equal 30, rows[3].cash_runway_days
+
+    assert_equal 6000.to_d, rows[4].cash_balance
+    assert_equal 60, rows[4].cash_runway_days
+
+    # Liquid total never changed across the move.
+    assert_equal rows[3].liquid_balance, rows[4].liquid_balance
+  end
+
+  test "reclassification delta is applied exactly once and not reflected in opening balances" do
+    months = reclassification_months(6)
+    move_month = months[4]
+    input = monthly_reclassification_input(
+      months: months,
+      opening_cash: 6000.to_d,
+      reclassifications: [
+        reclassification_row(date: move_month.start_date, cash_delta: -6000.to_d, liquid_delta: -6000.to_d)
+      ]
+    )
+
+    result = Forecast::Engine.new(input).call
+    rows = result.months
+
+    # Opening months keep their as-of-start classification: the future move is NOT
+    # pulled back into the opening balance.
+    assert_equal 6000.to_d, rows[0].cash_balance
+    assert_equal 6000.to_d, rows[3].cash_balance
+
+    # The -6000 delta is reflected once (a single 6000 -> 0 step), never twice.
+    assert_equal 0.to_d, rows[4].cash_balance
+    assert_equal 0.to_d, rows[5].cash_balance
+
+    # Exactly one month carries the net; all others are zero.
+    nets = rows.map { |row| row.source_breakdown.fetch("liquidity_reclassification_net").to_d }
+    assert_equal [ -6000.to_d ], nets.reject(&:zero?)
+  end
+
+  test "no reclassifications leaves month rows identical to the pre-wiring baseline" do
+    months = reclassification_months(6)
+    with_reclass = monthly_reclassification_input(months: months, opening_cash: 6000.to_d, reclassifications: [])
+    without_field = monthly_reclassification_input(months: months, opening_cash: 6000.to_d, reclassifications: nil)
+
+    with_result = Forecast::Engine.new(with_reclass).call
+    without_result = Forecast::Engine.new(without_field).call
+
+    with_result.months.zip(without_result.months).each do |a, b|
+      assert_equal b.cash_balance, a.cash_balance
+      assert_equal b.liquid_balance, a.liquid_balance
+      assert_equal b.net_worth, a.net_worth
+      assert_equal b.cash_runway_days, a.cash_runway_days
+      assert_equal b.source_breakdown.except("liquidity_reclassification_net"), a.source_breakdown.except("liquidity_reclassification_net")
+    end
+    # The new key defaults to zero with no moves.
+    assert with_result.months.all? { |row| row.source_breakdown.fetch("liquidity_reclassification_net") == "0.0" }
+  end
+
+  test "reclassification projection is deterministic across repeated runs" do
+    months = reclassification_months(6)
+    move_month = months[4]
+    build = lambda do
+      monthly_reclassification_input(
+        months: months,
+        opening_cash: 6000.to_d,
+        reclassifications: [
+          reclassification_row(date: move_month.start_date, cash_delta: -6000.to_d, liquid_delta: -6000.to_d)
+        ]
+      )
+    end
+
+    first = Forecast::Engine.new(build.call).call.months
+    second = Forecast::Engine.new(build.call).call.months
+
+    assert_equal first.map(&:cash_balance), second.map(&:cash_balance)
+    assert_equal first.map(&:liquid_balance), second.map(&:liquid_balance)
+    assert_equal first.map(&:source_breakdown), second.map(&:source_breakdown)
+  end
+
+  private
+    # Builds N consecutive monthly-precision period windows starting next month so the
+    # whole horizon sits in the future (no day rows, no partial-current-period branch).
+    def reclassification_months(count)
+      base = Date.current.next_month.beginning_of_month
+      count.times.map do |index|
+        start_date = base + index.months
+        Forecast::PeriodBuilder::PeriodWindow.new(
+          index: index,
+          start_date: start_date,
+          end_date: start_date.end_of_month,
+          precision: "monthly"
+        )
+      end
+    end
+
+    def reclassification_row(date:, cash_delta:, liquid_delta:)
+      {
+        date: date,
+        name: "Liquidity reclassification",
+        effect_type: "liquidity_reclassification",
+        account_id: SecureRandom.uuid,
+        expected_income: 0.to_d,
+        expected_spending: 0.to_d,
+        cash_delta: cash_delta,
+        liquid_delta: liquid_delta,
+        debt_delta: 0.to_d,
+        portfolio_delta: 0.to_d,
+        net_worth_delta: 0.to_d,
+        budget_flow_type: "none",
+        transaction_kind: "liquidity_reclassification",
+        source_snapshot: { "type" => "liquidity_reclassification" },
+        risk_flags: []
+      }
+    end
+
+    # A monthly forecast with a single cash account and a flat 3000/month uncategorized
+    # budget (actual == budgeted so no spend gap touches cash; runway burn is 3000/mo).
+    # opening_liquid_extra adds a separate liquid-but-not-cash account so liquid > cash.
+    # reclassifications: pass [] for the empty stream or nil to omit the field entirely.
+    def monthly_reclassification_input(months:, opening_cash:, reclassifications:, goals: [], opening_liquid_extra: 0.to_d)
+      family = families(:dylan_family)
+      user = users(:family_admin)
+      accounts = [
+        { id: SecureRandom.uuid, classification: "asset", accountable_type: "Depository", liquidity_class: "cash", balance: opening_cash, risk_flags: [], source_snapshot: {} }
+      ]
+      if opening_liquid_extra.positive?
+        accounts << { id: SecureRandom.uuid, classification: "asset", accountable_type: "Investment", liquidity_class: "liquid", balance: opening_liquid_extra, risk_flags: [], source_snapshot: {} }
+      end
+      budgets = months.map do |period|
+        {
+          period_start_on: period.start_date,
+          expected_income: 0.to_d,
+          actual_income: 0.to_d,
+          budgeted_uncategorized_spending: 3000.to_d,
+          actual_uncategorized_spending: 3000.to_d,
+          source_budget_id: nil,
+          categories: []
+        }
+      end
+      attributes = {
+        family: family,
+        user: user,
+        currency: family.currency,
+        periods: Forecast::PeriodBuilder::Result.new(days: [], months: months),
+        scenario_stack: Forecast::ScenarioStack::Result.new(key: "baseline", scenario_ids: [], snapshot: {}, risk_flags: []),
+        accounts: accounts,
+        budgets: budgets,
+        recurring_items: [],
+        pending_entries: [],
+        portfolio: { portfolio_value: 0.to_d, holdings: [], risk_flags: [] },
+        debt_rows: [],
+        goals: goals,
+        events: [],
+        source_data_versions: {},
+        risk_flags: []
+      }
+      attributes[:reclassifications] = reclassifications unless reclassifications.nil?
+      Forecast::InputBuilder::Result.new(**attributes)
+    end
 end

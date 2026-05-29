@@ -44,6 +44,48 @@ class Forecast::InputBuilderTest < ActiveSupport::TestCase
     assert_equal "EUR", goal.fetch("target_money_snapshot").fetch("native_currency")
   end
 
+  test "builds dated liquidity reclassification effects from future setting windows" do
+    family = families(:dylan_family)
+    account = accounts(:depository)
+    account.update!(balance: 5_000)
+    start_on = Date.current
+    setting_start = start_on + 4.months
+    family.forecast_account_liquidity_settings.create!(
+      account: account,
+      liquidity_class: "restricted",
+      starts_on: setting_start
+    )
+
+    result = Forecast::InputBuilder.new(
+      family: family,
+      user: users(:family_admin),
+      scenario_ids: [],
+      start_on: start_on
+    ).call
+
+    row = result.reclassifications.find { |candidate| candidate.fetch(:account_id) == account.id }
+
+    assert row.present?
+    assert_equal setting_start, row.fetch(:date)
+    assert_equal "liquidity_reclassification", row.fetch(:effect_type)
+    assert_equal "cash", row.fetch(:source_snapshot).fetch("from_class")
+    assert_equal "restricted", row.fetch(:source_snapshot).fetch("to_class")
+    # Balance-neutral: leaves the cash bucket without creating spending.
+    assert_operator row.fetch(:cash_delta), :<, 0.to_d
+    assert_equal 0.to_d, row.fetch(:net_worth_delta)
+  end
+
+  test "no liquidity setting windows yields an empty reclassification stream" do
+    result = Forecast::InputBuilder.new(
+      family: families(:dylan_family),
+      user: users(:family_admin),
+      scenario_ids: [],
+      start_on: Date.current
+    ).call
+
+    assert_equal [], result.reclassifications
+  end
+
   test "accepted future link remains in inputs after source event deletion" do
     family = families(:dylan_family)
     event = family.forecast_events.create!(

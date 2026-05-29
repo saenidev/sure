@@ -41,6 +41,15 @@ module Forecast
     private
       attr_reader :input, :scenario_stack_key
 
+      # Dated, balance-neutral liquidity bucket moves emitted by
+      # Forecast::LiquidityReclassificationBuilder. Each row carries cash_delta and
+      # liquid_delta applied EXACTLY ONCE on its effect date so a future cash->restricted
+      # move reduces cash/liquid runway from that date forward while net worth stays flat.
+      # Defaults to an empty stream so legacy inputs without the field are unaffected.
+      def reclassifications
+        input.respond_to?(:reclassifications) ? Array(input.reclassifications) : []
+      end
+
       def build_days
         cash = opening_cash
         liquid = opening_liquid
@@ -52,14 +61,17 @@ module Forecast
           recurring_rows = rows_on(input.recurring_items, date)
           pending_rows = rows_on(input.pending_entries, date)
           event_rows = rows_on(input.events, date)
+          reclassification_rows = rows_on(reclassifications, date)
           effect_rows = recurring_rows + pending_rows + event_rows
           expected_income = sum_effect(effect_rows, :expected_income)
           expected_spending = sum_effect(effect_rows, :expected_spending)
           pending_income = sum_effect(pending_rows, :pending_income)
           pending_spending = sum_effect(pending_rows, :pending_spending)
 
-          cash += sum_effect(effect_rows, :cash_delta)
-          liquid += sum_effect(effect_rows, :liquid_delta)
+          # Reclassification deltas only re-bucket the SAME money on the boundary date,
+          # so they shift cash/liquid but leave income/spending and net worth untouched.
+          cash += sum_effect(effect_rows, :cash_delta) + sum_effect(reclassification_rows, :cash_delta)
+          liquid += sum_effect(effect_rows, :liquid_delta) + sum_effect(reclassification_rows, :liquid_delta)
           debt = [ debt + sum_effect(effect_rows, :debt_delta), 0.to_d ].max
           portfolio += sum_effect(effect_rows, :portfolio_delta)
           net_worth += sum_effect(effect_rows, :net_worth_delta)
@@ -101,6 +113,9 @@ module Forecast
           recurring_rows = rows_between(input.recurring_items, period.start_date, period.end_date)
           pending_rows = rows_between(input.pending_entries, period.start_date, period.end_date)
           event_rows = rows_between(input.events, period.start_date, period.end_date)
+          reclassification_rows = rows_between(reclassifications, period.start_date, period.end_date)
+          reclassification_cash_net = sum_effect(reclassification_rows, :cash_delta)
+          reclassification_liquid_net = sum_effect(reclassification_rows, :liquid_delta)
           effect_rows = recurring_rows + pending_rows + event_rows
           category_projections = category_projection_rows(budget, period, effect_rows)
           debt_reconciliation = reconcile_debt_effects(debt_projections, recurring_rows, pending_rows, event_rows)
@@ -148,8 +163,8 @@ module Forecast
             income = sum_effect(effect_rows, :expected_income)
             budget_income_gap = budget_income_gap_for(budget, income)
             spending = category_spending + uncategorized_spend
-            cash += sum_effect(effect_rows, :cash_delta) + budget_income_gap - budget_spend_gap - uncategorized_budget_gap - debt_payment_gap
-            liquid += sum_effect(effect_rows, :liquid_delta) + budget_income_gap - budget_spend_gap - uncategorized_budget_gap - debt_payment_gap
+            cash += sum_effect(effect_rows, :cash_delta) + reclassification_cash_net + budget_income_gap - budget_spend_gap - uncategorized_budget_gap - debt_payment_gap
+            liquid += sum_effect(effect_rows, :liquid_delta) + reclassification_liquid_net + budget_income_gap - budget_spend_gap - uncategorized_budget_gap - debt_payment_gap
             debt = [ debt + sum_effect(effect_rows, :debt_delta), 0.to_d ].max
             portfolio += sum_effect(effect_rows, :portfolio_delta)
             net_worth += sum_effect(effect_rows, :net_worth_delta) + budget_income_gap - budget_spend_gap - uncategorized_budget_gap - debt_payment_gap
@@ -207,7 +222,8 @@ module Forecast
               "debt_payment_effect_credit" => debt_reconciliation.fetch(:cash_payment_credit).to_s,
               "debt_projection_adjustment" => debt_projection_adjustment.to_s,
               "total_debt_delta" => total_debt_delta.to_s,
-              "debt_to_cash_ratio" => debt_to_cash_ratio
+              "debt_to_cash_ratio" => debt_to_cash_ratio,
+              "liquidity_reclassification_net" => reclassification_cash_net.to_d.to_s
             },
             risk_flags: risk_flags
           )

@@ -14,9 +14,16 @@ module Forecast
       :debt_rows,
       :goals,
       :events,
+      :reclassifications,
       :source_data_versions,
       :risk_flags
-    )
+    ) do
+      # reclassifications defaults to an empty stream so existing callers/tests that
+      # construct a Result without dated liquidity moves keep their pre-wiring shape.
+      def initialize(reclassifications: [], **rest)
+        super(reclassifications: reclassifications, **rest)
+      end
+    end
 
     def initialize(family:, user:, scenario_ids:, start_on: Date.current, months: 36, daily_days: 90)
       @family = family
@@ -46,6 +53,14 @@ module Forecast
       linked_future_entries = Forecast::LinkedEntryInputBuilder.new(family: family, user: user, start_on: start_on, end_on: period_result.months.last.end_date, money_converter: converter, included_account_scope: included_scope, accepted_links: accepted_links, scenario_ids: stack.scenario_ids).call
       event_consuming_links = accepted_links_consumed_by_inputs(accepted_links, pending_entries, linked_future_entries, period_result.months.last.end_date)
       events = forecast_events(stack, period_result.months.last.end_date, event_consuming_links)
+      accounts = Forecast::AccountsInputBuilder.new(family: family, user: user, money_converter: converter, scenario_ids: stack.scenario_ids, included_account_scope: included_scope).call
+      reclassifications = Forecast::LiquidityReclassificationBuilder.new(
+        family: family,
+        scenario_ids: stack.scenario_ids,
+        accounts: accounts,
+        periods: period_result,
+        run_date: start_on
+      ).call
 
       Result.new(
         family: family,
@@ -53,7 +68,7 @@ module Forecast
         currency: family.currency,
         periods: period_result,
         scenario_stack: stack,
-        accounts: Forecast::AccountsInputBuilder.new(family: family, user: user, money_converter: converter, scenario_ids: stack.scenario_ids, included_account_scope: included_scope).call,
+        accounts: accounts,
         budgets: Forecast::BudgetInputBuilder.new(family: family, user: user, periods: period_result.months, money_converter: converter, scenario_ids: stack.scenario_ids, included_account_scope: included_scope).call,
         recurring_items: recurring_items,
         pending_entries: (pending_entries + linked_future_entries).sort_by { |row| [ row.fetch(:date), row.fetch(:status), row.fetch(:account_id).to_s, row.fetch(:id).to_s ] },
@@ -61,6 +76,7 @@ module Forecast
         debt_rows: Forecast::DebtProjectionAdapter.new(family: family, user: user, periods: period_result.months, money_converter: converter, recurring_items: recurring_items, included_account_scope: included_scope, forecast_debt_events: debt_sensitive_events(events), run_date: start_on).call,
         goals: forecast_goals(stack, converter),
         events: events,
+        reclassifications: reclassifications,
         source_data_versions: source_data_versions,
         risk_flags: []
       )

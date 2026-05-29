@@ -193,14 +193,20 @@ module Forecast
           "pending_entries" => input.pending_entries.map { |row| row.fetch(:source_snapshot) },
           "forecast_events" => input.events.map { |event| event.fetch(:source_snapshot) },
           "debt_rows" => input.debt_rows.map { |row| row.fetch(:source_snapshot) },
+          "liquidity_reclassifications" => reclassifications_for(input).map { |row| row.fetch(:source_snapshot) },
           "goals" => input.goals,
           "account_count" => input.accounts.size,
           "budget_period_count" => input.budgets.size,
           "recurring_item_count" => input.recurring_items.size,
           "pending_entry_count" => input.pending_entries.size,
           "forecast_event_count" => input.events.size,
+          "liquidity_reclassification_count" => reclassifications_for(input).size,
           "goal_count" => input.goals.size
         }
+      end
+
+      def reclassifications_for(input)
+        input.respond_to?(:reclassifications) ? Array(input.reclassifications) : []
       end
 
       def persist_day!(run, row)
