@@ -1,0 +1,42 @@
+<%# locals: (months:, currency:) %>
+<%#
+  36-row monthly projection table for the Overview tab. `months` is an
+  already-loaded, ordered array of ForecastMonth records (eager-loaded by the
+  workspace) so this template issues no further queries.
+%>
+<section aria-labelledby="forecast-monthly-table-heading" class="space-y-3">
+  <h3 id="forecast-monthly-table-heading" class="text-primary text-base font-medium"><%= t("forecasts.overview.monthly_table.heading") %></h3>
+  <% if months.present? %>
+    <div class="overflow-x-auto rounded-xl border border-primary">
+      <table class="w-full text-sm">
+        <caption class="sr-only"><%= t("forecasts.overview.monthly_table.caption") %></caption>
+        <thead>
+          <tr class="border-b border-primary text-secondary text-left">
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.overview.monthly_table.month") %></th>
+            <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.overview.monthly_table.expected_income") %></th>
+            <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.overview.monthly_table.expected_spending") %></th>
+            <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.overview.monthly_table.net_cash_flow") %></th>
+            <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.overview.monthly_table.cash_balance") %></th>
+            <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.overview.monthly_table.net_worth") %></th>
+            <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.overview.monthly_table.debt_balance") %></th>
+          </tr>
+        </thead>
+        <tbody class="text-primary">
+          <% months.each do |month| %>
+            <tr class="border-b border-primary last:border-0">
+              <th scope="row" class="px-4 py-2 font-medium text-secondary text-left whitespace-nowrap"><%= l(month.period_start_on, format: :month_year) %></th>
+              <td class="px-4 py-2 text-right tabular-nums"><%= format_money(Money.new(month.expected_income, currency)) %></td>
+              <td class="px-4 py-2 text-right tabular-nums"><%= format_money(Money.new(month.expected_spending, currency)) %></td>
+              <td class="px-4 py-2 text-right tabular-nums"><%= format_money(Money.new(month.net_cash_flow, currency)) %></td>
+              <td class="px-4 py-2 text-right tabular-nums"><%= format_money(Money.new(month.cash_balance, currency)) %></td>
+              <td class="px-4 py-2 text-right tabular-nums"><%= format_money(Money.new(month.net_worth, currency)) %></td>
+              <td class="px-4 py-2 text-right tabular-nums"><%= format_money(Money.new(month.debt_balance, currency)) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <p class="text-secondary text-sm"><%= t("forecasts.overview.monthly_table.empty") %></p>
+  <% end %>
+</section>

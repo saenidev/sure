@@ -1,0 +1,27 @@
+<%# locals: (workspace:) %>
+<%#
+  In-flight generation surface. A Stimulus poller hits the family-scoped status
+  endpoint for the running group; when the group reaches a terminal state it
+  reloads the workspace so the user sees the completed Overview (or the failure
+  alert) without a manual refresh.
+%>
+<% group = workspace.running_group %>
+<section class="rounded-xl border border-primary bg-container p-8 text-center"
+         aria-labelledby="forecast-running-title"
+         aria-live="polite"
+         data-controller="forecast-run-poller"
+         data-forecast-run-poller-url-value="<%= group ? status_forecast_run_path(group) : "" %>"
+         data-forecast-run-poller-interval-value="3000">
+  <div class="mx-auto flex max-w-md flex-col items-center gap-4">
+    <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+      <%= icon "loader", size: "lg", color: "default" %>
+    </span>
+
+    <div class="space-y-1">
+      <h2 id="forecast-running-title" class="text-primary text-lg font-medium"><%= t("forecasts.running.title") %></h2>
+      <p class="text-secondary text-sm"><%= t("forecasts.running.body") %></p>
+    </div>
+
+    <p class="sr-only" role="status"><%= t("forecasts.running.status_label") %></p>
+  </div>
+</section>

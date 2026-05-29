@@ -34,9 +34,9 @@ class Forecast::WorkspaceTest < ActiveSupport::TestCase
     assert workspace.planning_data?
   end
 
-  test "non-terminal latest group (pending/running) is treated as ready" do
+  test "non-terminal latest group (pending/running) surfaces running state" do
     @family.forecast_run_groups.delete_all
-    @family.forecast_run_groups.create!(
+    group = @family.forecast_run_groups.create!(
       user: @user,
       name: "In flight",
       run_type: "manual",
@@ -49,7 +49,22 @@ class Forecast::WorkspaceTest < ActiveSupport::TestCase
 
     workspace = Forecast::Workspace.new(family: @family)
 
-    assert_equal :ready, workspace.status
+    assert_equal :running, workspace.status
+    assert workspace.running?
+    assert_equal group, workspace.running_group
+  end
+
+  test "baseline_run prefers the baseline scenario stack and exposes 36 monthly rows" do
+    @family.forecast_run_groups.delete_all
+    group = build_completed_run_group(family: @family, user: @user, runs: 1)
+    run = group.forecast_runs.first
+    run.update_column(:scenario_stack_key, "baseline")
+
+    workspace = Forecast::Workspace.new(family: @family)
+
+    assert_equal run, workspace.baseline_run
+    assert_not workspace.overview_data?
+    assert_equal 0, workspace.monthly_rows.count
   end
 
   test "latest completed group surfaces has_run and returns that group" do

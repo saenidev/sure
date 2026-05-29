@@ -35,3 +35,51 @@ en:
       default_message: "The forecast could not be generated. Please review your scenarios and try again."
       retry: "Retry forecast"
       dismiss: "Dismiss"
+    runs:
+      default_name: "Forecast %{date}"
+      enqueued: "Generating your forecast. This page will update when it is ready."
+      already_running: "A forecast is already being generated. Please wait for it to finish."
+    running:
+      title: "Generating your forecast"
+      body: "We are projecting the next 36 months across your accounts, budgets, debts, and scenarios. This usually takes a moment."
+      status_label: "Generation status"
+    overview:
+      empty:
+        title: "No projection data yet"
+        body: "This forecast ran, but there was not enough account, budget, or scenario data to project. Add accounts, budgets, or scenarios, then generate again."
+      feasibility:
+        label: "Feasibility"
+        pass: "On track"
+        warn: "At risk"
+        blocked: "Blocked"
+        unknown: "Unknown"
+      metrics:
+        heading: "Key metrics"
+        column_current: "Today"
+        column_horizon: "In 36 months"
+        cash: "Cash balance"
+        liquid: "Liquid balance"
+        net_worth: "Net worth"
+        debt: "Debt balance"
+        unavailable: "—"
+      risk_flags:
+        heading: "Risk flags"
+        none: "No risk flags were raised."
+        types:
+          stale_fx_rate: "Stale exchange rate used"
+          negative_cash: "Projected negative cash"
+          cash_shortfall: "Projected cash shortfall"
+          debt_payment_gap: "Debt payment shortfall"
+          goal_missed: "A goal is projected to be missed"
+          missing_rate: "Missing exchange rate"
+      monthly_table:
+        heading: "Monthly projection"
+        caption: "Projected income, spending, cash flow, balances, and debt for each of the next 36 months."
+        month: "Month"
+        expected_income: "Income"
+        expected_spending: "Spending"
+        net_cash_flow: "Net cash flow"
+        cash_balance: "Cash balance"
+        net_worth: "Net worth"
+        debt_balance: "Debt balance"
+        empty: "No monthly projections are available for this forecast."

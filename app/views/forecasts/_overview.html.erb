@@ -1,0 +1,92 @@
+<%# locals: (workspace:) %>
+<%#
+  Overview tab for a completed baseline forecast run. Surfaces key metrics
+  (current vs end-of-horizon), a feasibility badge, aggregated risk flags, and
+  the 36-month projection table. Months are eager-loaded via the workspace to
+  avoid N+1.
+%>
+<% if workspace.overview_data? %>
+  <% currency = workspace.currency %>
+  <% months = workspace.monthly_rows.to_a %>
+  <% first_month = months.first %>
+  <% last_month = months.last %>
+
+  <div class="space-y-6">
+    <%# Feasibility badge + risk flags %>
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="space-y-1">
+        <h3 class="text-secondary text-xs uppercase tracking-wide"><%= t("forecasts.overview.feasibility.label") %></h3>
+        <%= render DS::Pill.new(
+          label: t("forecasts.overview.feasibility.#{workspace.feasibility_status}"),
+          tone: workspace.feasibility_tone,
+          style: :soft,
+          size: :md
+        ) %>
+      </div>
+    </div>
+
+    <%# Key metrics: current (first month) vs end-of-horizon (last month) %>
+    <section aria-labelledby="forecast-metrics-heading" class="space-y-3">
+      <h3 id="forecast-metrics-heading" class="text-primary text-base font-medium"><%= t("forecasts.overview.metrics.heading") %></h3>
+      <div class="overflow-x-auto rounded-xl border border-primary">
+        <table class="w-full text-sm">
+          <caption class="sr-only"><%= t("forecasts.overview.metrics.heading") %></caption>
+          <thead>
+            <tr class="border-b border-primary text-secondary text-left">
+              <th scope="col" class="px-4 py-2 font-medium"></th>
+              <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.overview.metrics.column_current") %></th>
+              <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.overview.metrics.column_horizon") %></th>
+            </tr>
+          </thead>
+          <tbody class="text-primary">
+            <% [
+                 [ :cash, :cash_balance ],
+                 [ :liquid, :liquid_balance ],
+                 [ :net_worth, :net_worth ],
+                 [ :debt, :debt_balance ]
+               ].each do |label_key, column| %>
+              <tr class="border-b border-primary last:border-0">
+                <th scope="row" class="px-4 py-2 font-medium text-secondary text-left"><%= t("forecasts.overview.metrics.#{label_key}") %></th>
+                <td class="px-4 py-2 text-right tabular-nums"><%= format_money(Money.new(first_month.public_send(column), currency)) %></td>
+                <td class="px-4 py-2 text-right tabular-nums"><%= format_money(Money.new(last_month.public_send(column), currency)) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <%# Aggregated risk flags %>
+    <section aria-labelledby="forecast-risk-flags-heading" class="space-y-2">
+      <h3 id="forecast-risk-flags-heading" class="text-primary text-base font-medium"><%= t("forecasts.overview.risk_flags.heading") %></h3>
+      <% if workspace.risk_flag_types.any? %>
+        <ul class="space-y-1">
+          <% workspace.risk_flag_types.each do |flag_type| %>
+            <li class="flex items-center gap-2 text-sm text-primary">
+              <%= icon "alert-triangle", size: "sm", color: "warning" %>
+              <span><%= t("forecasts.overview.risk_flags.types.#{flag_type}", default: flag_type.to_s.humanize) %></span>
+            </li>
+          <% end %>
+        </ul>
+      <% else %>
+        <p class="text-secondary text-sm"><%= t("forecasts.overview.risk_flags.none") %></p>
+      <% end %>
+    </section>
+
+    <%# 36-month projection table %>
+    <%= render "forecasts/monthly_table", months: months, currency: currency %>
+  </div>
+<% else %>
+  <%# Completed run with no projectable data (e.g. no accounts/budgets yet). %>
+  <div class="rounded-xl border border-primary bg-container p-8 text-center" aria-labelledby="forecast-overview-empty-title">
+    <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+      <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+        <%= icon "chart-line", size: "lg", color: "default" %>
+      </span>
+      <div class="space-y-1">
+        <h3 id="forecast-overview-empty-title" class="text-primary text-lg font-medium"><%= t("forecasts.overview.empty.title") %></h3>
+        <p class="text-secondary text-sm"><%= t("forecasts.overview.empty.body") %></p>
+      </div>
+    </div>
+  </div>
+<% end %>

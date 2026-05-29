@@ -8,6 +8,20 @@
         <%= t("forecasts.show.description") %>
       </p>
     </div>
+
+    <%# Generate affordance. The onboarding/ready empty states carry their own
+        primary CTA, so the header button shows once a run/failure/in-flight
+        state exists. Disabled while a generation is in flight so a second run is
+        never stacked for the family (the controller enforces the same guard
+        server-side). %>
+    <% unless @workspace.onboarding? || @workspace.ready? %>
+      <%= render DS::Button.new(
+        text: t("forecasts.show.generate"),
+        icon: "play",
+        href: forecast_runs_path,
+        disabled: @workspace.running?
+      ) %>
+    <% end %>
   </header>
 
   <% if @workspace.failed? %>
@@ -21,13 +35,13 @@
             <p class="font-semibold"><%= t("forecasts.failure.title") %></p>
             <p><%= @workspace.error_message.presence || t("forecasts.failure.default_message") %></p>
             <div class="pt-1">
-              <%# Retry affordance placeholder: regeneration arrives in a later slice. %>
+              <%# Retry re-POSTs to generate a fresh baseline run. %>
               <%= render DS::Button.new(
                 text: t("forecasts.failure.retry"),
                 variant: "outline",
                 icon: "refresh-cw",
                 size: :sm,
-                disabled: true
+                href: forecast_runs_path
               ) %>
             </div>
           </div>
@@ -40,6 +54,8 @@
         </div>
       <% end %>
     </section>
+  <% elsif @workspace.running? %>
+    <%= render "forecasts/running", workspace: @workspace %>
   <% elsif @workspace.has_run? %>
     <%= render "forecasts/run_summary_header", workspace: @workspace %>
 
@@ -52,10 +68,14 @@
 
       <% @workspace.tab_ids.each do |tab_id| %>
         <% tabs.with_panel(tab_id: tab_id) do %>
-          <section class="rounded-xl border border-primary bg-container p-6"
-                   aria-label="<%= t("forecasts.show.tabs.#{tab_id}") %>">
-            <p class="text-secondary text-sm"><%= t("forecasts.show.tab_placeholder") %></p>
-          </section>
+          <% if tab_id == "overview" %>
+            <%= render "forecasts/overview", workspace: @workspace %>
+          <% else %>
+            <section class="rounded-xl border border-primary bg-container p-6"
+                     aria-label="<%= t("forecasts.show.tabs.#{tab_id}") %>">
+              <p class="text-secondary text-sm"><%= t("forecasts.show.tab_placeholder") %></p>
+            </section>
+          <% end %>
         <% end %>
       <% end %>
     <% end %>

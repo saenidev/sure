@@ -290,9 +290,11 @@ Rails.application.routes.draw do
 
   # Additive namespace that later forecasting slices hang off. Its controllers
   # inherit Forecast::BaseController, which scopes every query to Current.family.
-  # Routes are added incrementally per slice; the block is intentionally empty
-  # for now so the namespace exists without exposing unbuilt endpoints.
+  # Routes are added incrementally per slice.
   namespace :forecast do
+    resources :runs, only: %i[create] do
+      get :status, on: :member
+    end
   end
 
   resources :reports, only: %i[index] do

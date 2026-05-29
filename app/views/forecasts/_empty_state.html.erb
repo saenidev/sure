@@ -17,11 +17,11 @@
     </div>
 
     <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
-      <%# Generate affordance placeholder: run generation arrives in a later slice. %>
+      <%# Primary CTA: generate a baseline forecast (POST -> async job). %>
       <%= render DS::Button.new(
         text: t("forecasts.show.generate"),
         icon: "play",
-        disabled: true
+        href: forecast_runs_path
       ) %>
 
       <% if workspace.onboarding? %>

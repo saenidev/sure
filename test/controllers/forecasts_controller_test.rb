@@ -105,6 +105,44 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "renders the running poller while a generation is in flight" do
+    @family.forecast_run_groups.create!(
+      user: @user,
+      name: "In flight",
+      run_type: "manual",
+      status: "running",
+      currency: @family.currency,
+      horizon_start_on: Date.current,
+      horizon_end_on: 36.months.from_now.to_date,
+      daily_until_on: 90.days.from_now.to_date
+    )
+
+    get forecast_url
+
+    assert_response :success
+    assert_select "[data-controller='forecast-run-poller']"
+    assert_select "#forecast-running-title"
+  end
+
+  test "Overview renders the 36-row monthly table for a real completed run without month N+1" do
+    @family.forecast_run_groups.delete_all
+    ForecastGenerationJob.perform_now(family: @family, user: @user)
+
+    # Warm caches so the assertion focuses on the forecast read path.
+    get forecast_url
+    assert_response :success
+
+    # 36 monthly rows + 1 header row in the projection table body.
+    assert_select "#forecast-monthly-table-heading"
+    assert_select "table tbody tr", minimum: 36
+
+    # The Overview must not issue a query per month: months are eager-loaded and
+    # the metrics row reuses the same loaded array.
+    assert_queries_count(matcher: /forecast_months/, max: 1) do
+      get forecast_url
+    end
+  end
+
   private
     # Counts queries matching a pattern issued during the block and asserts the
     # count stays within bound, guarding against N+1 over forecast runs.
