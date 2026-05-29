@@ -1679,4 +1679,246 @@ class Forecast::DebtProjectionAdapterTest < ActiveSupport::TestCase
     assert row.fetch(:risk_flags).any? { |flag| flag["type"] == "debt_projection_incomplete" }
     refute row.fetch(:risk_flags).any? { |flag| flag["type"] == "debt_balance_growing" }
   end
+
+  # --- Planned-extra-payment amortization strategies (slice 5) ---------------
+
+  def build_amortization_profile(account, start_on:, minimum_payment_amount:, annual_rate: 0, rate_type: "fixed", extra: nil)
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: rate_type,
+      accrual_cadence: "monthly",
+      minimum_payment_amount: minimum_payment_amount,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: rate_type, annual_rate: annual_rate, starts_on: start_on)
+    profile.update!(extra: extra) if extra
+    profile
+  end
+
+  def amortization_periods(start_on, count)
+    (0...count).map do |index|
+      month = start_on + index.months
+      Forecast::PeriodBuilder::PeriodWindow.new(index: index, start_date: month.beginning_of_month, end_date: month.end_of_month, precision: "monthly")
+    end
+  end
+
+  test "fixed_extra payment shortens payoff and lowers ending balance each period versus baseline" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    start_on = Date.current.next_month.beginning_of_month
+
+    baseline_account = accounts(:loan)
+    baseline_account.update!(balance: 1000)
+    build_amortization_profile(baseline_account, start_on: start_on, minimum_payment_amount: 200, annual_rate: 0)
+    periods = amortization_periods(start_on, 6)
+
+    baseline_rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == baseline_account.id }
+
+    build_amortization_profile(
+      baseline_account,
+      start_on: start_on,
+      minimum_payment_amount: 200,
+      annual_rate: 0,
+      extra: { "amortization" => { "strategy" => "fixed_extra", "extra_payment_amount" => "200", "currency" => family.currency } }
+    )
+
+    extra_rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == baseline_account.id }
+
+    baseline_payoff = baseline_rows.find { |row| row.fetch(:is_payoff_period) }.fetch(:payoff_projected_on)
+    extra_payoff = extra_rows.find { |row| row.fetch(:is_payoff_period) }.fetch(:payoff_projected_on)
+    assert_operator extra_payoff, :<, baseline_payoff, "expected fixed_extra to pay off earlier"
+
+    # Until the accelerated loan is paid off, each period's ending balance is lower.
+    baseline_rows.zip(extra_rows).each do |baseline_row, extra_row|
+      next if extra_row.fetch(:opening_balance).zero?
+      assert_operator extra_row.fetch(:ending_balance), :<=, baseline_row.fetch(:ending_balance)
+    end
+
+    first_extra = extra_rows.first
+    assert_equal "fixed_extra", first_extra.fetch(:source_snapshot).fetch("amortization").fetch("strategy")
+    assert_equal "200.0", first_extra.fetch(:source_snapshot).fetch("amortization").fetch("applied_extra_payment")
+    # 1000 - (200 minimum + 200 extra) = 600 after the first month.
+    assert_equal 600.to_d, first_extra.fetch(:ending_balance)
+  end
+
+  test "target_payoff on a fixed-rate loan derives a level payment reaching zero at the target period" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 1200)
+    start_on = Date.current.next_month.beginning_of_month
+    target_on = (start_on + 3.months).end_of_month
+    build_amortization_profile(
+      account,
+      start_on: start_on,
+      minimum_payment_amount: 1,
+      annual_rate: 0,
+      extra: { "amortization" => { "strategy" => "target_payoff", "target_payoff_on" => target_on.iso8601 } }
+    )
+    periods = amortization_periods(start_on, 4)
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    target_row = rows.find { |row| row.fetch(:period_end_on) == periods.last.end_date }
+    assert_in_delta 0.0, target_row.fetch(:ending_balance).to_f, 0.01
+    assert target_row.fetch(:is_payoff_period)
+    assert_equal "target_payoff", rows.first.fetch(:source_snapshot).fetch("amortization").fetch("strategy")
+    assert_equal target_on.iso8601, rows.first.fetch(:source_snapshot).fetch("amortization").fetch("target_payoff_on")
+  end
+
+  test "target_payoff on a variable-rate loan flags unsupported strategy and behaves as fixed_extra" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 1000)
+    account.loan.update!(interest_rate: nil)
+    start_on = Date.current.next_month.beginning_of_month
+    build_amortization_profile(
+      account,
+      start_on: start_on,
+      minimum_payment_amount: 200,
+      annual_rate: 12,
+      rate_type: "variable",
+      extra: { "amortization" => { "strategy" => "target_payoff", "extra_payment_amount" => "150", "currency" => family.currency, "target_payoff_on" => (start_on + 6.months).iso8601 } }
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: start_on.beginning_of_month, end_date: start_on.end_of_month, precision: "monthly")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    assert row.fetch(:risk_flags).any? { |flag| flag["type"] == "amortization_strategy_unsupported_for_variable" }
+    snapshot = row.fetch(:source_snapshot).fetch("amortization")
+    assert_equal "target_payoff", snapshot.fetch("strategy")
+    assert_equal "150.0", snapshot.fetch("applied_extra_payment")
+  end
+
+  test "amortization extra payment in a foreign currency missing an FX rate fails loud" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 1000)
+    start_on = Date.current.next_month.beginning_of_month
+    build_amortization_profile(
+      account,
+      start_on: start_on,
+      minimum_payment_amount: 200,
+      annual_rate: 0,
+      extra: { "amortization" => { "strategy" => "fixed_extra", "extra_payment_amount" => "100", "currency" => "JPY" } }
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: start_on.beginning_of_month, end_date: start_on.end_of_month, precision: "monthly")
+    ExchangeRate.expects(:find_or_fetch_rate)
+      .with(from: "JPY", to: family.currency, date: Date.current, cache: false)
+      .returns(nil)
+
+    assert_raises(Forecast::MoneyConverter::MissingRate) do
+      Forecast::DebtProjectionAdapter.new(
+        family: family,
+        user: user,
+        periods: [ period ],
+        money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+        recurring_items: [],
+        included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+        run_date: Date.current
+      ).call
+    end
+  end
+
+  test "extra payment larger than the remaining balance is capped without going negative" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 500)
+    start_on = Date.current.next_month.beginning_of_month
+    build_amortization_profile(
+      account,
+      start_on: start_on,
+      minimum_payment_amount: 100,
+      annual_rate: 0,
+      extra: { "amortization" => { "strategy" => "fixed_extra", "extra_payment_amount" => "5000", "currency" => family.currency } }
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: start_on.beginning_of_month, end_date: start_on.end_of_month, precision: "monthly")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    assert_equal 0.to_d, row.fetch(:ending_balance)
+    assert row.fetch(:is_payoff_period)
+    # 500 opening, 100 baseline payment -> at most 400 extra can apply.
+    assert_equal "400.0", row.fetch(:source_snapshot).fetch("amortization").fetch("applied_extra_payment")
+  end
+
+  test "no amortization config leaves projection identical to prior behavior" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    start_on = Date.current.next_month.beginning_of_month
+
+    build_rows = lambda do
+      account = accounts(:loan)
+      account.update!(balance: 1000)
+      build_amortization_profile(account, start_on: start_on, minimum_payment_amount: 300, annual_rate: 0)
+      periods = amortization_periods(start_on, 4)
+      Forecast::DebtProjectionAdapter.new(
+        family: family,
+        user: user,
+        periods: periods,
+        money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+        recurring_items: [],
+        included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+        run_date: Date.current
+      ).call.select { |projection| projection.fetch(:account_id) == account.id }
+    end
+
+    rows = build_rows.call
+    rows.each do |row|
+      assert_equal "none", row.fetch(:source_snapshot).fetch("amortization").fetch("strategy")
+      assert_equal "0", row.fetch(:source_snapshot).fetch("amortization").fetch("applied_extra_payment")
+      # Baseline equals projected payment when no extra is applied.
+      assert_equal row.fetch(:projected_payment).to_s, row.fetch(:source_snapshot).fetch("baseline_projected_payment")
+    end
+    # ceil(1000 / 300) = 4 -> payoff in the 4th month (index 3).
+    payoff_row = rows.find { |row| row.fetch(:is_payoff_period) }
+    assert_equal rows.last.fetch(:period_end_on), payoff_row.fetch(:period_end_on)
+    refute rows.first.fetch(:risk_flags).any? { |flag| flag["type"] == "amortization_strategy_unsupported_for_variable" }
+  end
 end

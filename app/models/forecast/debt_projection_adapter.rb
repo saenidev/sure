@@ -82,7 +82,18 @@ module Forecast
           actual_payment_credit = required_payment.fetch(:already_net_of_actuals) ? 0.to_d : actual_payment.fetch(:amount)
           fulfilled_payment = actual_payment_credit + recurring_payment + scenario_payment
           cash_payment_gap = [ required_payment_amount - fulfilled_payment, 0.to_d ].max
-          projected_payment = [ scenario_payment + recurring_payment + cash_payment_gap, opening_balance + projected_interest_amount ].min
+          baseline_projected_payment = [ scenario_payment + recurring_payment + cash_payment_gap, opening_balance + projected_interest_amount ].min
+          amortization = amortization_extra_payment_for(
+            account,
+            profile,
+            terms,
+            period,
+            opening_balance,
+            projected_interest_amount,
+            baseline_projected_payment
+          )
+          applied_extra_payment = amortization.fetch(:applied_extra_payment)
+          projected_payment = [ baseline_projected_payment + applied_extra_payment, opening_balance + projected_interest_amount ].min
           ending_balance = [ opening_balance + projected_interest_amount - projected_payment, 0.to_d ].max
           if native_interest_bearing_balance.present?
             native_balances = reduce_native_federal_balances(native_interest_bearing_balance, native_accrued_interest_balance, projected_payment, opening)
@@ -108,7 +119,7 @@ module Forecast
             ending_balance: ending_balance,
             balance_trend: balance_trend,
             source: "debt_profile_snapshot",
-            risk_flags: opening.risk_flags + projected_interest.fetch(:risk_flags) + scenario_effect.fetch(:risk_flags) + Array(payment&.risk_flags) + required_payment.fetch(:risk_flags) + actual_payment.fetch(:risk_flags) + payment_missing_flags(account, terms) + balance_growing_flags(account, balance_trend, projected_payment, projected_interest_amount),
+            risk_flags: opening.risk_flags + projected_interest.fetch(:risk_flags) + scenario_effect.fetch(:risk_flags) + Array(payment&.risk_flags) + required_payment.fetch(:risk_flags) + actual_payment.fetch(:risk_flags) + payment_missing_flags(account, terms) + balance_growing_flags(account, balance_trend, projected_payment, projected_interest_amount) + amortization.fetch(:risk_flags),
             source_snapshot: source_snapshot_for(account, profile, opening, payment, terms).merge(
               "projected_interest" => projected_interest.fetch(:source_snapshot),
               "forecast_debt_events" => scenario_effect.fetch(:source_snapshot),
@@ -119,6 +130,8 @@ module Forecast
               "forecast_event_payment_fulfilled" => scenario_payment.to_s,
               "recurring_payment_fulfilled" => recurring_payment.to_s,
               "cash_payment_gap" => cash_payment_gap.to_s,
+              "baseline_projected_payment" => baseline_projected_payment.to_s,
+              "amortization" => amortization.fetch(:source_snapshot),
               "balance_trend" => balance_trend
             )
           }
@@ -789,6 +802,151 @@ module Forecast
           .select { |row| row.fetch(:recurring_payment_modeled, true) }
           .select { |row| period.start_date <= row.fetch(:date) && row.fetch(:date) <= period.end_date }
           .sum(0.to_d) { |row| row.fetch(:amount).to_d }
+      end
+
+      # Resolve a per-period planned EXTRA payment from an optional, forward-compat
+      # `extra["amortization"]` config on the debt profile. Returns a deterministic
+      # extra-payment amount (family currency) to add on top of the baseline
+      # projected payment, capped by the caller to opening_balance + interest. Only
+      # applies to profile-backed (interest-modeled) rows; the account-balance-only
+      # fallback ignores amortization entirely. Fails loud (MissingRate) on a
+      # foreign extra payment with no FX rate.
+      def amortization_extra_payment_for(account, profile, terms, period, opening_balance, projected_interest, baseline_projected_payment)
+        config = amortization_config_for(profile)
+        return no_amortization unless config
+
+        strategy = config.fetch("strategy")
+        case strategy
+        when "fixed_extra"
+          fixed_extra_amortization(account, profile, config, opening_balance, projected_interest, baseline_projected_payment)
+        when "target_payoff"
+          target_payoff_amortization(account, profile, terms, period, config, opening_balance, projected_interest, baseline_projected_payment)
+        else
+          no_amortization
+        end
+      end
+
+      def amortization_config_for(profile)
+        return nil if profile.blank?
+
+        config = profile.extra.is_a?(Hash) ? profile.extra["amortization"] : nil
+        return nil if config.blank?
+        return nil unless config.is_a?(Hash)
+        return nil if config["strategy"].blank?
+
+        config
+      end
+
+      def no_amortization
+        { applied_extra_payment: 0.to_d, risk_flags: [], source_snapshot: { "strategy" => "none", "applied_extra_payment" => "0" } }
+      end
+
+      def fixed_extra_amortization(account, profile, config, opening_balance, projected_interest, baseline_projected_payment, extra_risk_flags: [], strategy: "fixed_extra")
+        converted = convert_extra_payment(account, config)
+        # The extra payment can never exceed the balance still owed after the
+        # baseline payment has been applied, so payoff cannot overshoot into a
+        # negative balance.
+        remaining_after_baseline = [ opening_balance + projected_interest - baseline_projected_payment, 0.to_d ].max
+        applied = [ converted.amount, remaining_after_baseline ].min
+
+        {
+          applied_extra_payment: applied,
+          risk_flags: converted.risk_flags + extra_risk_flags,
+          source_snapshot: {
+            "strategy" => strategy,
+            "configured_extra_payment" => money_converter.snapshot_for(converted),
+            "applied_extra_payment" => applied.to_s,
+            "remaining_after_baseline" => remaining_after_baseline.to_s
+          }
+        }
+      end
+
+      def target_payoff_amortization(account, profile, terms, period, config, opening_balance, projected_interest, baseline_projected_payment)
+        # Variable/adjustable rates cannot be solved with a single closed-form
+        # level payment because future rates are unknown; fall back to fixed_extra
+        # semantics and flag that the strategy was downgraded.
+        if variable_rate_terms?(terms)
+          flag = {
+            "type" => "amortization_strategy_unsupported_for_variable",
+            "account_id" => account.id,
+            "reason" => "target_payoff_requires_fixed_rate",
+            "rate_type" => terms.rate_type
+          }
+          return fixed_extra_amortization(account, profile, config, opening_balance, projected_interest, baseline_projected_payment, extra_risk_flags: [ flag ], strategy: "target_payoff")
+        end
+
+        target_date = parse_date(config["target_payoff_on"])
+        if target_date.blank? || target_date < period.start_date
+          return no_amortization.merge(
+            source_snapshot: { "strategy" => "target_payoff", "applied_extra_payment" => "0", "reason" => "missing_or_past_target_date" }
+          )
+        end
+
+        # Months remaining are measured from THIS period to the target so the level
+        # payment re-solves each period against the carried opening balance and
+        # deterministically converges to zero at the target period.
+        months_remaining = [ months_between(period.start_date, target_date) + 1, 1 ].max
+        level_payment = level_payment_for(opening_balance, terms.annual_rate, months_remaining)
+        # The level payment is what SHOULD be paid this period to stay on the
+        # target-payoff curve; the EXTRA is whatever exceeds the baseline payment.
+        applied = [ level_payment - baseline_projected_payment, 0.to_d ].max
+        remaining_after_baseline = [ opening_balance + projected_interest - baseline_projected_payment, 0.to_d ].max
+        applied = [ applied, remaining_after_baseline ].min
+
+        {
+          applied_extra_payment: applied,
+          risk_flags: [],
+          source_snapshot: {
+            "strategy" => "target_payoff",
+            "target_payoff_on" => target_date.iso8601,
+            "months_remaining" => months_remaining,
+            "annual_rate" => terms.annual_rate&.to_s,
+            "level_payment" => level_payment.to_s,
+            "applied_extra_payment" => applied.to_s,
+            "remaining_after_baseline" => remaining_after_baseline.to_s
+          }
+        }
+      end
+
+      # Standard amortizing level-payment closed form for a fixed periodic rate.
+      # i == 0 reduces to principal / periods. Uses a monthly periodic convention
+      # (annual_rate / 12) which is deterministic and independent of wall clock.
+      def level_payment_for(principal, annual_rate, months)
+        principal = principal.to_d
+        return 0.to_d if principal.zero? || months <= 0
+
+        periodic_rate = (annual_rate.to_d / 100) / 12
+        return (principal / months).round(4) if periodic_rate.zero?
+
+        growth = (1 + periodic_rate) ** months
+        (principal * periodic_rate * growth / (growth - 1)).round(4)
+      end
+
+      def variable_rate_terms?(terms)
+        terms.rate_type.to_s.in?(%w[variable adjustable])
+      end
+
+      def convert_extra_payment(account, config)
+        amount = config["extra_payment_amount"].to_d
+        currency = config["currency"].presence || money_converter.currency
+        money_converter.convert(
+          amount: amount,
+          currency: currency,
+          source: "debt_account:#{account.id}:amortization_extra_payment"
+        )
+      end
+
+      def parse_date(value)
+        return value if value.is_a?(Date)
+        return nil if value.blank?
+
+        Date.parse(value.to_s)
+      rescue ArgumentError, TypeError
+        nil
+      end
+
+      def months_between(from_date, to_date)
+        (to_date.year * 12 + to_date.month) - (from_date.year * 12 + from_date.month)
       end
   end
 end
