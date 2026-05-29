@@ -212,8 +212,16 @@ en:
     templates:
       heading: "Scenario templates"
       description: "Start from a preset life-event template — a country move, a job change, a market drawdown, and more — then tailor the generated scenario, events, and goals to your situation."
+      index:
+        title: "Scenario templates"
+        description: "Browse preset life-event templates and apply one to instantiate an editable scenario, with its events and goals, ready for you to tailor and project."
+        scenarios: "View scenarios"
+      apply:
+        submit: "Apply template"
+        required: "(required)"
+        error_title: "We could not apply this template"
       empty:
-        title: "Scenario templates are coming soon"
+        title: "No scenario templates available"
         body: "Browse preset life-event templates and apply one to instantiate an editable scenario with its events and goals, ready for you to tailor and project."
       errors:
         unknown_template: "%{key} is not a known scenario template"
@@ -845,6 +853,9 @@ en:
   # and the review approval views. Lives under the SAME top-level `en:` as
   # `forecasts:` above (a second `en:` key would overwrite it on parse).
   forecast:
+    templates:
+      create:
+        success: "Applied \"%{name}\" as a disabled scenario. Activate it to include it in your forecast."
     reviews:
       show:
         title: "Forecast review"

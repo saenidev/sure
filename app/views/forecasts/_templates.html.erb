@@ -1,15 +1,25 @@
-<%# locals: (workspace:) %>
+<%# locals: (workspace: nil, templates: nil, errors: nil, rejected_template_key: nil, rejected_params: nil) %>
 <%#
-  Templates tab (scaffolding stub).
+  Templates tab + standalone browse surface.
 
-  Surface for the Scenario Template Library: browse preset life-event templates
-  (country move, job change, income loss, major purchase, market drawdown,
-  liquidity stress, tax placeholder) and apply one to instantiate a normal,
-  editable ForecastScenario plus its events/goals.
+  Browse the frozen Forecast::ScenarioTemplate catalog and apply one to
+  instantiate an editable, disabled ForecastScenario plus its events/goals.
 
-  This is an EMPTY-STATE STUB only — the browse/apply UI lands in its own slice.
-  It establishes the panel, aria labelling, and i18n key tree so the feature
-  slice stays a vertical, reviewable diff.
+  Each card carries an apply form whose inputs are generated from the template's
+  ParamSpecs (date/decimal/integer/string), namespaced under template_params[...]
+  with a hidden template_key. The Applier validates params server-side and scopes
+  everything to Current.family, so a card can only ever create into the current
+  family. On invalid params the controller re-renders this surface at 422 with
+  `errors` + the rejected key/params so the offending form repopulates and the
+  messages surface above it.
+%>
+<%
+  # The standalone browse page passes `templates:`; the in-workspace tab passes
+  # only `workspace:`. Fall back to the frozen catalog either way.
+  templates ||= Forecast::ScenarioTemplate.all
+  errors = Array(errors)
+  rejected_template_key = rejected_template_key.to_s
+  rejected_params = (rejected_params || {}).to_h.stringify_keys
 %>
 <section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.templates") %>">
   <div class="space-y-1">
@@ -17,18 +27,112 @@
     <p class="text-secondary text-sm"><%= t("forecasts.templates.description") %></p>
   </div>
 
-  <div class="rounded-xl border border-primary bg-container p-8 text-center"
-       aria-labelledby="forecast-templates-empty-title">
-    <div class="mx-auto flex max-w-md flex-col items-center gap-3">
-      <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
-        <%= icon "layout-template", size: "lg", color: "default" %>
-      </span>
+  <% if errors.any? %>
+    <%= render DS::Alert.new(variant: :error) do %>
       <div class="space-y-1">
-        <h4 id="forecast-templates-empty-title" class="text-primary text-lg font-medium">
-          <%= t("forecasts.templates.empty.title") %>
-        </h4>
-        <p class="text-secondary text-sm"><%= t("forecasts.templates.empty.body") %></p>
+        <p class="font-semibold"><%= t("forecasts.templates.apply.error_title") %></p>
+        <ul class="list-disc list-inside text-sm space-y-0.5">
+          <% errors.each do |message| %>
+            <li><%= message %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+  <% end %>
+
+  <% if templates.empty? %>
+    <div class="rounded-xl border border-primary bg-container p-8 text-center"
+         data-testid="forecast-templates-empty"
+         aria-labelledby="forecast-templates-empty-title">
+      <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+        <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+          <%= icon "layout-template", size: "lg", color: "default" %>
+        </span>
+        <div class="space-y-1">
+          <h4 id="forecast-templates-empty-title" class="text-primary text-lg font-medium">
+            <%= t("forecasts.templates.empty.title") %>
+          </h4>
+          <p class="text-secondary text-sm"><%= t("forecasts.templates.empty.body") %></p>
+        </div>
       </div>
     </div>
-  </div>
+  <% else %>
+    <ul class="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="forecast-templates-list">
+      <% templates.each do |template| %>
+        <%
+          key = template.key
+          rejected_here = (key == rejected_template_key)
+          form_id = "forecast-template-#{key}"
+        %>
+        <li class="rounded-xl border border-primary bg-container p-5 space-y-4"
+            data-testid="forecast-template-card"
+            aria-labelledby="<%= form_id %>-title">
+          <div class="space-y-1">
+            <h4 id="<%= form_id %>-title" class="text-primary text-base font-medium">
+              <%= t("forecasts.templates.#{key}.name") %>
+            </h4>
+            <p class="text-secondary text-sm"><%= t("forecasts.templates.#{key}.description") %></p>
+          </div>
+
+          <%= form_with url: forecast_templates_path, method: :post, class: "space-y-3" do %>
+            <%= hidden_field_tag :template_key, key %>
+
+            <% if template.param_specs.any? %>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <% template.param_specs.each do |spec| %>
+                  <%
+                    param_key = spec.key
+                    field_id = "#{form_id}-#{param_key}"
+                    field_name = "template_params[#{param_key}]"
+                    label_text = t("forecasts.templates.params.#{param_key}.label", default: param_key.humanize)
+                    help_text = t("forecasts.templates.params.#{param_key}.help", default: nil)
+                    # Repopulate from a rejected apply for THIS template; otherwise
+                    # seed required fields with their (pure) default so the form is
+                    # never silently blank when the catalog provides one.
+                    submitted = rejected_here ? rejected_params[param_key] : nil
+                    default_value =
+                      case spec.default
+                      when Date       then spec.default.iso8601
+                      when BigDecimal then spec.default.to_s("F")
+                      when nil        then nil
+                      else spec.default.to_s
+                      end
+                    field_value = submitted.presence || default_value
+                  %>
+                  <div class="form-field">
+                    <div class="form-field__body">
+                      <%= label_tag field_id, class: "form-field__label" do %>
+                        <%= label_text %><% if spec.required %><span class="text-destructive" aria-hidden="true"> *</span><span class="sr-only"> <%= t("forecasts.templates.apply.required") %></span><% end %>
+                      <% end %>
+                      <% case spec.type %>
+                      <% when :date %>
+                        <%= date_field_tag field_name, field_value, id: field_id, required: spec.required, autocomplete: "off", class: "form-field__input" %>
+                      <% when :decimal %>
+                        <%= number_field_tag field_name, field_value, id: field_id, required: spec.required, step: "any", autocomplete: "off", class: "form-field__input" %>
+                      <% when :integer %>
+                        <%= number_field_tag field_name, field_value, id: field_id, required: spec.required, step: 1, autocomplete: "off", class: "form-field__input" %>
+                      <% else %>
+                        <%= text_field_tag field_name, field_value, id: field_id, required: spec.required, autocomplete: "off", class: "form-field__input" %>
+                      <% end %>
+                    </div>
+                    <% if help_text.present? %>
+                      <p id="<%= field_id %>-help" class="text-secondary text-xs mt-1"><%= help_text %></p>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+
+            <div class="flex justify-end pt-1">
+              <%= render DS::Button.new(
+                text: t("forecasts.templates.apply.submit"),
+                type: "submit",
+                size: :sm
+              ) %>
+            </div>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
 </section>

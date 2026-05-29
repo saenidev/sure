@@ -1,0 +1,23 @@
+<% content_for :title, t("forecasts.templates.index.title") %>
+
+<div class="space-y-6 pb-6 lg:pb-12">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <div class="space-y-1">
+      <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.templates.index.title") %></h1>
+      <p class="text-secondary text-sm"><%= t("forecasts.templates.index.description") %></p>
+    </div>
+
+    <%= render DS::Button.new(
+      text: t("forecasts.templates.index.scenarios"),
+      icon: "list",
+      href: forecast_scenarios_path,
+      variant: "outline"
+    ) %>
+  </header>
+
+  <%= render "forecasts/templates",
+        templates: @templates,
+        errors: @errors,
+        rejected_template_key: @rejected_template_key,
+        rejected_params: @rejected_params %>
+</div>

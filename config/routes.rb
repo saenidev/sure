@@ -305,6 +305,11 @@ Rails.application.routes.draw do
 
     resources :events
 
+    # Preset life-event templates a user can browse and apply. `index` lists the
+    # frozen catalog; `create` applies a chosen template into the current family
+    # (the Applier scopes everything to Current.family, never params).
+    resources :templates, only: %i[index create]
+
     resources :goals
     resources :account_liquidity_settings
     resources :budget_overrides

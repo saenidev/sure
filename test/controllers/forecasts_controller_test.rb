@@ -68,7 +68,7 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "renders the new templates and sensitivity tab buttons and empty-state stubs" do
+  test "renders the new templates and sensitivity tab buttons with their panels" do
     build_completed_run_group(family: @family, user: @user, runs: 1)
 
     get forecast_url
@@ -77,9 +77,10 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     # Both new tab nav buttons render.
     assert_select "button[data-id='templates']", text: I18n.t("forecasts.show.tabs.templates")
     assert_select "button[data-id='sensitivity']", text: I18n.t("forecasts.show.tabs.sensitivity")
-    # Their panels render the scaffolding empty-state stubs (not the generic
-    # "available in an upcoming release" placeholder).
-    assert_select "#forecast-templates-empty-title", text: I18n.t("forecasts.templates.empty.title")
+    # The templates panel now renders the real apply-card catalog (not a stub).
+    assert_select "[data-testid=forecast-templates-list]"
+    assert_select "[data-testid=forecast-template-card]", count: Forecast::ScenarioTemplate.all.size
+    # Sensitivity still renders its scaffolding empty-state stub.
     assert_select "#forecast-sensitivity-empty-title", text: I18n.t("forecasts.sensitivity.empty.title")
   end
 
