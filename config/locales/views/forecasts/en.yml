@@ -116,6 +116,9 @@ en:
       errors:
         too_many: "You can compare at most %{max} scenario stacks at once."
         unknown_scenarios: "One or more selected scenarios could not be found. Please refresh and try again."
+    distribution:
+      empty_band_note: "No common projected months across these scenario stacks yet."
+      trimmed_to_common_months_note: "Bands span only the months projected by every scenario stack."
     timeline:
       heading: "Timeline"
       description: "Follow every projected lane on one synchronized timeline. Switch between daily and monthly resolution, then drill into any period to see what drives the number."
