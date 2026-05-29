@@ -279,6 +279,61 @@ class Forecast::DistributionBandBuilderTest < ActiveSupport::TestCase
     assert_equal first, second, "same persisted rows must yield identical bands across builds"
   end
 
+  # --- chart-ready metric bands (Series + attribution) ------------------------
+
+  test "metric_bands exposes low/mid/high as renderable Series with stable edge attribution" do
+    group = new_group
+    build_run(group, stack_key: "baseline", values: [ { net_worth: 5000 }, { net_worth: 10000 } ])
+    build_run(group, stack_key: "downside", values: [ { net_worth: 9000 }, { net_worth: 8000 } ])
+    build_run(group, stack_key: "upside", values: [ { net_worth: 7000 }, { net_worth: 6000 } ])
+    group.update!(status: "completed", finished_at: Time.current)
+
+    metric_bands = builder_for(group).metric_bands(:net_worth)
+
+    assert_equal :net_worth, metric_bands.metric
+    # Each edge is a >=2-point Series the time-series-chart controller renders.
+    assert_equal 2, metric_bands.low_series.values.size
+    assert_equal 2, metric_bands.mid_series.values.size
+    assert_equal 2, metric_bands.high_series.values.size
+
+    # Edge values match the band points (low = per-month min, high = max).
+    assert_equal [ 5000, 6000 ], metric_bands.low_series.values.map { |v| v.value.amount.to_i }
+    assert_equal [ 9000, 10000 ], metric_bands.high_series.values.map { |v| v.value.amount.to_i }
+
+    # Attribution lists the distinct stacks that supplied each edge across months,
+    # baseline first. Month0 low=baseline, month1 low=upside -> both attributed.
+    assert_equal %w[baseline upside], metric_bands.low_stack_keys
+    assert_equal %w[baseline downside], metric_bands.high_stack_keys
+    assert_equal %w[baseline downside upside], metric_bands.contributing_stack_keys
+  end
+
+  test "metric_bands series are nil when there is only one common month (chart minimum)" do
+    group = new_group
+    build_run(group, stack_key: "baseline", values: [ { net_worth: 5000 } ])
+    build_run(group, stack_key: "downside", values: [ { net_worth: 9000 } ])
+    group.update!(status: "completed", finished_at: Time.current)
+
+    metric_bands = builder_for(group).metric_bands(:net_worth)
+
+    assert_nil metric_bands.low_series, "a single banded month is below the chart's 2-point minimum"
+    assert_nil metric_bands.high_series
+    # Attribution is still populated from the single point.
+    assert_equal %w[baseline], metric_bands.low_stack_keys
+    assert_equal %w[downside], metric_bands.high_stack_keys
+  end
+
+  test "chart_bands covers every banded metric in METRICS order" do
+    group = new_group
+    build_run(group, stack_key: "baseline", values: [ { net_worth: 5000, cash_balance: 100, debt_balance: 900 }, { net_worth: 5100, cash_balance: 110, debt_balance: 890 } ])
+    build_run(group, stack_key: "downside", values: [ { net_worth: 9000, cash_balance: 300, debt_balance: 700 }, { net_worth: 8000, cash_balance: 250, debt_balance: 720 } ])
+    group.update!(status: "completed", finished_at: Time.current)
+
+    chart_bands = builder_for(group).chart_bands
+
+    assert_equal Forecast::DistributionBandBuilder::METRICS, chart_bands.keys
+    chart_bands.each_value { |mb| assert mb.high_series.any? }
+  end
+
   test "median for an even number of stacks is a deterministic lower-median real value" do
     group = new_group
     # Four stacks, month 0 net worths: 5000, 6000, 7000, 8000.

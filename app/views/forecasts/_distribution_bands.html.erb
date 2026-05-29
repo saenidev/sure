@@ -1,0 +1,130 @@
+<%# locals: (workspace:) %>
+<%#
+  Deterministic distribution bands, rendered inside the Comparison tab below the
+  per-stack charts. For each banded metric (net worth, cash, debt) we show the
+  deterministic LOW / MIDDLE / HIGH outcome across the comparison group's
+  scenario stacks over the months common to every stack.
+
+  IMPORTANT (mirrors Forecast::DistributionBandBuilder's contract): these are
+  DETERMINISTIC scenario bands — the per-month min / lower-median / max ACROSS
+  the deterministic stacks — NOT statistical percentiles, confidence intervals,
+  or a Monte Carlo simulation. The disclaimer copy states this explicitly.
+
+  Reuse, not invent: each edge is rendered as a `Series` via the shared
+  `time-series-chart` Stimulus/D3 controller (the same single-line contract the
+  Overview/Comparison charts use), so no D3 controller changes are needed. The
+  builder reads persisted ForecastMonth rows only (no engine recompute, months
+  eager-loaded so no N+1 over stacks x months).
+
+  This partial renders ONLY when `workspace.distribution_band_data?` is true
+  (more than one contributing stack with common months), so the caller falls
+  back to the shared band empty state otherwise — never a blank/degenerate band.
+%>
+<% metric_bands = workspace.distribution_metric_bands %>
+<% stack_labels = workspace.comparison_stacks.index_by(&:key).transform_values(&:label) %>
+<%
+  # Humanize a raw scenario_stack_key for attribution copy, reusing the already
+  # loaded comparison-stack labels (no extra query); fall back to the raw key.
+  label_for_keys = lambda do |keys|
+    return t("forecasts.distribution.attribution.none") if keys.blank?
+
+    keys.map { |key| stack_labels[key] || key }.to_sentence
+  end
+%>
+
+<section class="space-y-4" aria-labelledby="forecast-distribution-heading"
+         data-testid="forecast-distribution-bands">
+  <div class="space-y-1">
+    <h3 id="forecast-distribution-heading" class="text-primary text-base font-medium">
+      <%= t("forecasts.distribution.heading") %>
+    </h3>
+    <p class="text-secondary text-sm"><%= t("forecasts.distribution.description") %></p>
+  </div>
+
+  <%# Deterministic-bands disclaimer: states explicitly that these are NOT
+      statistical percentiles / Monte Carlo, mirroring the builder's contract. %>
+  <div class="flex items-start gap-2 rounded-lg border border-primary bg-surface-inset p-3"
+       data-testid="forecast-distribution-disclaimer" role="note">
+    <span class="mt-0.5 shrink-0" aria-hidden="true">
+      <%= icon "info", size: "sm", color: "default" %>
+    </span>
+    <p class="text-secondary text-xs"><%= t("forecasts.distribution.disclaimer") %></p>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+    <% metric_bands.each do |metric_band| %>
+      <% metric_key = metric_band.metric.to_s %>
+      <% metric_label = t("forecasts.distribution.metrics.#{metric_key}") %>
+      <article class="rounded-xl border border-primary bg-container p-4 space-y-3"
+               aria-label="<%= t("forecasts.distribution.metric_aria", metric: metric_label) %>"
+               data-testid="forecast-distribution-metric-<%= metric_key %>">
+        <h4 class="text-primary text-sm font-medium"><%= metric_label %></h4>
+
+        <% edges = {
+             deterministic_high: metric_band.high_series,
+             deterministic_mid: metric_band.mid_series,
+             deterministic_low: metric_band.low_series
+           } %>
+
+        <%# Three stacked edge charts (high / middle / low) per the established
+            single-line pattern. Each is a thin sparkline reusing the shared
+            controller; a too-short/empty edge falls back to the shared message. %>
+        <div class="space-y-2">
+          <% edges.each do |edge_key, edge_series| %>
+            <% edge_label = t("forecasts.distribution.band_labels.#{edge_key}") %>
+            <div class="space-y-1">
+              <p class="text-secondary text-xs font-medium"><%= edge_label %></p>
+              <% if edge_series&.any? %>
+                <div id="forecastDistribution-<%= metric_key %>-<%= edge_key %>"
+                     class="w-full min-h-20 privacy-sensitive"
+                     data-controller="time-series-chart"
+                     data-time-series-chart-use-labels-value="false"
+                     data-time-series-chart-data-value="<%= edge_series.to_json %>"
+                     aria-label="<%= t("forecasts.distribution.edge_chart_aria", edge: edge_label, metric: metric_label) %>"></div>
+              <% else %>
+                <div class="flex min-h-20 w-full items-center justify-center">
+                  <p class="text-secondary text-xs">
+                    <%= t("forecasts.overview.charts.data_not_available") %>
+                  </p>
+                </div>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+
+        <%# Source attribution: which scenario stack supplied each band edge, and
+            the trimmed-to-common-months note when coverage differs. %>
+        <div class="border-t border-primary pt-3 space-y-1">
+          <p class="text-secondary text-xs font-medium">
+            <%= t("forecasts.distribution.attribution.heading") %>
+          </p>
+          <dl class="space-y-0.5 text-xs">
+            <div class="flex items-baseline justify-between gap-2"
+                 data-testid="forecast-distribution-attr-low-<%= metric_key %>">
+              <dt class="text-secondary"><%= t("forecasts.distribution.attribution.low") %></dt>
+              <dd class="text-primary text-right"><%= label_for_keys.call(metric_band.low_stack_keys) %></dd>
+            </div>
+            <div class="flex items-baseline justify-between gap-2">
+              <dt class="text-secondary"><%= t("forecasts.distribution.attribution.mid") %></dt>
+              <dd class="text-primary text-right"><%= label_for_keys.call(metric_band.mid_stack_keys) %></dd>
+            </div>
+            <div class="flex items-baseline justify-between gap-2"
+                 data-testid="forecast-distribution-attr-high-<%= metric_key %>">
+              <dt class="text-secondary"><%= t("forecasts.distribution.attribution.high") %></dt>
+              <dd class="text-primary text-right"><%= label_for_keys.call(metric_band.high_stack_keys) %></dd>
+            </div>
+            <div class="flex items-baseline justify-between gap-2">
+              <dt class="text-secondary"><%= t("forecasts.distribution.attribution.contributing") %></dt>
+              <dd class="text-primary text-right"><%= label_for_keys.call(metric_band.contributing_stack_keys) %></dd>
+            </div>
+          </dl>
+          <% if metric_band.note.present? %>
+            <p class="text-secondary text-xs italic pt-1" data-testid="forecast-distribution-note-<%= metric_key %>">
+              <%= metric_band.note %>
+            </p>
+          <% end %>
+        </div>
+      </article>
+    <% end %>
+  </div>
+</section>

@@ -364,6 +364,17 @@ module Forecast
       contributing_stack_count > 1 && (distribution_band_builder&.any? || false)
     end
 
+    # Chart-ready deterministic bands (one MetricBands per banded metric, in
+    # METRICS order) for the Comparison tab's band section. Returns [] when there
+    # is nothing meaningful to band (see `distribution_band_data?`), so the view
+    # falls back to the band empty state rather than a degenerate single-value
+    # band. Reuses the builder's single persisted-row pass (no engine recompute).
+    def distribution_metric_bands
+      return [] unless distribution_band_data?
+
+      distribution_band_builder.chart_bands.values
+    end
+
     # Read-only explorer that ranks the latest group's scenario stacks by how many
     # goals they keep on-track and surfaces the tradeoffs each makes vs baseline.
     # Reuses the runs' `forecast_goal_evaluations` eager-loaded by `latest_group`

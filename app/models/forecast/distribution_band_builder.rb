@@ -53,6 +53,30 @@ module Forecast
     # The full set of bands for one metric across the common horizon.
     Band = Data.define(:metric, :currency, :points, :note)
 
+    # Chart-ready projection of a Band: the three deterministic edges (low / mid /
+    # high) each as a `Series` the existing `time-series-chart` Stimulus/D3
+    # controller renders unchanged (same date+Money+trend contract as every other
+    # forecast chart), plus the explainability metadata the view surfaces:
+    #   * `*_stack_keys` -> the DISTINCT stack keys that supplied that edge across
+    #     the horizon (e.g. ["downside"] or ["baseline", "upside"]), so the view
+    #     can attribute which scenario formed each band edge.
+    #   * `contributing_stack_keys` -> every stack that contributed any point.
+    #   * `note` -> the builder's trimmed-to-common-months / empty note (or nil).
+    # Series are nil when there are fewer than two banded months (the chart's
+    # minimum), so the view renders the shared empty state instead of an empty SVG.
+    MetricBands = Data.define(
+      :metric,
+      :currency,
+      :low_series,
+      :mid_series,
+      :high_series,
+      :low_stack_keys,
+      :mid_stack_keys,
+      :high_stack_keys,
+      :contributing_stack_keys,
+      :note
+    )
+
     # `runs` is the ForecastRun collection of one group, ideally with
     # `forecast_months` eager-loaded.
     def initialize(runs:)
@@ -73,6 +97,23 @@ module Forecast
     # chart lane) share a single pass over the persisted rows.
     def bands
       @bands ||= METRICS.index_with { |metric| build_band(metric) }
+    end
+
+    # Chart-ready bands for one metric: the deterministic low/mid/high edges as
+    # `Series` plus attribution metadata (see MetricBands). Reuses the same
+    # persisted-row pass as `band`; no engine recompute. Returns a MetricBands
+    # whose series are nil when there are fewer than two common months.
+    def metric_bands(metric)
+      metric = metric.to_sym
+      raise ArgumentError, "unknown band metric: #{metric}" unless METRICS.include?(metric)
+
+      build_metric_bands(band(metric))
+    end
+
+    # All chart-ready metric bands, keyed by metric symbol, in METRICS order.
+    # Memoized so the view can iterate the lanes with a single pass.
+    def chart_bands
+      @chart_bands ||= METRICS.index_with { |metric| metric_bands(metric) }
     end
 
     # True when at least one contributing stack with common months exists.
@@ -155,6 +196,68 @@ module Forecast
           high_stack_key: high[0],
           contributing_stack_keys: samples.map(&:first)
         )
+      end
+
+      # Turn one Band into chart-ready MetricBands: each deterministic edge
+      # becomes a Series the existing time-series-chart controller renders
+      # unchanged. The series favorable direction matches the metric (debt is
+      # favorable-down so a rising debt band trends "bad"), mirroring how the
+      # other forecast charts color their trends.
+      def build_metric_bands(band)
+        points = band.points
+        favorable = band.metric == :debt_balance ? "down" : "up"
+
+        MetricBands.new(
+          metric: band.metric,
+          currency: band.currency,
+          low_series: edge_series(points, :deterministic_low, favorable),
+          mid_series: edge_series(points, :deterministic_mid, favorable),
+          high_series: edge_series(points, :deterministic_high, favorable),
+          low_stack_keys: edge_stack_keys(points, :low_stack_key),
+          mid_stack_keys: edge_stack_keys(points, :mid_stack_key),
+          high_stack_keys: edge_stack_keys(points, :high_stack_key),
+          contributing_stack_keys: points.flat_map(&:contributing_stack_keys).uniq.sort,
+          note: band.note
+        )
+      end
+
+      # A Series for one band edge (the value_method maps a BandPoint to its
+      # decimal value). Returns nil when there are fewer than two points so the
+      # chart shows its shared empty state rather than an empty SVG.
+      def edge_series(points, value_method, favorable_direction)
+        return nil if points.size < 2
+
+        values = [ nil, *points ].each_cons(2).map do |previous_point, point|
+          current_value = Money.new(point.public_send(value_method), point.currency)
+          previous_value = previous_point ? Money.new(previous_point.public_send(value_method), previous_point.currency) : nil
+
+          Series::Value.new(
+            date: point.period_start_on,
+            date_formatted: I18n.l(point.period_start_on, format: :long),
+            value: current_value,
+            trend: Trend.new(
+              current: current_value,
+              previous: previous_value,
+              favorable_direction: favorable_direction
+            )
+          )
+        end
+
+        Series.new(
+          start_date: points.first.period_start_on,
+          end_date: points.last.period_start_on,
+          interval: "1 month",
+          values: values,
+          favorable_direction: favorable_direction
+        )
+      end
+
+      # Distinct stack keys that supplied a given edge across the horizon, ordered
+      # stably (baseline first, then alphabetically) so the attribution label never
+      # reshuffles between renders.
+      def edge_stack_keys(points, key_method)
+        points.map(&key_method).uniq
+          .sort_by { |key| [ key == BASELINE_STACK_KEY ? 0 : 1, key.to_s ] }
       end
 
       def band_note(points)

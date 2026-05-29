@@ -123,6 +123,7 @@ en:
       trimmed_to_common_months_note: "Bands span only the months projected by every scenario stack."
       heading: "Scenario bands"
       description: "See the deterministic low, middle, and high outcome across your scenario stacks for each projected month. These are scenario bands, not statistical percentiles."
+      disclaimer: "These are deterministic scenario bands — the low, middle, and high outcome across your scenario stacks each month. They are not statistical percentiles, confidence intervals, or a Monte Carlo simulation."
       band_labels:
         deterministic_low: "Low"
         deterministic_mid: "Middle"
@@ -131,6 +132,15 @@ en:
         net_worth: "Net worth"
         cash_balance: "Cash balance"
         debt_balance: "Debt balance"
+      metric_aria: "Deterministic %{metric} scenario band: low, middle, and high outcome across scenario stacks"
+      edge_chart_aria: "%{edge} %{metric} outcome across the horizon"
+      attribution:
+        heading: "Which scenario stack formed each band edge"
+        low: "Low edge from"
+        mid: "Middle edge from"
+        high: "High edge from"
+        contributing: "Stacks compared"
+        none: "—"
       empty:
         title: "No scenario bands yet"
         body: "Compare more than one scenario stack in a single forecast run to see the deterministic low, middle, and high outcome bands across the horizon."

@@ -346,6 +346,92 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=forecast-comparison-table] tbody tr", count: 2
   end
 
+  # --- comparison tab: deterministic distribution bands ----------------------
+
+  test "comparison tab renders deterministic distribution bands with disclaimer and attribution for a multi-stack group" do
+    build_band_comparison_group(family: @family, user: @user, stacks: %w[baseline downside])
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    # The band section, its deterministic-NOT-percentile disclaimer, and a per-metric card render.
+    assert_select "[data-testid=forecast-distribution-bands]"
+    assert_select "[data-testid=forecast-distribution-disclaimer]",
+      text: /#{Regexp.escape(I18n.t("forecasts.distribution.disclaimer"))}/
+    assert_select "[data-testid=forecast-distribution-metric-net_worth]"
+    # Edge charts reuse the shared time-series-chart controller (no new D3 controller).
+    assert_select "#forecastDistribution-net_worth-deterministic_high[data-controller='time-series-chart']"
+    assert_select "#forecastDistribution-net_worth-deterministic_low[data-controller='time-series-chart']"
+    # Source attribution names which stack supplied the low/high edge.
+    assert_select "[data-testid=forecast-distribution-attr-low-net_worth]"
+    assert_select "[data-testid=forecast-distribution-attr-high-net_worth]"
+  end
+
+  test "comparison tab shows the band empty state and no band section for a single-baseline-only group" do
+    build_band_comparison_group(family: @family, user: @user, stacks: %w[baseline])
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    # A single contributing stack collapses to a degenerate band, so the band
+    # section is absent and the empty state explains how to surface bands.
+    assert_select "[data-testid=forecast-distribution-bands]", count: 0
+    assert_select "[data-testid=forecast-distribution-empty]"
+    assert_select "#forecast-distribution-empty-title", text: I18n.t("forecasts.distribution.empty.title")
+  end
+
+  test "comparison tab excludes a failed stack from the band edges' attribution" do
+    # Two completed stacks (baseline, downside) plus a failed stack. The failed
+    # stack's humanized label must never appear as a band-edge attribution, and
+    # the band section must still render for the two completed stacks.
+    build_band_comparison_group(
+      family: @family, user: @user, stacks: %w[baseline downside], failed_stacks: %w[liquidity_crunch]
+    )
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    assert_select "[data-testid=forecast-distribution-bands]"
+    # The failed stack key's humanized label never appears inside any attribution cell.
+    assert_select "[data-testid=forecast-distribution-attr-low-net_worth]",
+      text: /Liquidity Crunch/, count: 0
+    assert_select "[data-testid=forecast-distribution-attr-high-net_worth]",
+      text: /Liquidity Crunch/, count: 0
+  end
+
+  test "comparison tab never surfaces another family's distribution bands (cross-family denial)" do
+    # Family B has a multi-stack banded group with a distinctive net-worth value;
+    # the current family (A) has only a single-baseline group, so the Comparison
+    # tab must show A's band empty state and never B's banded numbers.
+    other_family = families(:empty)
+    other_family.forecast_run_groups.delete_all
+    build_band_comparison_group(
+      family: other_family, user: users(:empty), stacks: %w[baseline downside],
+      net_worth_base: 987_654
+    )
+    build_band_comparison_group(family: @family, user: @user, stacks: %w[baseline])
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    # Current family's single-stack group -> band empty state, no band section.
+    assert_select "[data-testid=forecast-distribution-bands]", count: 0
+    assert_select "[data-testid=forecast-distribution-empty]"
+    # Family B's distinctive banded figure must never leak into the response.
+    assert_no_match(/987,?654/, @response.body)
+  end
+
+  test "comparison tab band edge charts add no per-month N+1 queries" do
+    build_band_comparison_group(family: @family, user: @user, stacks: %w[baseline downside upside])
+
+    get forecast_url(tab: "comparison")
+    assert_response :success
+
+    assert_queries_count(matcher: /forecast_months/, max: 1) do
+      get forecast_url(tab: "comparison")
+    end
+  end
+
   # --- timeline tab ----------------------------------------------------------
 
   test "timeline tab renders the synchronized lanes for a completed run" do
@@ -439,6 +525,66 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+    # Builds a (completed, or partially-failed) comparison ForecastRunGroup with
+    # one ForecastRun per stack key, each carrying 3 ascending months so the
+    # DistributionBandBuilder has real, deterministic per-month values to band.
+    # `net_worth_base` lets a cross-family test stamp a distinctive figure to
+    # assert it never leaks. Failed stacks are persisted without months.
+    def build_band_comparison_group(family:, user:, stacks:, failed_stacks: [], net_worth_base: 5000)
+      currency = family.currency
+      group = family.forecast_run_groups.create!(
+        user: user, name: "Comparison run", run_type: "manual", currency: currency,
+        horizon_start_on: Date.current, horizon_end_on: Date.current + 36.months,
+        daily_until_on: Date.current + 89.days
+      )
+
+      stacks.each_with_index do |stack_key, idx|
+        run = group.forecast_runs.create!(
+          family: family, user: user, scenario_stack_key: stack_key,
+          scenario_stack_snapshot: {
+            "key" => stack_key,
+            "scenarios" => [ { "name" => stack_key.titleize } ]
+          },
+          status: "running", feasibility_status: "pass", currency: currency,
+          input_snapshot: forecast_valid_input_snapshot(family)
+        )
+
+        3.times do |i|
+          period_start = Date.current + i.months
+          run.forecast_months.create!(
+            period_start_on: period_start, period_end_on: period_start.end_of_month,
+            precision: "monthly", scenario_stack_key: stack_key, currency: currency,
+            cash_balance: 1000 + (i * 100) + (idx * 50),
+            liquid_balance: 2000, debt_balance: 500 - (i * 50),
+            net_worth: net_worth_base + (i * 100) + (idx * 50), risk_flags: []
+          )
+        end
+
+        run.update!(status: "completed", finished_at: Time.current)
+      end
+
+      failed_stacks.each do |stack_key|
+        group.forecast_runs.create!(
+          family: family, user: user, scenario_stack_key: stack_key,
+          scenario_stack_snapshot: {
+            "key" => stack_key,
+            "scenarios" => [ { "name" => stack_key.titleize } ]
+          },
+          status: "failed", feasibility_status: "unknown", currency: currency,
+          error_message: "MoneyConverter::MissingRate: no rate",
+          input_snapshot: forecast_valid_input_snapshot(family)
+        )
+      end
+
+      if failed_stacks.any?
+        group.update!(finished_at: Time.current)
+        group.update_column(:status, "failed")
+      else
+        group.update!(status: "completed", finished_at: Time.current)
+      end
+      group
+    end
+
     # Builds a completed baseline run carrying days, months, and per-month
     # category + debt projections (plus a holdings snapshot) so the timeline tab
     # can render every lane and a real drilldown. Mirrors the Runner's persist

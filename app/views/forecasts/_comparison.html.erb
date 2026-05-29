@@ -156,6 +156,30 @@
         <% end %>
       </div>
     </section>
+
+    <%# Deterministic distribution bands (low/mid/high per metric across the
+        stacks over their common months). Rendered only when there is more than
+        one contributing stack to band; otherwise the shared band empty state
+        explains how to surface bands. Reads persisted rows only. %>
+    <% if workspace.distribution_band_data? %>
+      <%= render "forecasts/distribution_bands", workspace: workspace %>
+    <% else %>
+      <div class="rounded-xl border border-primary bg-container p-8 text-center"
+           data-testid="forecast-distribution-empty"
+           aria-labelledby="forecast-distribution-empty-title">
+        <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+          <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+            <%= icon "chart-line", size: "lg", color: "default" %>
+          </span>
+          <div class="space-y-1">
+            <h3 id="forecast-distribution-empty-title" class="text-primary text-lg font-medium">
+              <%= t("forecasts.distribution.empty.title") %>
+            </h3>
+            <p class="text-secondary text-sm"><%= t("forecasts.distribution.empty.body") %></p>
+          </div>
+        </div>
+      </div>
+    <% end %>
   <% else %>
     <%# No run group yet: nothing to compare. %>
     <div class="rounded-xl border border-primary bg-container p-8 text-center"

@@ -194,6 +194,58 @@ class Forecast::WorkspaceTest < ActiveSupport::TestCase
     assert workspace.goal_tradeoff_data?
   end
 
+  test "distribution_metric_bands is empty for a single-baseline-only group" do
+    @family.forecast_run_groups.delete_all
+    build_band_group(stacks: [ "baseline" ])
+
+    workspace = Forecast::Workspace.new(family: @family)
+
+    assert_empty workspace.distribution_metric_bands
+  end
+
+  test "distribution_metric_bands is empty when no run group exists" do
+    @family.forecast_run_groups.delete_all
+
+    workspace = Forecast::Workspace.new(family: @family)
+
+    assert_empty workspace.distribution_metric_bands
+  end
+
+  test "distribution_metric_bands yields chart-ready low/mid/high series per metric for a multi-stack group" do
+    @family.forecast_run_groups.delete_all
+    build_band_group(stacks: %w[baseline downside])
+
+    workspace = Forecast::Workspace.new(family: @family)
+    bands = workspace.distribution_metric_bands
+
+    # One MetricBands per banded metric (net_worth, cash_balance, debt_balance).
+    assert_equal Forecast::DistributionBandBuilder::METRICS, bands.map(&:metric)
+
+    net_worth = bands.find { |b| b.metric == :net_worth }
+    # Three months in the helper -> each edge is a renderable >=2-point series.
+    assert net_worth.low_series.any?
+    assert net_worth.mid_series.any?
+    assert net_worth.high_series.any?
+    # Attribution lists the contributing stacks (baseline first), never a failed one.
+    assert_equal %w[baseline downside], net_worth.contributing_stack_keys
+  end
+
+  test "distribution_metric_bands excludes a failed stack from band edges and attribution" do
+    @family.forecast_run_groups.delete_all
+    # Two completed stacks plus a failed one: the failed stack must never appear
+    # as a band edge source nor as a contributing stack.
+    build_band_group(stacks: %w[baseline downside], failed_stacks: [ "broken" ])
+
+    workspace = Forecast::Workspace.new(family: @family)
+    net_worth = workspace.distribution_metric_bands.find { |b| b.metric == :net_worth }
+
+    assert_not_nil net_worth
+    edge_keys = (net_worth.low_stack_keys + net_worth.mid_stack_keys +
+                 net_worth.high_stack_keys + net_worth.contributing_stack_keys).uniq
+    assert_not_includes edge_keys, "broken", "a failed stack must never form a band edge"
+    assert_equal %w[baseline downside], net_worth.contributing_stack_keys
+  end
+
   test "goal_tradeoff_explorer reads goal evaluations without extra queries (eager-loaded)" do
     @family.forecast_run_groups.delete_all
     build_band_group(stacks: %w[baseline downside])
