@@ -215,6 +215,99 @@ en:
       empty:
         title: "Scenario templates are coming soon"
         body: "Browse preset life-event templates and apply one to instantiate an editable scenario with its events and goals, ready for you to tailor and project."
+      errors:
+        unknown_template: "%{key} is not a known scenario template"
+        blank: "%{param} is required"
+        invalid: "%{param} is invalid"
+        invalid_type: "%{param} is not the right type"
+      params:
+        move_on:
+          label: "Move date"
+          help: "When the relocation takes effect."
+        moving_cost:
+          label: "One-time moving cost"
+          help: "The upfront cost of relocating."
+        monthly_cost_delta:
+          label: "Monthly cost-of-living change"
+          help: "How much your recurring monthly costs change after the move."
+        starts_on:
+          label: "Start date"
+          help: "When this scenario begins to take effect."
+        ends_on:
+          label: "End date"
+          help: "Optional date when this scenario stops applying."
+        new_monthly_salary:
+          label: "New monthly salary"
+          help: "Your gross monthly income at the new job."
+        old_monthly_salary:
+          label: "Previous monthly salary"
+          help: "Your prior monthly income, ended when the new job starts."
+        lost_monthly_income:
+          label: "Lost monthly income"
+          help: "The monthly income that stops during the loss."
+        runway_floor_days:
+          label: "Cash runway floor (days)"
+          help: "Warn if projected cash runway drops below this many days."
+        purchase_on:
+          label: "Purchase date"
+          help: "When the purchase happens."
+        purchase_amount:
+          label: "Purchase amount"
+          help: "The one-time cost of the purchase."
+        drawdown_pct:
+          label: "Drawdown percentage"
+          help: "How far your portfolio falls, as a percentage (0-100)."
+        portfolio_value:
+          label: "Portfolio value"
+          help: "The portfolio value the drawdown applies to."
+        monthly_shortfall:
+          label: "Monthly liquidity shortfall"
+          help: "The monthly cash gap during the stress period."
+        liquid_runway_floor_days:
+          label: "Liquid runway floor (days)"
+          help: "Warn if projected liquid runway drops below this many days."
+        effective_on:
+          label: "Effective date"
+          help: "When this tax change takes effect."
+      country_move:
+        name: "Country move"
+        description: "Model relocating to another country: upfront moving costs and a change in your monthly cost of living."
+        events:
+          relocation_cost: "Relocation cost"
+          cost_of_living: "Cost-of-living change"
+      job_change:
+        name: "Job change"
+        description: "Model starting a new job: your new recurring salary, optionally ending the previous one."
+        events:
+          new_salary: "New salary"
+          ended_salary: "Previous salary ends"
+      income_loss:
+        name: "Income loss"
+        description: "Model losing recurring income for a period and the runway floor you want to protect."
+        events:
+          lost_income: "Lost income"
+        goals:
+          runway_floor: "Cash runway floor"
+      major_purchase:
+        name: "Major purchase"
+        description: "Model a single large purchase on a chosen date."
+        events:
+          purchase: "Major purchase"
+      market_drawdown:
+        name: "Market drawdown"
+        description: "Model a market drawdown that reduces your portfolio value by a percentage."
+        events:
+          shock: "Market drawdown"
+      liquidity_stress:
+        name: "Liquidity stress"
+        description: "Model a sustained monthly cash shortfall and the liquid runway floor you want to protect."
+        events:
+          shortfall: "Liquidity shortfall"
+        goals:
+          liquid_runway: "Liquid runway floor"
+      tax_placeholder:
+        name: "Tax change"
+        description: "A starting point for a tax life event. Applies an editable scenario you can flesh out — no tax math is modeled yet."
     timeline:
       heading: "Timeline"
       description: "Follow every projected lane on one synchronized timeline. Switch between daily and monthly resolution, then drill into any period to see what drives the number."
