@@ -1,0 +1,6 @@
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t("forecasts.goals.edit.title")) %>
+  <% dialog.with_body do %>
+    <%= render "form", goal: @goal %>
+  <% end %>
+<% end %>

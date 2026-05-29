@@ -304,6 +304,9 @@ Rails.application.routes.draw do
     end
 
     resources :events
+
+    resources :goals
+    resources :account_liquidity_settings
   end
 
   resources :reports, only: %i[index] do

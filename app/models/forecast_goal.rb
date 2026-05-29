@@ -1,11 +1,17 @@
 class ForecastGoal < ApplicationRecord
   include Monetizable
 
-  GOAL_TYPES = %w[
-    minimum_cash_runway minimum_liquid_runway minimum_cash_balance
-    maximum_debt_balance debt_payoff portfolio_balance
-    monthly_savings life_event_readiness
+  # Runway goals are graded against a duration (target_duration_days); amount
+  # goals against a money target (target_amount + currency). These groupings are
+  # the single source of truth shared by the form's conditional fields and the
+  # `target_fields_match_goal_type` validation, so the UI and the model cannot
+  # drift.
+  RUNWAY_GOAL_TYPES = %w[minimum_cash_runway minimum_liquid_runway].freeze
+  AMOUNT_GOAL_TYPES = %w[
+    minimum_cash_balance maximum_debt_balance debt_payoff
+    portfolio_balance monthly_savings life_event_readiness
   ].freeze
+  GOAL_TYPES = (RUNWAY_GOAL_TYPES + AMOUNT_GOAL_TYPES).freeze
   BLOCKING_BEHAVIORS = %w[warn blocks_scenario blocks_stack].freeze
   STATUSES = %w[active disabled archived].freeze
 
@@ -39,11 +45,11 @@ class ForecastGoal < ApplicationRecord
     end
 
     def target_fields_match_goal_type
-      if goal_type.in?(%w[minimum_cash_runway minimum_liquid_runway]) && target_duration_days.blank?
+      if goal_type.in?(RUNWAY_GOAL_TYPES) && target_duration_days.blank?
         errors.add(:target_duration_days, "must be present for runway goals")
       end
 
-      if goal_type.in?(%w[minimum_cash_balance maximum_debt_balance debt_payoff portfolio_balance monthly_savings life_event_readiness]) && target_amount.blank?
+      if goal_type.in?(AMOUNT_GOAL_TYPES) && target_amount.blank?
         errors.add(:target_amount, "must be present for amount goals")
       end
     end

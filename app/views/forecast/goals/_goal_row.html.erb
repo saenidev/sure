@@ -1,0 +1,74 @@
+<%# locals: (goal:, evaluation_status: nil) %>
+
+<%
+  # Evaluation status -> DS::Pill tone. "unknown" (no completed run / no matching
+  # evaluation) reads gray; the engine's pass/warn/fail/blocking map to the same
+  # ramps the Overview feasibility pill uses.
+  status_key = evaluation_status.presence || "unknown"
+  evaluation_tones = {
+    "pass" => :indigo,
+    "warn" => :amber,
+    "fail" => :fuchsia,
+    "blocking" => :fuchsia,
+    "unknown" => :gray
+  }
+  evaluation_tone = evaluation_tones.fetch(status_key, :gray)
+%>
+
+<div id="<%= dom_id(goal) %>"
+     class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary bg-container p-4">
+  <div class="min-w-0 space-y-1">
+    <div class="flex flex-wrap items-center gap-2">
+      <h4 class="text-primary text-sm font-medium truncate"><%= goal.name %></h4>
+      <%= render DS::Pill.new(
+        label: t("forecasts.goals.evaluation_statuses.#{status_key}"),
+        tone: evaluation_tone,
+        show_dot: true
+      ) %>
+      <% if goal.status != "active" %>
+        <%= render DS::Pill.new(
+          label: t("forecasts.goals.statuses.#{goal.status}"),
+          tone: :gray,
+          show_dot: false
+        ) %>
+      <% end %>
+    </div>
+
+    <p class="text-secondary text-xs">
+      <%= t("forecasts.goals.goal_types.#{goal.goal_type}") %>
+      <% if goal.goal_type.in?(ForecastGoal::RUNWAY_GOAL_TYPES) && goal.target_duration_days.present? %>
+        · <%= t("forecasts.goals.row.target_days", count: goal.target_duration_days) %>
+      <% elsif goal.target_amount.present? %>
+        · <%= Money.new(goal.target_amount, goal.currency || Current.family.currency).format %>
+      <% end %>
+    </p>
+
+    <p class="text-secondary text-xs">
+      <% if goal.forecast_scenario %>
+        <%= t("forecasts.goals.row.scenario", name: goal.forecast_scenario.name) %>
+      <% else %>
+        <%= t("forecasts.goals.row.baseline") %>
+      <% end %>
+    </p>
+  </div>
+
+  <div class="flex items-center gap-3 shrink-0">
+    <%= render DS::Menu.new do |menu| %>
+      <% menu.with_item(
+        variant: "link",
+        text: t("forecasts.goals.row.edit"),
+        href: edit_forecast_goal_path(goal),
+        icon: "pencil",
+        frame: "modal"
+      ) %>
+      <% menu.with_item(
+        variant: "button",
+        text: t("forecasts.goals.row.delete"),
+        method: :delete,
+        href: forecast_goal_path(goal),
+        icon: "trash-2",
+        confirm: CustomConfirm.for_resource_deletion(goal.name)
+      ) %>
+    <% end %>
+  </div>
+</div>

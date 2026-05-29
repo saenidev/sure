@@ -1,0 +1,6 @@
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t("forecasts.liquidity_settings.edit.title")) %>
+  <% dialog.with_body do %>
+    <%= render "form", setting: @setting %>
+  <% end %>
+<% end %>

@@ -1,0 +1,60 @@
+<%# locals: (workspace:) %>
+
+<section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.goals") %>">
+  <div class="space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-secondary text-sm"><%= t("forecasts.goals.index.description") %></p>
+
+      <%= render DS::Button.new(
+        text: t("forecasts.goals.index.new"),
+        icon: "plus",
+        href: new_forecast_goal_path,
+        frame: "modal",
+        size: :sm
+      ) %>
+    </div>
+
+    <% goal_rows = workspace.goals_with_evaluations %>
+    <% if goal_rows.empty? %>
+      <div class="rounded-xl border border-primary bg-container p-8 text-center space-y-3"
+           data-testid="goals-empty-state">
+        <div class="mx-auto w-fit text-secondary">
+          <%= icon "target", size: "xl" %>
+        </div>
+        <h3 class="text-primary text-base font-medium"><%= t("forecasts.goals.empty.title") %></h3>
+        <p class="text-secondary text-sm max-w-md mx-auto"><%= t("forecasts.goals.empty.body") %></p>
+        <div class="pt-1">
+          <%= render DS::Button.new(
+            text: t("forecasts.goals.index.new"),
+            icon: "plus",
+            href: new_forecast_goal_path,
+            frame: "modal"
+          ) %>
+        </div>
+      </div>
+    <% else %>
+      <div class="space-y-3">
+        <% goal_rows.each do |goal, evaluation_status| %>
+          <%= render "forecast/goals/goal_row", goal: goal, evaluation_status: evaluation_status %>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+
+  <%# Liquidity settings sub-panel: native disclosure so it is keyboard-operable
+      and needs no JS. Lists each account's effective classification + override. %>
+  <details class="rounded-xl border border-primary bg-container"
+           data-testid="liquidity-sub-panel">
+    <summary class="flex cursor-pointer items-center justify-between gap-3 p-4">
+      <div class="space-y-1">
+        <h3 class="text-primary text-sm font-medium"><%= t("forecasts.liquidity_settings.panel.title") %></h3>
+        <p class="text-secondary text-xs"><%= t("forecasts.liquidity_settings.panel.subtitle") %></p>
+      </div>
+      <%= icon "chevron-down", size: "sm" %>
+    </summary>
+
+    <div class="border-t border-primary p-4">
+      <%= render "forecast/account_liquidity_settings/list", rows: workspace.liquidity_rows %>
+    </div>
+  </details>
+</section>

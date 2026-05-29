@@ -1,0 +1,86 @@
+<%# locals: (goal:) %>
+
+<%
+  scenarios = Current.family.forecast_scenarios.ordered.to_a
+  runway_types = ForecastGoal::RUNWAY_GOAL_TYPES.join(" ")
+  amount_types = ForecastGoal::AMOUNT_GOAL_TYPES.join(" ")
+%>
+
+<%= styled_form_with model: goal,
+                     url: goal.persisted? ? forecast_goal_path(goal) : forecast_goals_path,
+                     class: "space-y-4",
+                     data: { controller: "forecast-goal-form" } do |f| %>
+  <% if goal.errors.any? %>
+    <%= render "shared/form_errors", model: goal %>
+  <% end %>
+
+  <div class="space-y-2">
+    <%= f.text_field :name,
+                     label: t("forecasts.goals.form.name_label"),
+                     placeholder: t("forecasts.goals.form.name_placeholder"),
+                     required: true,
+                     autofocus: true %>
+
+    <%= f.select :goal_type,
+                 ForecastGoal::GOAL_TYPES.map { |type| [ t("forecasts.goals.goal_types.#{type}"), type ] },
+                 { label: t("forecasts.goals.form.goal_type_label") },
+                 {
+                   data: {
+                     forecast_goal_form_target: "goalType",
+                     action: "change->forecast-goal-form#refresh"
+                   }
+                 } %>
+  </div>
+
+  <%# Target duration: runway goals only. %>
+  <div data-forecast-goal-form-target="field"
+       data-forecast-goal-form-types="<%= runway_types %>">
+    <%= f.number_field :target_duration_days,
+                       label: t("forecasts.goals.form.target_duration_days_label"),
+                       min: 1,
+                       step: 1 %>
+    <p class="text-secondary text-xs mt-1"><%= t("forecasts.goals.form.target_duration_days_hint") %></p>
+  </div>
+
+  <%# Target amount + currency: amount goals only. %>
+  <div data-forecast-goal-form-target="field"
+       data-forecast-goal-form-types="<%= amount_types %>">
+    <%= f.money_field :target_amount,
+                      label: t("forecasts.goals.form.target_amount_label"),
+                      default_currency: goal.currency.presence || Current.family.currency %>
+  </div>
+
+  <%# Scope: optional scenario. Pre-filtered to the family's scenarios. %>
+  <%= f.collection_select :forecast_scenario_id, scenarios, :id, :name,
+                          {
+                            label: t("forecasts.goals.form.scenario_label"),
+                            include_blank: t("forecasts.goals.form.scenario_baseline"),
+                            searchable: true
+                          } %>
+
+  <%# Evaluation window. %>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <%= f.date_field :starts_on, label: t("forecasts.goals.form.starts_on_label") %>
+    <%= f.date_field :ends_on, label: t("forecasts.goals.form.ends_on_label") %>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <%= f.select :blocking_behavior,
+                 ForecastGoal::BLOCKING_BEHAVIORS.map { |behavior| [ t("forecasts.goals.blocking_behaviors.#{behavior}"), behavior ] },
+                 { label: t("forecasts.goals.form.blocking_behavior_label") } %>
+
+    <%= f.select :status,
+                 ForecastGoal::STATUSES.map { |status| [ t("forecasts.goals.statuses.#{status}"), status ] },
+                 { label: t("forecasts.goals.form.status_label") } %>
+  </div>
+
+  <label class="flex items-center gap-2 text-sm text-primary">
+    <%= f.check_box :required, class: "form-field__checkbox" %>
+    <%= t("forecasts.goals.form.required_label") %>
+  </label>
+  <p class="text-secondary text-xs"><%= t("forecasts.goals.form.required_hint") %></p>
+
+  <div class="flex items-center justify-end gap-2 pt-2">
+    <%= f.submit goal.persisted? ? t("forecasts.goals.form.update") : t("forecasts.goals.form.create") %>
+  </div>
+<% end %>

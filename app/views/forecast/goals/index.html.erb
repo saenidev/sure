@@ -1,0 +1,35 @@
+<% content_for :title, t("forecasts.goals.index.title") %>
+
+<div class="space-y-6 pb-6 lg:pb-12">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <div class="space-y-1">
+      <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.goals.index.title") %></h1>
+      <p class="text-secondary text-sm"><%= t("forecasts.goals.index.description") %></p>
+    </div>
+
+    <%= render DS::Button.new(
+      text: t("forecasts.goals.index.new"),
+      icon: "plus",
+      href: new_forecast_goal_path,
+      frame: "modal"
+    ) %>
+  </header>
+
+  <% goal_rows = @workspace.goals_with_evaluations %>
+  <% if goal_rows.empty? %>
+    <div class="rounded-xl border border-primary bg-container p-8 text-center space-y-3"
+         data-testid="goals-empty-state">
+      <div class="mx-auto w-fit text-secondary">
+        <%= icon "target", size: "xl" %>
+      </div>
+      <h3 class="text-primary text-base font-medium"><%= t("forecasts.goals.empty.title") %></h3>
+      <p class="text-secondary text-sm max-w-md mx-auto"><%= t("forecasts.goals.empty.body") %></p>
+    </div>
+  <% else %>
+    <div class="space-y-3">
+      <% goal_rows.each do |goal, evaluation_status| %>
+        <%= render "forecast/goals/goal_row", goal: goal, evaluation_status: evaluation_status %>
+      <% end %>
+    </div>
+  <% end %>
+</div>

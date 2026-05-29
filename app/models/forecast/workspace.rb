@@ -193,6 +193,50 @@ module Forecast
       @goals_count ||= family.forecast_goals.count
     end
 
+    # Goals for the Goals tab, each paired with the status of its most recent
+    # evaluation from the latest completed run group. Eager-loads the optional
+    # scenario so the row badge/scope label adds no N+1. The evaluation lookup is
+    # a single query over the group's runs (joined by the engine's `goal_key`,
+    # which is "forecast_goal:<id>"); goals without a matching eval (no run yet,
+    # or evaluated outside the horizon) surface as "unknown". Memoized.
+    def goals_with_evaluations
+      return @goals_with_evaluations if defined?(@goals_with_evaluations)
+
+      goals = family.forecast_goals
+        .includes(:forecast_scenario)
+        .order(Arel.sql("CASE status WHEN 'active' THEN 0 WHEN 'disabled' THEN 1 ELSE 2 END"), created_at: :asc)
+        .to_a
+
+      statuses = latest_evaluation_statuses
+
+      @goals_with_evaluations = goals.map do |goal|
+        [ goal, statuses["forecast_goal:#{goal.id}"] ]
+      end
+    end
+
+    # Per-account liquidity rows for the settings sub-panel: each visible family
+    # account paired with its baseline override setting (if any) and its
+    # default/effective classification. Eager-loads accountable so the classifier
+    # does not N+1 over account types, and loads all baseline settings in one
+    # query keyed by account.
+    def liquidity_rows
+      return @liquidity_rows if defined?(@liquidity_rows)
+
+      accounts = family.accounts.visible.includes(:accountable).alphabetically.to_a
+      settings_by_account = family.forecast_account_liquidity_settings
+        .where(forecast_scenario_id: nil)
+        .index_by(&:account_id)
+      classifier = Forecast::LiquidityClassifier.new(family: family, scenario_ids: [])
+
+      @liquidity_rows = accounts.map do |account|
+        {
+          account: account,
+          setting: settings_by_account[account.id],
+          effective_class: classifier.call(account)
+        }
+      end
+    end
+
     def planning_data?
       scenarios_count.positive? || events_count.positive? || goals_count.positive?
     end
@@ -221,6 +265,23 @@ module Forecast
     end
 
     private
+      # Map of goal_key -> status string from the latest completed run group.
+      # Prefers the baseline run's evaluation (the headline projection) and falls
+      # back to any run's evaluation for that key. Returns {} when no completed
+      # run exists, so every goal renders the "unknown" empty state. One query.
+      def latest_evaluation_statuses
+        return {} unless has_run? && baseline_run
+
+        evaluations = ForecastGoalEvaluation
+          .where(forecast_run_id: latest_group.forecast_runs.map(&:id))
+          .pluck(:goal_key, :forecast_run_id, :status)
+
+        baseline_id = baseline_run.id
+        evaluations.each_with_object({}) do |(goal_key, run_id, status), memo|
+          memo[goal_key] = status if run_id == baseline_id || !memo.key?(goal_key)
+        end
+      end
+
       def compute_status
         group = latest_group
 

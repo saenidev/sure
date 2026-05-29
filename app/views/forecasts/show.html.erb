@@ -72,6 +72,8 @@
             <%= render "forecasts/overview", workspace: @workspace %>
           <% elsif tab_id == "scenarios" %>
             <%= render "forecasts/scenarios", workspace: @workspace %>
+          <% elsif tab_id == "goals" %>
+            <%= render "forecasts/goals", workspace: @workspace %>
           <% else %>
             <section class="rounded-xl border border-primary bg-container p-6"
                      aria-label="<%= t("forecasts.show.tabs.#{tab_id}") %>">

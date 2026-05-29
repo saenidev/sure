@@ -1,0 +1,57 @@
+<%# locals: (setting:) %>
+
+<%
+  accounts = Current.family.accounts.visible.alphabetically.to_a
+  scenarios = Current.family.forecast_scenarios.ordered.to_a
+  preselected_account_id = setting.account_id || params[:account_id]
+%>
+
+<%= styled_form_with model: setting,
+                     url: setting.persisted? ? forecast_account_liquidity_setting_path(setting) : forecast_account_liquidity_settings_path,
+                     class: "space-y-4" do |f| %>
+  <% if setting.errors.any? %>
+    <%= render "shared/form_errors", model: setting %>
+  <% end %>
+
+  <%# The classified account. Pre-filtered to the family's accounts; the
+      controller resolves account_id through the family association so a foreign
+      id is a 404. Locked once persisted (the account a setting classifies does
+      not change; reset + re-create instead). %>
+  <% if setting.persisted? %>
+    <div class="space-y-1">
+      <span class="text-secondary text-xs font-medium uppercase tracking-wide">
+        <%= t("forecasts.liquidity_settings.form.account_label") %>
+      </span>
+      <p class="text-primary text-sm"><%= setting.account&.name %></p>
+    </div>
+  <% else %>
+    <%= f.collection_select :account_id, accounts, :id, :name,
+                            {
+                              label: t("forecasts.liquidity_settings.form.account_label"),
+                              include_blank: t("forecasts.liquidity_settings.form.account_prompt"),
+                              selected: preselected_account_id,
+                              searchable: true
+                            },
+                            { required: true } %>
+  <% end %>
+
+  <%= f.select :liquidity_class,
+               ForecastAccountLiquiditySetting::LIQUIDITY_CLASSES.map { |klass| [ t("forecasts.liquidity_settings.classes.#{klass}"), klass ] },
+               { label: t("forecasts.liquidity_settings.form.liquidity_class_label") } %>
+
+  <%= f.collection_select :forecast_scenario_id, scenarios, :id, :name,
+                          {
+                            label: t("forecasts.liquidity_settings.form.scenario_label"),
+                            include_blank: t("forecasts.liquidity_settings.form.scenario_baseline"),
+                            searchable: true
+                          } %>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <%= f.date_field :starts_on, label: t("forecasts.liquidity_settings.form.starts_on_label") %>
+    <%= f.date_field :ends_on, label: t("forecasts.liquidity_settings.form.ends_on_label") %>
+  </div>
+
+  <div class="flex items-center justify-end gap-2 pt-2">
+    <%= f.submit setting.persisted? ? t("forecasts.liquidity_settings.form.update") : t("forecasts.liquidity_settings.form.create") %>
+  </div>
+<% end %>

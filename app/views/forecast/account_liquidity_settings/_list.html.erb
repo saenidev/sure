@@ -1,0 +1,61 @@
+<%# locals: (rows:) %>
+
+<% if rows.empty? %>
+  <div class="rounded-xl border border-primary bg-surface p-6 text-center space-y-2"
+       data-testid="liquidity-empty-state">
+    <h4 class="text-primary text-sm font-medium"><%= t("forecasts.liquidity_settings.empty.title") %></h4>
+    <p class="text-secondary text-xs max-w-md mx-auto"><%= t("forecasts.liquidity_settings.empty.body") %></p>
+  </div>
+<% else %>
+  <ul class="space-y-3">
+    <% rows.each do |row| %>
+      <% account = row[:account] %>
+      <% setting = row[:setting] %>
+      <% effective_class = row[:effective_class] %>
+      <li id="<%= dom_id(account, :liquidity) %>"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary bg-container p-3">
+        <div class="min-w-0 space-y-1">
+          <p class="text-primary text-sm font-medium truncate"><%= account.name %></p>
+          <p class="text-secondary text-xs">
+            <%= t("forecasts.liquidity_settings.row.effective",
+                  classification: t("forecasts.liquidity_settings.classes.#{effective_class}")) %>
+            <% if setting.present? %>
+              <span class="text-primary"><%= t("forecasts.liquidity_settings.row.overridden") %></span>
+            <% else %>
+              <span><%= t("forecasts.liquidity_settings.row.default") %></span>
+            <% end %>
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+          <% if setting.present? %>
+            <%= render DS::Button.new(
+              text: t("forecasts.liquidity_settings.row.edit"),
+              variant: "outline",
+              size: :sm,
+              icon: "pencil",
+              href: edit_forecast_account_liquidity_setting_path(setting),
+              frame: "modal"
+            ) %>
+            <%= button_to forecast_account_liquidity_setting_path(setting),
+                          method: :delete,
+                          class: "text-secondary hover:text-primary",
+                          aria: { label: t("forecasts.liquidity_settings.row.reset_label", name: account.name) },
+                          data: { turbo_confirm: t("forecasts.liquidity_settings.row.reset_confirm") } do %>
+              <%= icon "rotate-ccw", size: "sm" %>
+            <% end %>
+          <% else %>
+            <%= render DS::Button.new(
+              text: t("forecasts.liquidity_settings.row.override"),
+              variant: "outline",
+              size: :sm,
+              icon: "plus",
+              href: new_forecast_account_liquidity_setting_path(account_id: account.id),
+              frame: "modal"
+            ) %>
+          <% end %>
+        </div>
+      </li>
+    <% end %>
+  </ul>
+<% end %>
