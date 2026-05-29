@@ -1,0 +1,83 @@
+<%# locals: (row:, period_start_on:, scenario:) %>
+
+<%
+  override = row[:override]
+  category = row[:category]
+  override_type = row[:override_type]
+  inherited_amount = row[:inherited_amount]
+  currency = Current.family.currency
+
+  row_label =
+    if category
+      category.name
+    else
+      t("forecasts.budget_overrides.types.#{override_type}")
+    end
+
+  frame_id = override ? dom_id(override) : "forecast_budget_override_#{override_type}_#{category&.id || 'none'}"
+
+  period_param = Budget.date_to_param(period_start_on)
+%>
+
+<%= turbo_frame_tag frame_id do %>
+  <tr id="<%= frame_id %>_row" class="text-primary">
+    <th scope="row" class="px-4 py-3 text-left font-normal">
+      <div class="flex items-center gap-2">
+        <% if category %>
+          <span class="inline-block h-2.5 w-2.5 rounded-full shrink-0" style="background-color: <%= category.color %>" aria-hidden="true"></span>
+        <% end %>
+        <span class="text-primary"><%= row_label %></span>
+      </div>
+    </th>
+
+    <td class="px-4 py-3 text-right text-secondary tabular-nums">
+      <% if inherited_amount.present? %>
+        <%= Money.new(inherited_amount, currency).format %>
+      <% else %>
+        <span aria-hidden="true">&mdash;</span>
+        <span class="sr-only"><%= t("forecasts.budget_overrides.row.no_inherited") %></span>
+      <% end %>
+    </td>
+
+    <td class="px-4 py-3 text-right tabular-nums">
+      <% if override %>
+        <span class="text-primary font-medium"><%= override.amount_money.format %></span>
+      <% else %>
+        <span class="text-subdued"><%= t("forecasts.budget_overrides.row.no_override") %></span>
+      <% end %>
+    </td>
+
+    <td class="px-4 py-3 text-right">
+      <% if override %>
+        <div class="inline-flex items-center gap-2 justify-end">
+          <%= render DS::Link.new(
+            text: t("forecasts.budget_overrides.row.edit"),
+            variant: "secondary",
+            href: edit_forecast_budget_override_path(override),
+            frame: frame_id
+          ) %>
+          <%= button_to forecast_budget_override_path(override, period: period_param, scenario_id: scenario&.id),
+                        method: :delete,
+                        class: "text-secondary hover:text-primary",
+                        form: { data: { turbo_confirm: t("forecasts.budget_overrides.row.delete_confirm") } },
+                        aria: { label: t("forecasts.budget_overrides.row.delete") } do %>
+            <%= icon "trash-2", size: "sm" %>
+          <% end %>
+        </div>
+      <% else %>
+        <%= render DS::Link.new(
+          text: t("forecasts.budget_overrides.row.add"),
+          variant: "secondary",
+          icon: "plus",
+          href: new_forecast_budget_override_path(
+            period: period_param,
+            override_type: override_type,
+            category_id: category&.id,
+            scenario_id: scenario&.id
+          ),
+          frame: frame_id
+        ) %>
+      <% end %>
+    </td>
+  </tr>
+<% end %>

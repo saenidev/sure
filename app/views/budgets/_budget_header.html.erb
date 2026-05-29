@@ -38,7 +38,14 @@
     <% end %>
   <% end %>
 
-  <div class="ml-auto">
+  <div class="ml-auto flex items-center gap-2">
+    <%= render DS::Link.new(
+        text: t(".forecast_this_budget"),
+        variant: "outline",
+        icon: "sparkles",
+        href: forecast_budget_overrides_path(period: budget.to_param),
+    ) %>
+
     <%= render DS::Link.new(
         text: t(".today"),
         variant: "outline",

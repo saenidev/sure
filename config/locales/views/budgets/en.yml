@@ -8,6 +8,7 @@ en:
       unused: "Unused"
     budget_header:
       today: "Today"
+      forecast_this_budget: "Forecast this budget"
     budget_nav:
       categories: Categories
       setup: Setup

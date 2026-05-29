@@ -1,0 +1,81 @@
+<%# locals: (override:, period_start_on:, scenario:, existing_override: nil) %>
+
+<%
+  category = override.category
+  override_type = override.override_type
+  currency = override.currency.presence || Current.family.currency
+
+  row_label =
+    if category
+      category.name
+    else
+      t("forecasts.budget_overrides.types.#{override_type}")
+    end
+
+  frame_id = override.persisted? ? dom_id(override) : "forecast_budget_override_#{override_type}_#{category&.id || 'none'}"
+  period_param = Budget.date_to_param(period_start_on)
+  scenarios = Current.family.forecast_scenarios.ordered.select do |s|
+    period_end_on = Current.family.custom_month_end_for(period_start_on)
+    !((s.starts_on.present? && s.starts_on > period_start_on) || (s.ends_on.present? && s.ends_on < period_end_on))
+  end
+%>
+
+<%= turbo_frame_tag frame_id do %>
+  <tr>
+    <td colspan="4" class="px-4 py-4 bg-surface">
+      <%= styled_form_with model: override,
+                           url: override.persisted? ? forecast_budget_override_path(override) : forecast_budget_overrides_path,
+                           class: "space-y-3" do |f| %>
+        <% if override.errors.any? %>
+          <%= render "shared/form_errors", model: override %>
+        <% end %>
+
+        <% if existing_override.present? %>
+          <div class="rounded-lg border border-primary bg-container p-3 text-sm space-y-2" role="status"
+               data-testid="forecast-budget-override-conflict">
+            <p class="text-primary"><%= t("forecasts.budget_overrides.form.duplicate_notice") %></p>
+            <%= render DS::Link.new(
+              text: t("forecasts.budget_overrides.form.edit_existing"),
+              variant: "secondary",
+              href: edit_forecast_budget_override_path(existing_override),
+              frame: frame_id
+            ) %>
+          </div>
+        <% end %>
+
+        <p class="text-primary text-sm font-medium"><%= row_label %></p>
+
+        <%= f.hidden_field :period_start_on, value: period_start_on %>
+        <%= f.hidden_field :override_type, value: override_type %>
+        <% if category %>
+          <%= f.hidden_field :category_id, value: category.id %>
+        <% end %>
+        <%= f.hidden_field :status, value: "active" %>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <%= f.money_field :amount,
+                            label: t("forecasts.budget_overrides.form.amount_label"),
+                            default_currency: currency,
+                            required: true %>
+
+          <%= f.collection_select :forecast_scenario_id, scenarios, :id, :name,
+                                  {
+                                    label: t("forecasts.budget_overrides.form.scenario_label"),
+                                    include_blank: t("forecasts.budget_overrides.form.scenario_baseline"),
+                                    selected: override.forecast_scenario_id,
+                                    searchable: true
+                                  } %>
+        </div>
+
+        <div class="flex items-center justify-end gap-2">
+          <%= render DS::Link.new(
+            text: t("forecasts.budget_overrides.form.cancel"),
+            variant: "secondary",
+            href: forecast_budget_overrides_path(period: period_param, scenario_id: scenario&.id)
+          ) %>
+          <%= f.submit override.persisted? ? t("forecasts.budget_overrides.form.update") : t("forecasts.budget_overrides.form.create") %>
+        </div>
+      <% end %>
+    </td>
+  </tr>
+<% end %>

@@ -240,6 +240,44 @@ en:
         success: "Goal updated."
       destroy:
         success: "Goal deleted."
+    budget_overrides:
+      index:
+        title: "Forecast budget"
+        description: "Adjust the income and spending your forecast projects for a month without changing your real budget. Pick a month and, optionally, a scenario to scope the changes to."
+        period_nav_label: "Choose a month"
+        scenario_label: "Scenario"
+        scenario_baseline: "Baseline (all forecasts)"
+        caption: "Inherited budget value versus the forecast override for each row in the selected month."
+        row_label: "Income / category"
+        inherited: "Inherited"
+        override: "Forecast override"
+        actions: "Actions"
+      types:
+        expected_income: "Expected income"
+        uncategorized_spending: "Uncategorized spending"
+        category_spending: "Category spending"
+      row:
+        no_inherited: "No inherited value"
+        no_override: "No override"
+        add: "Add override"
+        edit: "Edit"
+        delete: "Remove override"
+        delete_confirm: "Remove this forecast budget override?"
+      form:
+        amount_label: "Forecast amount"
+        scenario_label: "Scenario scope"
+        scenario_baseline: "Baseline (all forecasts)"
+        cancel: "Cancel"
+        create: "Save override"
+        update: "Save override"
+        duplicate_notice: "An active override already exists for this month, scenario, and row."
+        edit_existing: "Edit the existing override"
+      create:
+        success: "Forecast budget override saved."
+      update:
+        success: "Forecast budget override updated."
+      destroy:
+        success: "Forecast budget override removed."
     liquidity_settings:
       index:
         title: "Account liquidity"

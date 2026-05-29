@@ -1,0 +1,65 @@
+<% content_for :title, t("forecasts.budget_overrides.index.title") %>
+
+<div class="space-y-6 pb-6 lg:pb-12">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <div class="space-y-1">
+      <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.budget_overrides.index.title") %></h1>
+      <p class="text-secondary text-sm"><%= t("forecasts.budget_overrides.index.description") %></p>
+    </div>
+  </header>
+
+  <%# Month + scenario picker. State lives in query params (period / scenario_id)
+      so the grid is shareable and back-button friendly. %>
+  <div class="flex flex-wrap items-center gap-3">
+    <nav class="flex items-center gap-2" aria-label="<%= t("forecasts.budget_overrides.index.period_nav_label") %>">
+      <%= render DS::Link.new(
+        variant: "icon",
+        icon: "chevron-left",
+        href: forecast_budget_overrides_path(period: Budget.date_to_param(@period_start_on - 1.month), scenario_id: @scenario&.id)
+      ) %>
+
+      <span class="text-primary font-medium text-sm" data-testid="forecast-budget-override-period">
+        <%= l(@period_start_on, format: :long) %> &ndash; <%= l(@period_end_on, format: :long) %>
+      </span>
+
+      <%= render DS::Link.new(
+        variant: "icon",
+        icon: "chevron-right",
+        href: forecast_budget_overrides_path(period: Budget.date_to_param(@period_start_on + 1.month), scenario_id: @scenario&.id)
+      ) %>
+    </nav>
+
+    <%= form_with url: forecast_budget_overrides_path, method: :get, class: "flex items-center gap-2", data: { turbo_frame: "_top" } do |f| %>
+      <%= f.hidden_field :period, value: Budget.date_to_param(@period_start_on) %>
+      <label class="text-secondary text-xs font-medium uppercase tracking-wide" for="forecast_budget_override_scenario_id">
+        <%= t("forecasts.budget_overrides.index.scenario_label") %>
+      </label>
+      <%= f.select :scenario_id,
+                   options_from_collection_for_select(@scenario_options, :id, :name, @scenario&.id),
+                   { include_blank: t("forecasts.budget_overrides.index.scenario_baseline") },
+                   { id: "forecast_budget_override_scenario_id", onchange: "this.form.requestSubmit()", class: "form-field__input" } %>
+    <% end %>
+  </div>
+
+  <div class="rounded-xl border border-primary bg-container overflow-hidden">
+    <table class="w-full text-sm">
+      <caption class="sr-only"><%= t("forecasts.budget_overrides.index.caption") %></caption>
+      <thead>
+        <tr class="text-secondary text-xs uppercase tracking-wide text-left border-b border-primary">
+          <th scope="col" class="px-4 py-3 font-medium"><%= t("forecasts.budget_overrides.index.row_label") %></th>
+          <th scope="col" class="px-4 py-3 font-medium text-right"><%= t("forecasts.budget_overrides.index.inherited") %></th>
+          <th scope="col" class="px-4 py-3 font-medium text-right"><%= t("forecasts.budget_overrides.index.override") %></th>
+          <th scope="col" class="px-4 py-3 font-medium text-right"><span class="sr-only"><%= t("forecasts.budget_overrides.index.actions") %></span></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-alpha-black-100">
+        <% @rows.each do |row| %>
+          <%= render "forecast/budget_overrides/row",
+                     row: row,
+                     period_start_on: @period_start_on,
+                     scenario: @scenario %>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</div>
