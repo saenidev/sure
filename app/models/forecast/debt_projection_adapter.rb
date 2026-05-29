@@ -41,7 +41,7 @@ module Forecast
         native_accrued_interest_balance = native_accrued_interest_opening_balance(profile)
         forecast_last_accrued_on = profile.last_accrued_on
 
-        periods.map do |period|
+        rows = periods.map do |period|
           terms = Debt::AccountTerms.new(account, as_of: period.end_date).resolve
           unless terms.accrual_ready?
             reasons = terms.missing_fields.map { |field| "missing_#{field}" }
@@ -93,6 +93,8 @@ module Forecast
           end
           balance = ending_balance
 
+          balance_trend = balance_trend_for(opening_balance, ending_balance)
+
           {
             projection_key: account.id,
             account_id: account.id,
@@ -106,8 +108,9 @@ module Forecast
             cash_payment_gap: cash_payment_gap,
             projected_drawdown: scenario_effect.fetch(:drawdown),
             ending_balance: ending_balance,
+            balance_trend: balance_trend,
             source: "debt_profile_snapshot",
-            risk_flags: opening.risk_flags + projected_interest.fetch(:risk_flags) + scenario_effect.fetch(:risk_flags) + Array(payment&.risk_flags) + required_payment.fetch(:risk_flags) + actual_payment.fetch(:risk_flags) + payment_missing_flags(account, terms),
+            risk_flags: opening.risk_flags + projected_interest.fetch(:risk_flags) + scenario_effect.fetch(:risk_flags) + Array(payment&.risk_flags) + required_payment.fetch(:risk_flags) + actual_payment.fetch(:risk_flags) + payment_missing_flags(account, terms) + balance_growing_flags(account, balance_trend, projected_payment, projected_interest_amount),
             source_snapshot: source_snapshot_for(account, profile, opening, payment, terms).merge(
               "projected_interest" => projected_interest.fetch(:source_snapshot),
               "forecast_debt_events" => scenario_effect.fetch(:source_snapshot),
@@ -117,10 +120,13 @@ module Forecast
               "actual_payment_allocations" => actual_payment.fetch(:source_snapshot),
               "forecast_event_payment_fulfilled" => scenario_payment.to_s,
               "recurring_payment_fulfilled" => recurring_payment.to_s,
-              "cash_payment_gap" => cash_payment_gap.to_s
+              "cash_payment_gap" => cash_payment_gap.to_s,
+              "balance_trend" => balance_trend
             )
           }
         end
+
+        stamp_payoff_metadata(rows)
       end
 
       def base_projection_reasons(account, profile)
@@ -129,6 +135,53 @@ module Forecast
         reasons << "unsupported_non_manual_debt_account" unless account.manual_debt_account?
         reasons << "auto_accrual_disabled" unless profile&.auto_accrual_enabled?
         reasons
+      end
+
+      # Classify a profile-backed row by how its balance moved across the period.
+      # Reads only already-computed opening/ending balances so the result is
+      # deterministic and never re-derives interest or payments.
+      def balance_trend_for(opening_balance, ending_balance)
+        if ending_balance > opening_balance
+          "growing"
+        elsif ending_balance < opening_balance
+          "amortizing"
+        else
+          "flat"
+        end
+      end
+
+      def balance_growing_flags(account, balance_trend, projected_payment, projected_interest)
+        return [] unless balance_trend == "growing"
+        return [] unless projected_payment < projected_interest
+
+        [
+          {
+            "type" => "debt_balance_growing",
+            "account_id" => account.id,
+            "reason" => "interest_exceeds_payment"
+          }
+        ]
+      end
+
+      # Detect the first period whose ending balance reaches zero for a
+      # profile-backed account and stamp payoff metadata on every row. Reads only
+      # the already-computed ending balances; introduces no clock or RNG.
+      def stamp_payoff_metadata(rows)
+        payoff_row = rows.find { |row| row.fetch(:ending_balance).to_d.zero? }
+        payoff_projected_on = payoff_row&.fetch(:period_end_on)
+
+        rows.map do |row|
+          is_payoff_period = payoff_row.present? && row.equal?(payoff_row)
+          source_snapshot = row.fetch(:source_snapshot).merge(
+            "payoff_projected_on" => payoff_projected_on&.iso8601,
+            "is_payoff_period" => is_payoff_period
+          )
+          row.merge(
+            payoff_projected_on: payoff_projected_on,
+            is_payoff_period: is_payoff_period,
+            source_snapshot: source_snapshot
+          )
+        end
       end
 
       def account_balance_only_rows(account, profile, opening, reasons)

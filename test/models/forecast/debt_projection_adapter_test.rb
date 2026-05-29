@@ -1185,4 +1185,211 @@ class Forecast::DebtProjectionAdapterTest < ActiveSupport::TestCase
       assert_equal explicit.fetch(key), defaulted.fetch(key), "expected #{key} default to match explicit run_date"
     end
   end
+
+  test "fixed payment paying off mid-horizon stamps a single payoff period" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 1000)
+    account.debt_profile&.destroy!
+    start_on = Date.current.next_month.beginning_of_month
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 400,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 0, starts_on: start_on)
+    periods = (0..4).map do |index|
+      month = start_on + index.months
+      Forecast::PeriodBuilder::PeriodWindow.new(index: index, start_date: month.beginning_of_month, end_date: month.end_of_month, precision: "monthly")
+    end
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    payoff_rows = rows.select { |row| row.fetch(:is_payoff_period) }
+    assert_equal 1, payoff_rows.size
+    payoff_row = payoff_rows.first
+    # 1000 / 400 per month -> third month (index 2) zeroes the balance.
+    assert_equal periods.third.end_date, payoff_row.fetch(:period_end_on)
+    assert_equal 0.to_d, payoff_row.fetch(:ending_balance)
+    assert_equal periods.third.end_date, payoff_row.fetch(:payoff_projected_on)
+    assert_equal periods.third.end_date.iso8601, payoff_row.fetch(:source_snapshot).fetch("payoff_projected_on")
+    assert payoff_row.fetch(:source_snapshot).fetch("is_payoff_period")
+
+    later_rows = rows.select { |row| row.fetch(:period_end_on) > payoff_row.fetch(:period_end_on) }
+    assert later_rows.any?
+    later_rows.each do |row|
+      assert_equal 0.to_d, row.fetch(:ending_balance)
+      refute row.fetch(:is_payoff_period)
+      assert_equal periods.third.end_date, row.fetch(:payoff_projected_on)
+    end
+  end
+
+  test "zero-interest fixed payment amortizes on ceil(balance/payment) schedule" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 1000)
+    account.debt_profile&.destroy!
+    start_on = Date.current.next_month.beginning_of_month
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 300,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 0, starts_on: start_on)
+    periods = (0..5).map do |index|
+      month = start_on + index.months
+      Forecast::PeriodBuilder::PeriodWindow.new(index: index, start_date: month.beginning_of_month, end_date: month.end_of_month, precision: "monthly")
+    end
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    # ceil(1000 / 300) = 4 payments -> payoff in the 4th month (index 3).
+    expected_payoff_index = (1000.0 / 300).ceil - 1
+    payoff_row = rows.find { |row| row.fetch(:is_payoff_period) }
+    assert_equal periods[expected_payoff_index].end_date, payoff_row.fetch(:period_end_on)
+    # Every pre-payoff row amortizes (ending < opening) with zero interest.
+    rows.take(expected_payoff_index).each do |row|
+      assert_equal 0.to_d, row.fetch(:projected_interest)
+      assert_equal "amortizing", row.fetch(:balance_trend)
+    end
+  end
+
+  test "interest exceeding payment grows the balance and flags it without projecting payoff" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    account.debt_profile&.destroy!
+    start_on = Date.current.next_month.beginning_of_month
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 1,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 365, starts_on: start_on)
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: start_on.beginning_of_month, end_date: start_on.end_of_month, precision: "monthly")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    assert_operator row.fetch(:projected_interest), :>, row.fetch(:projected_payment)
+    assert_equal "growing", row.fetch(:balance_trend)
+    assert_equal "growing", row.fetch(:source_snapshot).fetch("balance_trend")
+    assert row.fetch(:risk_flags).any? { |flag| flag["type"] == "debt_balance_growing" }
+    assert_nil row.fetch(:payoff_projected_on)
+    refute row.fetch(:is_payoff_period)
+    assert_nil row.fetch(:source_snapshot).fetch("payoff_projected_on")
+  end
+
+  test "balance exactly hitting zero on the final horizon period is the payoff period" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 800)
+    account.debt_profile&.destroy!
+    start_on = Date.current.next_month.beginning_of_month
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "monthly",
+      minimum_payment_amount: 400,
+      effective_start_on: start_on
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 0, starts_on: start_on)
+    periods = (0..1).map do |index|
+      month = start_on + index.months
+      Forecast::PeriodBuilder::PeriodWindow.new(index: index, start_date: month.beginning_of_month, end_date: month.end_of_month, precision: "monthly")
+    end
+
+    rows = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: periods,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      run_date: Date.current
+    ).call.select { |projection| projection.fetch(:account_id) == account.id }
+
+    last_row = rows.last
+    assert_equal 0.to_d, last_row.fetch(:ending_balance)
+    assert last_row.fetch(:is_payoff_period)
+    assert_equal last_row.fetch(:period_end_on), last_row.fetch(:payoff_projected_on)
+    refute rows.first.fetch(:is_payoff_period)
+    assert_equal periods.last.end_date, rows.first.fetch(:payoff_projected_on)
+  end
+
+  test "account-balance-only fallback rows never carry payoff or growing metadata" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.update!(balance: 10_000)
+    account.debt_profile&.destroy!
+    DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: false,
+      minimum_payment_amount: 0,
+      effective_start_on: Date.current
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: Date.current, end_date: Date.current.end_of_month, precision: "daily_backed")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    assert_equal "account_balance_only", row.fetch(:source)
+    refute row.key?(:payoff_projected_on)
+    refute row.key?(:is_payoff_period)
+    refute row.key?(:balance_trend)
+    refute row.fetch(:source_snapshot).key?("payoff_projected_on")
+    refute row.fetch(:source_snapshot).key?("is_payoff_period")
+    refute row.fetch(:source_snapshot).key?("balance_trend")
+    assert row.fetch(:risk_flags).any? { |flag| flag["type"] == "debt_projection_incomplete" }
+    refute row.fetch(:risk_flags).any? { |flag| flag["type"] == "debt_balance_growing" }
+  end
 end
