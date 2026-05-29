@@ -2169,4 +2169,203 @@ class Forecast::DebtProjectionAdapterTest < ActiveSupport::TestCase
     assert_equal "120.0", baseline_after.fetch(:source_snapshot).fetch("projected_interest").fetch("rate_spans").last.fetch("annual_rate")
     assert_operator baseline_after.fetch(:projected_interest), :>, scenario_after.fetch(:projected_interest)
   end
+
+  # --- Provider-supplied obligation provenance (slice 7) ----------------------
+
+  def build_obligation_provenance_profile(account)
+    account.debt_profile&.destroy!
+    profile = DebtProfile.create!(
+      account: account,
+      status: "active",
+      auto_accrual_enabled: true,
+      rate_type: "fixed",
+      accrual_cadence: "daily",
+      compounding_cadence: "daily",
+      minimum_payment_amount: 500,
+      effective_start_on: Date.current
+    )
+    DebtRatePeriod.create!(debt_profile: profile, rate_type: "fixed", annual_rate: 0, starts_on: Date.current)
+    profile
+  end
+
+  test "provider obligation in the same due window overrides the local one and records provenance" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    profile = build_obligation_provenance_profile(account)
+    local = account.debt_obligations.create!(
+      debt_profile: profile,
+      source: "sure",
+      external_id: "debt-obligation-local",
+      status: "open",
+      due_on: Date.current,
+      currency: account.currency,
+      minimum_payment_amount: 200,
+      paid_amount: 0
+    )
+    account.debt_obligations.create!(
+      debt_profile: profile,
+      source: "simplefin",
+      external_id: "simplefin-statement-1",
+      status: "open",
+      due_on: Date.current,
+      currency: account.currency,
+      minimum_payment_amount: 350,
+      paid_amount: 0
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: Date.current, end_date: Date.current.end_of_month, precision: "daily_backed")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    # Provider statement minimum (350) overrides the local guess (200), not the sum.
+    assert_equal 350.to_d, row.fetch(:cash_payment_gap)
+    snapshot = row.fetch(:source_snapshot).fetch("required_payment")
+    assert_equal 1, snapshot.size
+    assert_equal "provider", snapshot.first.fetch("obligation_source")
+    assert_equal local.id, snapshot.first.fetch("superseded_local_obligation_id")
+  end
+
+  test "only local obligations resolve as local provenance with unchanged amount" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    profile = build_obligation_provenance_profile(account)
+    account.debt_obligations.create!(
+      debt_profile: profile,
+      source: "sure",
+      external_id: "debt-obligation-only-local",
+      status: "open",
+      due_on: Date.current,
+      currency: account.currency,
+      minimum_payment_amount: 275,
+      paid_amount: 0
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: Date.current, end_date: Date.current.end_of_month, precision: "daily_backed")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    assert_equal 275.to_d, row.fetch(:cash_payment_gap)
+    snapshot = row.fetch(:source_snapshot).fetch("required_payment")
+    assert_equal "local", snapshot.first.fetch("obligation_source")
+    assert_nil snapshot.first.fetch("superseded_local_obligation_id")
+  end
+
+  test "obligation resolution is independent of obligation insertion order" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: Date.current, end_date: Date.current.end_of_month, precision: "daily_backed")
+
+    build_row = lambda do |insert_provider_first|
+      account = accounts(:loan)
+      profile = build_obligation_provenance_profile(account)
+      account.debt_obligations.destroy_all
+      create_provider = -> { account.debt_obligations.create!(debt_profile: profile, source: "plaid", external_id: "plaid-stmt", status: "open", due_on: Date.current, currency: account.currency, minimum_payment_amount: 350, paid_amount: 0) }
+      create_local = -> { account.debt_obligations.create!(debt_profile: profile, source: "manual", external_id: "manual:#{Date.current}", status: "open", due_on: Date.current, currency: account.currency, minimum_payment_amount: 200, paid_amount: 0) }
+      if insert_provider_first
+        create_provider.call
+        create_local.call
+      else
+        create_local.call
+        create_provider.call
+      end
+
+      Forecast::DebtProjectionAdapter.new(
+        family: family,
+        user: user,
+        periods: [ period ],
+        money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+        recurring_items: [],
+        included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+      ).call.find { |projection| projection.fetch(:account_id) == account.id }
+    end
+
+    provider_first = build_row.call(true)
+    local_first = build_row.call(false)
+
+    assert_equal provider_first.fetch(:cash_payment_gap), local_first.fetch(:cash_payment_gap)
+    provider_snapshot = provider_first.fetch(:source_snapshot).fetch("required_payment")
+    local_snapshot = local_first.fetch(:source_snapshot).fetch("required_payment")
+    assert_equal provider_snapshot.map { |row| row.fetch("obligation_source") }, local_snapshot.map { |row| row.fetch("obligation_source") }
+    assert_equal "provider", provider_snapshot.first.fetch("obligation_source")
+  end
+
+  test "fully paid provider obligation nets to zero remaining without regression" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    profile = build_obligation_provenance_profile(account)
+    account.debt_obligations.create!(
+      debt_profile: profile,
+      source: "sure",
+      external_id: "debt-obligation-local-paid",
+      status: "open",
+      due_on: Date.current,
+      currency: account.currency,
+      minimum_payment_amount: 200,
+      paid_amount: 0
+    )
+    account.debt_obligations.create!(
+      debt_profile: profile,
+      source: "simplefin",
+      external_id: "simplefin-paid",
+      status: "paid",
+      due_on: Date.current,
+      currency: account.currency,
+      minimum_payment_amount: 350,
+      paid_amount: 350
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: Date.current, end_date: Date.current.end_of_month, precision: "daily_backed")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    # Provider wins the window and is fully paid, so the remaining required payment
+    # is zero -> no cash gap, and the local guess is not counted in its place.
+    assert_equal 0.to_d, row.fetch(:cash_payment_gap)
+    assert_empty row.fetch(:source_snapshot).fetch("required_payment")
+  end
+
+  test "no obligations falls through to fallback required payment unchanged" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    account = accounts(:loan)
+    account.loan.update!(interest_rate: nil)
+    build_obligation_provenance_profile(account)
+    account.debt_obligations.destroy_all
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: Date.current, end_date: Date.current.end_of_month, precision: "daily_backed")
+
+    row = Forecast::DebtProjectionAdapter.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      recurring_items: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call.find { |projection| projection.fetch(:account_id) == account.id }
+
+    # The fallback uses the profile's fixed minimum payment (500); the source snapshot
+    # is the fallback shape, not the obligation list.
+    assert_equal 500.to_d, row.fetch(:cash_payment_gap)
+    assert_equal "fixed_minimum_payment", row.fetch(:source_snapshot).fetch("required_payment").fetch("selected_source")
+  end
 end

@@ -1,5 +1,11 @@
 module Forecast
   class DebtProjectionAdapter
+    # Sources that mark a locally-derived (Sure-generated or manual) obligation.
+    # Anything else with an external_id is treated as provider-supplied and wins
+    # the due amount within its due window. "" is included so a blank-string
+    # source behaves like nil.
+    LOCAL_OBLIGATION_SOURCES = [ "", "manual", "sure", "local" ].freeze
+
     def initialize(family:, user:, periods:, money_converter:, recurring_items:, included_account_scope:, forecast_debt_events: [], run_date: nil)
       @family = family
       @user = user
@@ -809,10 +815,16 @@ module Forecast
         else
           obligations.where(due_on: period.start_date..period.end_date)
         end
-        obligations = obligations.order(:due_on, :id).to_a
+        # Stable ordering with an id tie-breaker so the same set of obligations
+        # always resolves the same row regardless of DB row order. Provider/local
+        # preference within a due window is applied below in Ruby, never via DB
+        # ordering, so insertion order can never change the resolved amount.
+        obligations = obligations.sort_by { |obligation| [ obligation.due_on, obligation_source_priority(obligation), obligation.id ] }
 
         if obligations.any?
-          converted = obligations.filter_map do |obligation|
+          resolved = resolve_obligations_by_due_window(obligations)
+          converted = resolved.filter_map do |entry|
+            obligation = entry.fetch(:obligation)
             gross_amount = (obligation.minimum_payment_amount || obligation.statement_balance_amount || 0).to_d
             paid = eligible_paid_amount(obligation, target_currency: obligation.currency, as_of: period.end_date)
             paid_amount = paid.fetch(:amount)
@@ -821,6 +833,8 @@ module Forecast
 
             {
               obligation: obligation,
+              obligation_source: entry.fetch(:obligation_source),
+              superseded_local_obligation_id: entry.fetch(:superseded_local_obligation_id),
               gross_amount: gross_amount,
               paid_amount: paid_amount,
               paid_snapshot: paid.fetch(:source_snapshot),
@@ -839,6 +853,8 @@ module Forecast
               {
                 "debt_obligation_id" => obligation.id,
                 "status" => obligation.status,
+                "obligation_source" => row.fetch(:obligation_source),
+                "superseded_local_obligation_id" => row.fetch(:superseded_local_obligation_id),
                 "gross_amount" => row.fetch(:gross_amount).to_s,
                 "paid_amount" => row.fetch(:paid_amount).to_s,
                 "paid_amount_currency" => obligation.currency,
@@ -857,6 +873,54 @@ module Forecast
           risk_flags: fallback.fetch(:risk_flags),
           source_snapshot: fallback.fetch(:source_snapshot)
         }
+      end
+
+      # Group obligations by their due window (due_on) and, when both a
+      # provider-sourced obligation and a locally-derived one fall in the same
+      # window, prefer the provider one for the due amount while recording the
+      # superseded local id for the audit trail. Within a window the inputs are
+      # already stably ordered (due_on, source priority, id) so the winner is
+      # deterministic and independent of insertion/DB row order. When no provider
+      # obligation exists for a window, every local obligation in it is kept as-is
+      # (no amount changes), preserving the prior behavior. The adapter only READS
+      # here — it never posts, mutates, or supersedes obligations in the DB.
+      def resolve_obligations_by_due_window(obligations)
+        obligations.group_by(&:due_on).flat_map do |_due_on, window_obligations|
+          providers = window_obligations.select { |obligation| provider_sourced_obligation?(obligation) }
+          locals = window_obligations.reject { |obligation| provider_sourced_obligation?(obligation) }
+
+          if providers.any?
+            superseded_local_id = locals.first&.id
+            providers.map.with_index do |obligation, index|
+              {
+                obligation: obligation,
+                obligation_source: "provider",
+                # Only the first/winning provider row in the window records the
+                # superseded local id; additional provider rows are distinct
+                # obligations rather than supersessions of the same local guess.
+                superseded_local_obligation_id: index.zero? ? superseded_local_id : nil
+              }
+            end
+          else
+            locals.map do |obligation|
+              { obligation: obligation, obligation_source: "local", superseded_local_obligation_id: nil }
+            end
+          end
+        end
+      end
+
+      # Sort key fragment placing provider-sourced obligations ahead of local ones
+      # within the same due window so the provider row is the stable winner.
+      def obligation_source_priority(obligation)
+        provider_sourced_obligation?(obligation) ? 0 : 1
+      end
+
+      # A provider-supplied obligation carries an external_id and a non-local
+      # source. Locally-derived obligations are generated by Sure (source nil,
+      # "manual", "sure", or the placeholder "local") and never override a provider
+      # statement minimum.
+      def provider_sourced_obligation?(obligation)
+        obligation.external_id.present? && !obligation.source.to_s.in?(LOCAL_OBLIGATION_SOURCES)
       end
 
       def fallback_required_payment_for(account, payment, opening_balance)
