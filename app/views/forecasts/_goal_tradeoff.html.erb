@@ -1,0 +1,163 @@
+<%# locals: (workspace:) %>
+<%#
+  Goal-tradeoff comparison table, rendered inside the Comparison tab below the
+  distribution bands. One row per ranked scenario stack (best-first, baseline as
+  the reference) showing the satisfied / at-risk / blocked goal counts and, per
+  non-baseline stack, the structured tradeoff notes (e.g. "+2 months of runway on
+  Goal X, −$1,200 of projected debt on Goal Y") versus baseline.
+
+  IMPORTANT (mirrors Forecast::GoalTradeoffExplorer's contract): this is a PURE
+  READ MODEL over the runs' persisted, immutable `forecast_goal_evaluations` —
+  there is NO engine recompute, NO optimization solver, and NO RNG. The ranking
+  is deterministic with stable tie-breaks, so the SAME persisted rows always
+  produce the SAME row ordering. A blocked stack is pinned last (the explorer
+  ranks any blocked stack below every clean stack) with a clear blocked badge.
+
+  This partial renders ONLY when `workspace.goal_tradeoff_data?` is true (more
+  than one contributing stack AND at least one stack actually ranked because
+  goals were evaluated), so the caller falls back to the shared tradeoff empty
+  state otherwise — never a blank/degenerate table.
+
+  Money / duration formatting and the goal-name lookup are family-scoped: notes
+  are formatted in the run currency (`workspace.currency`) and goal names come
+  from `workspace.tradeoff_goal_labels` (this family's goals only), so another
+  family's currency or goal name can never appear.
+%>
+<% rankings = workspace.goal_tradeoff_rankings %>
+<% currency = workspace.currency %>
+<% baseline_key = workspace.baseline_stack_key %>
+<% goal_labels = workspace.tradeoff_goal_labels %>
+<%
+  # Human goal name for an engine goal_key, falling back to the raw key for a
+  # goal evaluated but since deleted (so a note is never blank).
+  goal_label = lambda { |goal_key| goal_labels[goal_key].presence || goal_key }
+
+  # Format one tradeoff-note magnitude in the goal's own units: runway goals are
+  # measured in DAYS (pluralized via i18n), every other goal type in MONEY in the
+  # run currency. Reads only the trusted persisted note fields (no recompute).
+  format_magnitude = lambda do |note|
+    magnitude = note[:metric_delta].abs
+    if note[:goal_type].to_s.end_with?("runway")
+      t("forecasts.tradeoff.duration_days", count: magnitude.to_i)
+    else
+      format_money(Money.new(magnitude, note[:currency].presence || currency))
+    end
+  end
+
+  # Render one structured note as a localized sentence: "+<magnitude> <noun> on
+  # <goal>". Direction drives the sign/copy; the noun is per-goal-type.
+  format_note = lambda do |note|
+    metric = t("forecasts.tradeoff.metric_nouns.#{note[:goal_type]}",
+               default: t("forecasts.tradeoff.metric_nouns.default"))
+    t("forecasts.tradeoff.notes.#{note[:direction]}",
+      magnitude: format_magnitude.call(note),
+      metric: metric,
+      goal: goal_label.call(note[:goal_key]))
+  end
+%>
+
+<section class="space-y-4" aria-labelledby="forecast-tradeoff-heading"
+         data-testid="forecast-goal-tradeoff">
+  <div class="space-y-1">
+    <h3 id="forecast-tradeoff-heading" class="text-primary text-base font-medium">
+      <%= t("forecasts.tradeoff.heading") %>
+    </h3>
+    <p class="text-secondary text-sm"><%= t("forecasts.tradeoff.description") %></p>
+  </div>
+
+  <div class="overflow-x-auto rounded-xl border border-primary">
+    <table class="w-full text-sm" data-testid="forecast-goal-tradeoff-table">
+      <caption class="sr-only"><%= t("forecasts.tradeoff.table.caption") %></caption>
+      <thead>
+        <tr class="border-b border-primary text-secondary text-left">
+          <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.tradeoff.table.rank") %></th>
+          <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.tradeoff.table.stack") %></th>
+          <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.tradeoff.table.satisfied") %></th>
+          <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.tradeoff.table.at_risk") %></th>
+          <th scope="col" class="px-4 py-2 font-medium text-right"><%= t("forecasts.tradeoff.table.blocked") %></th>
+          <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.tradeoff.table.tradeoffs") %></th>
+        </tr>
+      </thead>
+      <tbody class="text-primary">
+        <% rankings.each_with_index do |ranking, index| %>
+          <%
+            stack_key = ranking[:stack_key]
+            is_baseline = stack_key == baseline_key
+            blocked_count = ranking[:blocked_goal_keys].size
+            is_blocked = blocked_count.positive?
+            notes = ranking[:tradeoff_notes]
+          %>
+          <tr class="border-b border-primary last:border-0 align-top"
+              data-testid="forecast-goal-tradeoff-row"
+              data-stack-key="<%= stack_key %>">
+            <td class="px-4 py-3 tabular-nums text-secondary"><%= index + 1 %></td>
+            <th scope="row" class="px-4 py-3 font-medium text-left">
+              <div class="flex flex-col gap-1">
+                <span><%= ranking[:label] %></span>
+                <div class="flex flex-wrap gap-1">
+                  <% if is_baseline %>
+                    <%= render DS::Pill.new(
+                      label: t("forecasts.tradeoff.baseline_badge"),
+                      tone: :gray,
+                      style: :soft,
+                      size: :sm
+                    ) %>
+                  <% end %>
+                  <% if is_blocked %>
+                    <%# Blocked badge reuses the feasibility ramp's fuchsia/blocked
+                        tone so a blocked stack reads the same everywhere. %>
+                    <span data-testid="forecast-goal-tradeoff-blocked-badge">
+                      <%= render DS::Pill.new(
+                        label: t("forecasts.tradeoff.blocked_badge"),
+                        tone: :fuchsia,
+                        style: :soft,
+                        size: :sm
+                      ) %>
+                    </span>
+                  <% end %>
+                </div>
+              </div>
+            </th>
+            <td class="px-4 py-3 text-right tabular-nums"
+                aria-label="<%= t("forecasts.tradeoff.table.satisfied") %>">
+              <%= ranking[:satisfied_goal_keys].size %>
+            </td>
+            <td class="px-4 py-3 text-right tabular-nums"
+                aria-label="<%= t("forecasts.tradeoff.table.at_risk") %>">
+              <%= ranking[:at_risk_goal_keys].size %>
+            </td>
+            <td class="px-4 py-3 text-right tabular-nums"
+                aria-label="<%= t("forecasts.tradeoff.table.blocked") %>">
+              <%= blocked_count %>
+            </td>
+            <td class="px-4 py-3">
+              <% if is_baseline %>
+                <span class="text-secondary text-xs"><%= t("forecasts.tradeoff.table.no_tradeoffs") %></span>
+              <% elsif notes.any? %>
+                <ul class="space-y-1">
+                  <% notes.each do |note| %>
+                    <li class="flex items-start gap-1.5 text-xs text-primary"
+                        data-testid="forecast-goal-tradeoff-note"
+                        data-direction="<%= note[:direction] %>">
+                      <% case note[:direction] %>
+                      <% when "improvement" %>
+                        <%= icon "trending-up", size: "xs", color: "success" %>
+                      <% when "regression" %>
+                        <%= icon "trending-down", size: "xs", color: "warning" %>
+                      <% else %>
+                        <%= icon "minus", size: "xs", color: "default" %>
+                      <% end %>
+                      <span><%= format_note.call(note) %></span>
+                    </li>
+                  <% end %>
+                </ul>
+              <% else %>
+                <span class="text-secondary text-xs"><%= t("forecasts.tradeoff.table.no_tradeoffs") %></span>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+</section>

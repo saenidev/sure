@@ -395,6 +395,37 @@ module Forecast
       contributing_stack_count > 1 && (goal_tradeoff_explorer&.any? || false)
     end
 
+    # The ranked tradeoff rows for the Comparison tab's tradeoff table: one plain
+    # Hash per contributing scenario stack, best-first (baseline as the reference,
+    # any blocked stack pinned last). Returns [] when there is nothing to trade
+    # off, so the view falls back to the tradeoff empty state. Reads the runs'
+    # eager-loaded `forecast_goal_evaluations` only (no engine recompute, no N+1).
+    def goal_tradeoff_rankings
+      return [] unless goal_tradeoff_data?
+
+      goal_tradeoff_explorer.explore
+    end
+
+    # The baseline stack key the tradeoff rows are compared against, so the view
+    # can flag the reference row without re-deriving the constant.
+    def baseline_stack_key
+      Forecast::GoalTradeoffExplorer::BASELINE_STACK_KEY
+    end
+
+    # Map of engine goal_key ("forecast_goal:<id>") => human goal name, for the
+    # tradeoff table to label each note/count by the goal's own name rather than
+    # its opaque key. Scoped to THIS family's goals only (so another family's
+    # goal name can never appear) and built in ONE query, so the table never
+    # N+1s over notes x goals. A goal evaluated but since deleted falls back to
+    # its key at the call site.
+    def tradeoff_goal_labels
+      return @tradeoff_goal_labels if defined?(@tradeoff_goal_labels)
+
+      @tradeoff_goal_labels = family.forecast_goals.pluck(:id, :name).each_with_object({}) do |(id, name), memo|
+        memo["forecast_goal:#{id}"] = name
+      end
+    end
+
     # Number of latest-group stacks that actually contribute to the band/tradeoff
     # surfaces: completed (not failed) runs only. A failed stack is excluded so a
     # group whose only non-baseline stack failed reads as a single contributing

@@ -432,6 +432,102 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # --- comparison tab: goal-tradeoff comparison table ------------------------
+
+  test "comparison tab renders the goal-tradeoff table ranked best-first with a blocked stack pinned last and formatted notes" do
+    build_tradeoff_comparison_group(family: @family, user: @user)
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    # The tradeoff table renders (not the empty state) with one row per stack.
+    assert_select "[data-testid=forecast-goal-tradeoff-table]"
+    assert_select "[data-testid=forecast-goal-tradeoff-empty]", count: 0
+    rows = css_select("[data-testid=forecast-goal-tradeoff-row]")
+    assert_equal 3, rows.size
+
+    # Best-first ordering: baseline (all on track) first, the strong stack next,
+    # and the blocked stack pinned last (any blocked goal sinks the stack below
+    # every clean stack regardless of its other satisfied goals).
+    ordered_keys = rows.map { |row| row["data-stack-key"] }
+    assert_equal %w[baseline strong_stack blocked_stack], ordered_keys
+
+    # The blocked stack's row carries the blocked badge.
+    assert_select "[data-testid=forecast-goal-tradeoff-row][data-stack-key=blocked_stack] " \
+                  "[data-testid=forecast-goal-tradeoff-blocked-badge]",
+      text: /#{Regexp.escape(I18n.t("forecasts.tradeoff.blocked_badge"))}/
+
+    # An improvement note (more runway on the runway goal) renders with the
+    # formatted day delta and the goal's name.
+    assert_select "[data-testid=forecast-goal-tradeoff-note][data-direction=improvement]",
+      text: /60 days.*Runway goal/
+    # A regression note (higher projected debt) renders with formatted money in
+    # the run currency and the goal's name.
+    assert_select "[data-testid=forecast-goal-tradeoff-note][data-direction=regression]",
+      text: /\$1,000.*Debt goal/
+  end
+
+  test "comparison tab shows the goal-tradeoff empty state when a completed group has no goal evaluations" do
+    # A multi-stack completed group with months (so bands render) but NO goal
+    # evaluations: the explorer returns [] and the view shows the empty state.
+    build_band_comparison_group(family: @family, user: @user, stacks: %w[baseline downside])
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    assert_select "[data-testid=forecast-goal-tradeoff-table]", count: 0
+    assert_select "[data-testid=forecast-goal-tradeoff-empty]"
+    assert_select "#forecast-goal-tradeoff-empty-title",
+      text: I18n.t("forecasts.tradeoff.empty.title")
+  end
+
+  test "comparison tab excludes a failed stack from the goal-tradeoff ranking" do
+    build_tradeoff_comparison_group(family: @family, user: @user, with_failed_stack: true)
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    assert_select "[data-testid=forecast-goal-tradeoff-table]"
+    # The failed stack key never appears as a ranked row (a failed stack cannot
+    # masquerade as one that satisfies or blocks goals).
+    assert_select "[data-testid=forecast-goal-tradeoff-row][data-stack-key=failed_stack]", count: 0
+  end
+
+  test "comparison tab never surfaces another family's goal tradeoffs (cross-family denial)" do
+    # Family B has a multi-stack group with goal evaluations naming a distinctive
+    # goal; family A has only a single-baseline group, so A's tradeoff empty state
+    # shows and B's goal name never leaks.
+    other_family = families(:empty)
+    other_family.forecast_run_groups.delete_all
+    other_family.forecast_goals.delete_all
+    build_tradeoff_comparison_group(
+      family: other_family, user: users(:empty), goal_name_prefix: "OtherFamilySecret"
+    )
+    build_band_comparison_group(family: @family, user: @user, stacks: %w[baseline])
+
+    get forecast_url(tab: "comparison")
+
+    assert_response :success
+    assert_select "[data-testid=forecast-goal-tradeoff-table]", count: 0
+    assert_select "[data-testid=forecast-goal-tradeoff-empty]"
+    assert_no_match(/OtherFamilySecret/, @response.body)
+  end
+
+  test "comparison tab goal-tradeoff row ordering is deterministic across renders" do
+    build_tradeoff_comparison_group(family: @family, user: @user)
+
+    get forecast_url(tab: "comparison")
+    assert_response :success
+    first_order = css_select("[data-testid=forecast-goal-tradeoff-row]").map { |r| r["data-stack-key"] }
+
+    get forecast_url(tab: "comparison")
+    assert_response :success
+    second_order = css_select("[data-testid=forecast-goal-tradeoff-row]").map { |r| r["data-stack-key"] }
+
+    assert_equal first_order, second_order
+    refute_empty first_order
+  end
+
   # --- timeline tab ----------------------------------------------------------
 
   test "timeline tab renders the synchronized lanes for a completed run" do
@@ -577,6 +673,91 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
       end
 
       if failed_stacks.any?
+        group.update!(finished_at: Time.current)
+        group.update_column(:status, "failed")
+      else
+        group.update!(status: "completed", finished_at: Time.current)
+      end
+      group
+    end
+
+    # Builds a (completed, or partially-failed) comparison ForecastRunGroup whose
+    # runs carry persisted forecast_goal_evaluations, so the GoalTradeoffExplorer
+    # has real, deterministic rows to rank. Two family goals are graded:
+    #   * a minimum_cash_runway goal (DAYS, more is better)
+    #   * a maximum_debt_balance goal (MONEY, less is better)
+    # Stacks (best-first after ranking):
+    #   * baseline      — both goals pass (the reference; no tradeoffs)
+    #   * strong_stack  — both pass, +60 days runway (improvement) and +$1,000
+    #                     projected debt (regression) vs baseline
+    #   * blocked_stack — runway goal BLOCKING (pinned last regardless of the rest)
+    # Evaluations are written while the run is still `running` (the immutability
+    # concern locks completed output), then the run/group are flipped to completed.
+    def build_tradeoff_comparison_group(family:, user:, with_failed_stack: false, goal_name_prefix: nil)
+      currency = family.currency
+      prefix = goal_name_prefix ? "#{goal_name_prefix} " : ""
+
+      runway_goal = family.forecast_goals.create!(
+        name: "#{prefix}Runway goal", goal_type: "minimum_cash_runway",
+        target_duration_days: 90, status: "active", blocking_behavior: "blocks_stack",
+        required: true
+      )
+      debt_goal = family.forecast_goals.create!(
+        name: "#{prefix}Debt goal", goal_type: "maximum_debt_balance",
+        target_amount: 5000, currency: currency, status: "active",
+        blocking_behavior: "warn", required: false
+      )
+
+      runway_key = "forecast_goal:#{runway_goal.id}"
+      debt_key = "forecast_goal:#{debt_goal.id}"
+
+      group = family.forecast_run_groups.create!(
+        user: user, name: "Comparison run", run_type: "manual", currency: currency,
+        horizon_start_on: Date.current, horizon_end_on: Date.current + 36.months,
+        daily_until_on: Date.current + 89.days
+      )
+
+      # stack_key => { runway: [status, metric], debt: [status, metric] }
+      plan = {
+        "baseline" => { runway: [ "pass", 120 ], debt: [ "pass", 2000 ] },
+        "strong_stack" => { runway: [ "pass", 180 ], debt: [ "pass", 3000 ] },
+        "blocked_stack" => { runway: [ "blocking", 30 ], debt: [ "pass", 2500 ] }
+      }
+
+      plan.each do |stack_key, evals|
+        run = group.forecast_runs.create!(
+          family: family, user: user, scenario_stack_key: stack_key,
+          scenario_stack_snapshot: { "key" => stack_key, "label" => stack_key.titleize },
+          status: "running", feasibility_status: "pass", currency: currency,
+          input_snapshot: forecast_valid_input_snapshot(family)
+        )
+
+        run.forecast_goal_evaluations.create!(
+          forecast_goal: runway_goal, goal_key: runway_key, scenario_stack_key: stack_key,
+          status: evals[:runway][0], currency: currency, metric_value: evals[:runway][1],
+          target_value: 90, evaluated_on: Date.current + 35.months,
+          goal_snapshot: { "id" => runway_goal.id, "goal_type" => "minimum_cash_runway", "name" => runway_goal.name },
+          details: { "field" => "cash_runway_days" }
+        )
+        run.forecast_goal_evaluations.create!(
+          forecast_goal: debt_goal, goal_key: debt_key, scenario_stack_key: stack_key,
+          status: evals[:debt][0], currency: currency, metric_value: evals[:debt][1],
+          target_value: 5000, evaluated_on: Date.current + 35.months,
+          goal_snapshot: { "id" => debt_goal.id, "goal_type" => "maximum_debt_balance", "name" => debt_goal.name },
+          details: { "field" => "debt_balance" }
+        )
+
+        run.update!(status: "completed", finished_at: Time.current)
+      end
+
+      if with_failed_stack
+        group.forecast_runs.create!(
+          family: family, user: user, scenario_stack_key: "failed_stack",
+          scenario_stack_snapshot: { "key" => "failed_stack", "label" => "Failed Stack" },
+          status: "failed", feasibility_status: "unknown", currency: currency,
+          error_message: "MoneyConverter::MissingRate: no rate",
+          input_snapshot: forecast_valid_input_snapshot(family)
+        )
         group.update!(finished_at: Time.current)
         group.update_column(:status, "failed")
       else

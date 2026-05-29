@@ -180,6 +180,32 @@
         </div>
       </div>
     <% end %>
+
+    <%# Goal-tradeoff comparison table. Renders the deterministic ranking of the
+        contributing scenario stacks (best-first, baseline as reference, any
+        blocked stack pinned last) over the group's persisted goal evaluations.
+        Rendered only when there is more than one contributing stack AND goals
+        were actually evaluated; otherwise the shared tradeoff empty state
+        explains how to surface tradeoffs. Reads persisted rows only. %>
+    <% if workspace.goal_tradeoff_data? %>
+      <%= render "forecasts/goal_tradeoff", workspace: workspace %>
+    <% else %>
+      <div class="rounded-xl border border-primary bg-container p-8 text-center"
+           data-testid="forecast-goal-tradeoff-empty"
+           aria-labelledby="forecast-goal-tradeoff-empty-title">
+        <div class="mx-auto flex max-w-md flex-col items-center gap-3">
+          <span class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-inset" aria-hidden="true">
+            <%= icon "target", size: "lg", color: "default" %>
+          </span>
+          <div class="space-y-1">
+            <h3 id="forecast-goal-tradeoff-empty-title" class="text-primary text-lg font-medium">
+              <%= t("forecasts.tradeoff.empty.title") %>
+            </h3>
+            <p class="text-secondary text-sm"><%= t("forecasts.tradeoff.empty.body") %></p>
+          </div>
+        </div>
+      </div>
+    <% end %>
   <% else %>
     <%# No run group yet: nothing to compare. %>
     <div class="rounded-xl border border-primary bg-container p-8 text-center"

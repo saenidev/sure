@@ -180,10 +180,32 @@ en:
         blocked: "Blocked"
         tradeoffs: "Tradeoffs vs baseline"
         no_tradeoffs: "—"
+      baseline_badge: "Baseline"
+      blocked_badge: "Blocked"
+      counts_aria: "%{satisfied} on track, %{at_risk} at risk, %{blocked} blocked"
+      # Per-goal-type noun used inside the tradeoff notes, e.g. "+2 months of
+      # runway on Goal X". Falls back to a generic "outcome" for any goal type
+      # whose metric we do not have a tailored noun for.
+      metric_nouns:
+        minimum_cash_runway: "of cash runway"
+        minimum_liquid_runway: "of liquid runway"
+        minimum_cash_balance: "of projected cash"
+        maximum_debt_balance: "of projected debt"
+        default: "of projected outcome"
       directions:
         improvement: "Improvement"
         regression: "Regression"
         unchanged: "Unchanged"
+      # Structured tradeoff notes formatted from the builder's machine-readable
+      # hashes. %{magnitude} is the already-formatted money/duration delta,
+      # %{metric} the per-goal-type noun above, and %{goal} the goal's name.
+      notes:
+        improvement: "+%{magnitude} %{metric} on %{goal}"
+        regression: "−%{magnitude} %{metric} on %{goal}"
+        unchanged: "No change %{metric} on %{goal}"
+      duration_days:
+        one: "%{count} day"
+        other: "%{count} days"
       empty:
         title: "No goal tradeoffs yet"
         body: "Add goals, then compare more than one scenario stack in a single forecast run to rank the stacks by the goals they keep on track."
