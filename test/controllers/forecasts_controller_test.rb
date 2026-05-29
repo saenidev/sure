@@ -124,6 +124,43 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#forecast-running-title"
   end
 
+  test "Review tab lists the family's past run groups by type and status" do
+    # An older failed weekly group plus a newer completed manual group. The
+    # newest (completed) group puts the workspace in the has_run state so the
+    # tabs (and the Review history) render; the history lists BOTH groups.
+    @family.forecast_run_groups.create!(
+      user: @user, name: "Weekly review", run_type: "weekly", status: "failed",
+      currency: @family.currency, horizon_start_on: Date.current,
+      horizon_end_on: 36.months.from_now.to_date, daily_until_on: 90.days.from_now.to_date,
+      error_message: "boom", finished_at: Time.current, created_at: 2.days.ago
+    )
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    get forecast_url
+
+    assert_response :success
+    assert_select "section[aria-label=?]", I18n.t("forecasts.review.heading")
+    assert_select "td", text: I18n.t("forecasts.review.run_types.weekly")
+    assert_select "td", text: I18n.t("forecasts.review.run_types.manual")
+  end
+
+  test "Review tab does not leak another family's run history" do
+    other_family = families(:empty)
+    other_family.forecast_run_groups.delete_all
+    build_completed_run_group(family: other_family, user: users(:empty))
+    # The current family has its own completed group so the workspace is in the
+    # has_run state and the Review tab renders.
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    assert_queries_count(matcher: /forecast_run_groups/, max: 2) do
+      get forecast_url
+    end
+
+    assert_response :success
+    # Exactly one history row: the current family's own group, never the other family's.
+    assert_select "section[aria-label=?] table tbody tr", I18n.t("forecasts.review.heading"), count: 1
+  end
+
   test "Overview renders the 36-row monthly table for a real completed run without month N+1" do
     @family.forecast_run_groups.delete_all
     ForecastGenerationJob.perform_now(family: @family, user: @user)

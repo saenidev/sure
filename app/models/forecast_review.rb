@@ -15,6 +15,26 @@ class ForecastReview < ApplicationRecord
   validate :records_belong_to_family
   validate :run_group_is_immutable, on: :update
 
+  # Records why a market-close (or other automated) run was flagged for review.
+  # The review shell stays a draft — only its response_packet is annotated with
+  # the trigger reason + the material-movement metrics so a human (or later
+  # Hermes) can see WHY it was surfaced. The run group output itself is never
+  # mutated.
+  def flag_triggered!(reason:, flags: [], metrics: {})
+    update!(
+      response_packet: response_packet.merge(
+        "triggered" => true,
+        "trigger_reason" => reason,
+        "trigger_flags" => Array(flags),
+        "trigger_metrics" => metrics
+      )
+    )
+  end
+
+  def triggered?
+    response_packet["triggered"] == true
+  end
+
   private
     def run_group_is_immutable
       return unless will_save_change_to_forecast_run_group_id?

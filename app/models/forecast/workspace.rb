@@ -395,6 +395,40 @@ module Forecast
       TAB_IDS
     end
 
+    # --- Review history --------------------------------------------------------
+
+    # Past run groups for the Review tab's history list, newest first, paired
+    # with their review (draft/awaiting/approved/...) status. Eager-loads the
+    # review so the list adds no N+1 over each group, and scoped to this family.
+    # Capped so the stub never renders an unbounded list.
+    REVIEW_HISTORY_LIMIT = 25
+
+    def review_history
+      return @review_history if defined?(@review_history)
+
+      @review_history = family.forecast_run_groups
+        .includes(:forecast_review)
+        .order(created_at: :desc)
+        .limit(REVIEW_HISTORY_LIMIT)
+        .to_a
+    end
+
+    def review_history?
+      review_history.any?
+    end
+
+    # DS::Pill tone for a run-group status (history list badges).
+    GROUP_STATUS_TONES = {
+      "completed" => :indigo,
+      "running" => :amber,
+      "pending" => :gray,
+      "failed" => :fuchsia
+    }.freeze
+
+    def group_status_tone(status)
+      GROUP_STATUS_TONES.fetch(status, :gray)
+    end
+
     private
       # Map of goal_key -> status string from the latest completed run group.
       # Prefers the baseline run's evaluation (the headline projection) and falls

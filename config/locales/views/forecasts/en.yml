@@ -38,8 +38,42 @@ en:
       dismiss: "Dismiss"
     runs:
       default_name: "Forecast %{date}"
+      weekly_name: "Weekly review %{date}"
+      market_close_name: "Market close %{date}"
       enqueued: "Generating your forecast. This page will update when it is ready."
       already_running: "A forecast is already being generated. Please wait for it to finish."
+    review:
+      heading: "Review history"
+      description: "Past forecast runs for your family, including automated weekly reviews and market-close triggers. Flagged runs moved enough to warrant a closer look."
+      flagged: "Flagged for review"
+      table:
+        caption: "Past forecast run groups by type, with run status, review status, and generation time."
+        name: "Forecast"
+        run_type: "Trigger"
+        status: "Status"
+        review_status: "Review"
+        generated_at: "Generated"
+      run_types:
+        manual: "Manual"
+        weekly: "Weekly review"
+        market_close: "Market close"
+        hermes: "Hermes"
+      statuses:
+        pending: "Pending"
+        running: "Running"
+        completed: "Completed"
+        failed: "Failed"
+      review_statuses:
+        none: "—"
+        draft: "Draft"
+        awaiting_approval: "Awaiting approval"
+        approved: "Approved"
+        rejected: "Rejected"
+        applied: "Applied"
+        superseded: "Superseded"
+      empty:
+        title: "No forecast runs yet"
+        body: "Generate a forecast, or wait for the next scheduled weekly review, and your run history will appear here."
     comparison:
       heading: "Compare scenario stacks"
       description: "Generate several scenario stacks in one run and compare their end-of-horizon outcomes side by side. Baseline is always included as a reference."

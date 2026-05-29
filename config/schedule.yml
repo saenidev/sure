@@ -54,3 +54,15 @@ debt_maintenance:
   class: "DebtMaintenanceJob"
   queue: "scheduled"
   description: "Runs manual debt interest, obligation, and payment allocation maintenance"
+
+forecast_weekly_review:
+  cron: "0 6 * * 1" # Mondays at 6:00 AM UTC
+  class: "ForecastWeeklyReviewSchedulerJob"
+  queue: "scheduled"
+  description: "Fans out one weekly forecast review per eligible family (preview-enabled with accounts/scenarios)"
+
+forecast_market_close:
+  cron: "30 22 * * 1-5" # 30 min after import_market_data, Monday through Friday
+  class: "ForecastMarketCloseSchedulerJob"
+  queue: "scheduled"
+  description: "Fans out market-close forecast triggers per eligible family; generates only when movement is material"

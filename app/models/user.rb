@@ -57,6 +57,10 @@ class User < ApplicationRecord
   enum :role, { guest: "guest", member: "member", admin: "admin", super_admin: "super_admin" }, validate: true
   enum :ui_layout, { dashboard: "dashboard", intro: "intro" }, validate: true, prefix: true
 
+  # Users who have opted into preview features (see #preview_features_enabled?).
+  # Backs the forecasting-preview eligibility check for scheduled forecast jobs.
+  scope :with_preview_features, -> { where("preferences ->> 'preview_features_enabled' = 'true'") }
+
   before_validation :apply_ui_layout_defaults
   before_validation :apply_role_based_ui_defaults
 

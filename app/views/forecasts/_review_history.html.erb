@@ -1,0 +1,81 @@
+<%# locals: (workspace:) %>
+<%#
+  Review tab: a read-only history of this family's past forecast run groups,
+  newest first, grouped conceptually by run_type with each group's status and
+  its review state. Scoped to Current.family via the workspace; the review is
+  eager-loaded so the list never N+1s.
+
+  This is a stub surface: it lists what was run and why (manual / weekly /
+  market-close / hermes) so a human can see which automated runs were flagged
+  for review. Approval actions land in a later slice.
+%>
+<section class="space-y-4" aria-label="<%= t("forecasts.review.heading") %>">
+  <div class="space-y-1">
+    <h3 class="text-primary text-base font-medium"><%= t("forecasts.review.heading") %></h3>
+    <p class="text-secondary text-sm"><%= t("forecasts.review.description") %></p>
+  </div>
+
+  <% if workspace.review_history? %>
+    <div class="overflow-x-auto rounded-xl border border-primary">
+      <table class="w-full text-sm">
+        <caption class="sr-only"><%= t("forecasts.review.table.caption") %></caption>
+        <thead>
+          <tr class="border-b border-primary text-secondary text-left">
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.review.table.name") %></th>
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.review.table.run_type") %></th>
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.review.table.status") %></th>
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.review.table.review_status") %></th>
+            <th scope="col" class="px-4 py-2 font-medium"><%= t("forecasts.review.table.generated_at") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% workspace.review_history.each do |group| %>
+            <tr class="border-b border-primary last:border-0">
+              <th scope="row" class="px-4 py-2 text-left font-normal text-primary">
+                <span class="inline-flex items-center gap-2">
+                  <% if group.forecast_review&.triggered? %>
+                    <span class="text-amber-600" aria-hidden="true"><%= icon "flag", size: "sm" %></span>
+                    <span class="sr-only"><%= t("forecasts.review.flagged") %></span>
+                  <% end %>
+                  <%= group.name %>
+                </span>
+              </th>
+              <td class="px-4 py-2">
+                <%= render DS::Pill.new(
+                  label: t("forecasts.review.run_types.#{group.run_type}", default: group.run_type.humanize),
+                  tone: :gray,
+                  show_dot: false
+                ) %>
+              </td>
+              <td class="px-4 py-2">
+                <%= render DS::Pill.new(
+                  label: t("forecasts.review.statuses.#{group.status}", default: group.status.humanize),
+                  tone: workspace.group_status_tone(group.status)
+                ) %>
+              </td>
+              <td class="px-4 py-2 text-secondary">
+                <% if group.forecast_review.present? %>
+                  <%= t("forecasts.review.review_statuses.#{group.forecast_review.status}", default: group.forecast_review.status.humanize) %>
+                <% else %>
+                  <%= t("forecasts.review.review_statuses.none") %>
+                <% end %>
+              </td>
+              <td class="px-4 py-2 text-secondary">
+                <% if group.finished_at.present? %>
+                  <%= l(group.finished_at, format: :long) %>
+                <% else %>
+                  <%= l(group.created_at, format: :long) %>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <div class="rounded-xl border border-primary bg-container p-6 text-center">
+      <p class="text-primary text-sm font-medium"><%= t("forecasts.review.empty.title") %></p>
+      <p class="text-secondary mt-1 text-sm"><%= t("forecasts.review.empty.body") %></p>
+    </div>
+  <% end %>
+</section>
