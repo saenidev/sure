@@ -13,18 +13,26 @@ class Forecast::ScenariosControllerTest < ActionDispatch::IntegrationTest
   # MUST contain a <turbo-frame id="modal"> or Turbo shows "content missing".
 
   test "new renders the form inside the modal turbo frame" do
-    get new_forecast_scenario_url
+    get new_forecast_scenario_url, headers: { "Turbo-Frame" => "modal" }
 
     assert_response :success
+    # Exactly one modal frame: DS::Dialog already wraps in turbo-frame#modal, so
+    # a manual turbo_frame_tag "modal" wrapper would nest a duplicate id and Turbo
+    # would render "content missing".
+    assert_select "turbo-frame#modal", count: 1
     assert_select "turbo-frame#modal form"
   end
 
   test "edit renders the form inside the modal turbo frame" do
     scenario = @family.forecast_scenarios.create!(name: "Editable", status: "active", created_by_user: @user)
 
-    get edit_forecast_scenario_url(scenario)
+    get edit_forecast_scenario_url(scenario), headers: { "Turbo-Frame" => "modal" }
 
     assert_response :success
+    # Exactly one modal frame: DS::Dialog already wraps in turbo-frame#modal, so
+    # a manual turbo_frame_tag "modal" wrapper would nest a duplicate id and Turbo
+    # would render "content missing".
+    assert_select "turbo-frame#modal", count: 1
     assert_select "turbo-frame#modal form"
   end
 

@@ -13,18 +13,24 @@ class Forecast::GoalsControllerTest < ActionDispatch::IntegrationTest
   # Regression: new/edit open in the "modal" turbo frame, so the response must
   # contain a <turbo-frame id="modal"> or Turbo renders "content missing".
   test "new renders the form inside the modal turbo frame" do
-    get new_forecast_goal_url
+    get new_forecast_goal_url, headers: { "Turbo-Frame" => "modal" }
 
     assert_response :success
+    # Exactly one modal frame: DS::Dialog already wraps in turbo-frame#modal, so a
+    # manual wrapper would nest a duplicate id and Turbo renders "content missing".
+    assert_select "turbo-frame#modal", count: 1
     assert_select "turbo-frame#modal form"
   end
 
   test "edit renders the form inside the modal turbo frame" do
     goal = @family.forecast_goals.create!(name: "Editable", goal_type: "minimum_cash_runway", target_duration_days: 90, blocking_behavior: "warn", status: "active")
 
-    get edit_forecast_goal_url(goal)
+    get edit_forecast_goal_url(goal), headers: { "Turbo-Frame" => "modal" }
 
     assert_response :success
+    # Exactly one modal frame: DS::Dialog already wraps in turbo-frame#modal, so a
+    # manual wrapper would nest a duplicate id and Turbo renders "content missing".
+    assert_select "turbo-frame#modal", count: 1
     assert_select "turbo-frame#modal form"
   end
 

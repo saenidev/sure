@@ -1,7 +1,5 @@
-<%= turbo_frame_tag "modal" do %>
-  <%= render "forecast/budget_overrides/form",
-             override: @override,
-             period_start_on: @override.period_start_on,
-             scenario: @override.forecast_scenario,
-             existing_override: @existing_override %>
-<% end %>
+<%= render "forecast/budget_overrides/form",
+           override: @override,
+           period_start_on: @override.period_start_on,
+           scenario: @override.forecast_scenario,
+           existing_override: @existing_override %>

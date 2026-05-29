@@ -1,8 +1,6 @@
-<%= turbo_frame_tag "modal" do %>
-  <%= render DS::Dialog.new do |dialog| %>
-    <% dialog.with_header(title: t("forecasts.goals.new.title")) %>
-    <% dialog.with_body do %>
-      <%= render "form", goal: @goal %>
-    <% end %>
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t("forecasts.goals.new.title")) %>
+  <% dialog.with_body do %>
+    <%= render "form", goal: @goal %>
   <% end %>
 <% end %>
