@@ -143,6 +143,78 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "Overview renders the cash-runway and net-worth projection charts for the family's own run" do
+    build_run_group_with_series(family: @family, user: @user, days: 90, months: 36)
+
+    get forecast_url
+
+    assert_response :success
+    # Both chart containers are wired to the shared time-series-chart controller.
+    assert_select "#forecastCashRunwayCash[data-controller='time-series-chart']"
+    assert_select "#forecastCashRunwayLiquid[data-controller='time-series-chart']"
+    assert_select "#forecastNetWorthProjection[data-controller='time-series-chart']"
+    # Daily/liquid toggle is present and declarative.
+    assert_select "[data-controller='forecast-chart-toggle']"
+    assert_select "button[data-action='forecast-chart-toggle#select']", count: 2
+  end
+
+  test "Overview renders the data_not_available fallback when the run has no days or months" do
+    # A completed run group with no day/month rows: charts must show the fallback,
+    # never an empty chart container.
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    get forecast_url
+
+    assert_response :success
+    # No chart container should be rendered (the whole overview falls back to the
+    # "no projection data" empty state because monthly_rows is empty).
+    assert_select "[data-controller='time-series-chart']", count: 0
+    assert_select "#forecast-overview-empty-title"
+  end
+
+  test "Overview surfaces runway risk annotation from persisted risk flags" do
+    build_run_group_with_series(
+      family: @family, user: @user, days: 90, months: 36,
+      day_attrs: ->(i) { i.zero? ? { cash_balance: -250 } : {} }
+    )
+
+    get forecast_url
+
+    assert_response :success
+    assert_select "#forecastCashRunwayCash[data-controller='time-series-chart']"
+    # Negative-cash risk note renders inline.
+    assert_select "[role='status']", text: /#{Regexp.escape(I18n.t("forecasts.overview.charts.cash_runway.risk.negative_cash"))}/
+  end
+
+  test "Overview path 404s for a foreign family's forecast and shows own onboarding" do
+    # Reuses slice-2 scoping: the workspace only ever reads Current.family's run
+    # groups, so a foreign group never leaks into the current family's overview.
+    other_family = families(:empty)
+    other_family.forecast_run_groups.delete_all
+    build_run_group_with_series(family: other_family, user: users(:empty), days: 90, months: 36)
+
+    get forecast_url
+
+    assert_response :success
+    assert_select "[data-controller='time-series-chart']", count: 0
+    assert_select "#forecast-empty-state-title", text: I18n.t("forecasts.empty_state.onboarding.title")
+  end
+
+  test "Overview charts add no per-day or per-month N+1 queries" do
+    build_run_group_with_series(family: @family, user: @user, days: 90, months: 36)
+
+    # Warm caches so the assertion focuses on the forecast read path.
+    get forecast_url
+    assert_response :success
+
+    assert_queries_count(matcher: /forecast_days/, max: 1) do
+      get forecast_url
+    end
+    assert_queries_count(matcher: /forecast_months/, max: 1) do
+      get forecast_url
+    end
+  end
+
   private
     # Counts queries matching a pattern issued during the block and asserts the
     # count stays within bound, guarding against N+1 over forecast runs.

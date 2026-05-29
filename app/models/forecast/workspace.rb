@@ -97,11 +97,36 @@ module Forecast
       @monthly_rows = baseline_run.forecast_months.order(:period_start_on).to_a
     end
 
+    # The 90 daily projection rows for the baseline run, ordered for the
+    # cash-runway chart. Loaded once and memoized so the runway chart and its
+    # risk annotation share a single `forecast_days` query (no N+1 over 90 days).
+    def daily_rows
+      return @daily_rows if defined?(@daily_rows)
+      return @daily_rows = [] unless baseline_run
+
+      @daily_rows = baseline_run.forecast_days.order(:date).to_a
+    end
+
     # Whether the completed baseline run actually produced any projection rows.
     # Drives the Overview "no data yet" empty state (e.g. a family with zero
     # accounts/budgets still gets a run, just with nothing to chart).
     def overview_data?
       baseline_run.present? && monthly_rows.any?
+    end
+
+    # Read-only builder that serializes the baseline run's persisted day/month
+    # rows into Series-shaped chart data. Reuses the already-loaded daily/monthly
+    # arrays so the charts add no queries beyond the two list loads. Returns nil
+    # when there is no baseline run to chart.
+    def series_builder
+      return @series_builder if defined?(@series_builder)
+      return @series_builder = nil unless baseline_run
+
+      @series_builder = Forecast::SeriesBuilder.new(
+        baseline_run,
+        days: daily_rows,
+        months: monthly_rows
+      )
     end
 
     # Currency the baseline run/group was projected in (for Money formatting).

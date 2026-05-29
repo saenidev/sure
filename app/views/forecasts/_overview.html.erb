@@ -56,6 +56,18 @@
       </div>
     </section>
 
+    <%# Cash-runway (daily) + net-worth (monthly) projection charts. Both reuse
+        the shared time-series-chart controller and read persisted day/month rows
+        via the workspace's series_builder (no engine recompute, no extra
+        queries beyond the eager-loaded arrays). %>
+    <section aria-labelledby="forecast-charts-heading" class="space-y-3">
+      <h3 id="forecast-charts-heading" class="sr-only"><%= t("forecasts.overview.charts.heading") %></h3>
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <%= render "forecasts/cash_runway_chart", series_builder: workspace.series_builder %>
+        <%= render "forecasts/net_worth_projection_chart", series_builder: workspace.series_builder %>
+      </div>
+    </section>
+
     <%# Aggregated risk flags %>
     <section aria-labelledby="forecast-risk-flags-heading" class="space-y-2">
       <h3 id="forecast-risk-flags-heading" class="text-primary text-base font-medium"><%= t("forecasts.overview.risk_flags.heading") %></h3>

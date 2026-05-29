@@ -53,6 +53,20 @@ en:
         warn: "At risk"
         blocked: "Blocked"
         unknown: "Unknown"
+      charts:
+        heading: "Projection charts"
+        data_not_available: "Not enough projection data to chart yet."
+        cash_runway:
+          heading: "Cash runway"
+          subtitle: "Projected daily balances across the next 90 days."
+          toggle_label: "Choose which balance to chart"
+          line_cash: "Cash"
+          line_liquid: "Liquid"
+          risk:
+            negative_cash: "Projected negative cash"
+        net_worth:
+          heading: "Net worth projection"
+          subtitle: "Projected net worth across the next 36 months."
       metrics:
         heading: "Key metrics"
         column_current: "Today"

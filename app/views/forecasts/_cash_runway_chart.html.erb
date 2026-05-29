@@ -1,0 +1,99 @@
+<%# locals: (series_builder:) %>
+<%#
+  Cash-runway card. Renders two daily series (90 ForecastDay points) reusing the
+  shared `time-series-chart` Stimulus/D3 controller: a cash-balance line and a
+  liquid-balance line, toggled client-side via a declarative Stimulus toggle (no
+  page reload, no extra request). Both series are built read-only from persisted
+  rows by Forecast::SeriesBuilder — no engine math is recomputed here.
+
+  Empty/edge: a run with fewer than two days yields nil series (Series needs >= 2
+  points), so we render the shared data_not_available fallback instead of an
+  empty SVG. Negative-cash / runway risk is surfaced inline from persisted
+  risk_flags, never recomputed.
+%>
+<% cash_series = series_builder&.cash_runway_series %>
+<% liquid_series = series_builder&.liquid_runway_series %>
+
+<section class="rounded-xl border border-primary bg-container p-4 sm:p-6 space-y-4"
+         aria-labelledby="forecast-cash-runway-heading"
+         data-controller="forecast-chart-toggle">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="space-y-1">
+      <h3 id="forecast-cash-runway-heading" class="text-primary text-base font-medium">
+        <%= t("forecasts.overview.charts.cash_runway.heading") %>
+      </h3>
+      <p class="text-secondary text-sm"><%= t("forecasts.overview.charts.cash_runway.subtitle") %></p>
+    </div>
+
+    <% if cash_series&.any? %>
+      <%# Declarative cash/liquid toggle. Each button sets which line is shown;
+          aria-pressed/tablist semantics keep it keyboard- and screen-reader
+          operable. %>
+      <div class="inline-flex rounded-lg border border-primary p-0.5" role="group"
+           aria-label="<%= t("forecasts.overview.charts.cash_runway.toggle_label") %>">
+        <button type="button"
+                class="rounded-md px-3 py-1 text-sm font-medium text-secondary aria-pressed:bg-surface-inset aria-pressed:text-primary"
+                aria-pressed="true"
+                data-forecast-chart-toggle-target="button"
+                data-line="cash"
+                data-action="forecast-chart-toggle#select">
+          <%= t("forecasts.overview.charts.cash_runway.line_cash") %>
+        </button>
+        <button type="button"
+                class="rounded-md px-3 py-1 text-sm font-medium text-secondary aria-pressed:bg-surface-inset aria-pressed:text-primary"
+                aria-pressed="false"
+                data-forecast-chart-toggle-target="button"
+                data-line="liquid"
+                data-action="forecast-chart-toggle#select">
+          <%= t("forecasts.overview.charts.cash_runway.line_liquid") %>
+        </button>
+      </div>
+    <% end %>
+  </div>
+
+  <% if series_builder&.runway_risk? %>
+    <%# Runway-risk note read from persisted ForecastDay#risk_flags / negative
+        cash days. Does not recompute engine math. %>
+    <div class="flex flex-wrap items-center gap-2" role="status">
+      <% if series_builder.negative_cash? %>
+        <%= render DS::Pill.new(
+          label: t("forecasts.overview.charts.cash_runway.risk.negative_cash"),
+          tone: :fuchsia,
+          style: :soft,
+          size: :sm
+        ) %>
+      <% end %>
+      <% series_builder.runway_risk_flag_types.each do |flag_type| %>
+        <%= render DS::Pill.new(
+          label: t("forecasts.overview.risk_flags.types.#{flag_type}", default: flag_type.humanize),
+          tone: :amber,
+          style: :soft,
+          size: :sm
+        ) %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if cash_series&.any? %>
+    <%# Both lines are rendered; the toggle shows one at a time. Each container is
+        privacy-sensitive like the dashboard net-worth chart so balances blur
+        with the global privacy mode. %>
+    <div id="forecastCashRunwayCash"
+         class="w-full min-h-52 privacy-sensitive"
+         data-forecast-chart-toggle-target="panel"
+         data-line="cash"
+         data-controller="time-series-chart"
+         data-time-series-chart-data-value="<%= cash_series.to_json %>"></div>
+
+    <div id="forecastCashRunwayLiquid"
+         class="hidden w-full min-h-52 privacy-sensitive"
+         data-forecast-chart-toggle-target="panel"
+         data-line="liquid"
+         data-controller="time-series-chart"
+         data-time-series-chart-data-value="<%= liquid_series.to_json %>"></div>
+  <% else %>
+    <div class="flex min-h-52 w-full items-center justify-center">
+      <p class="text-secondary text-sm"><%= t("forecasts.overview.charts.data_not_available") %></p>
+    </div>
+  <% end %>
+</section>

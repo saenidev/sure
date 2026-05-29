@@ -1,0 +1,33 @@
+<%# locals: (series_builder:) %>
+<%#
+  Net-worth projection card. Renders the 36 monthly ForecastMonth#net_worth
+  points (NOT cash) reusing the shared `time-series-chart` Stimulus/D3 controller
+  — the same contract the dashboard net-worth chart uses. Series is built
+  read-only from persisted rows by Forecast::SeriesBuilder; no engine math is
+  recomputed.
+
+  Empty/edge: a run with fewer than two months yields a nil series, so we render
+  the shared data_not_available fallback instead of an empty SVG.
+%>
+<% series = series_builder&.net_worth_series %>
+
+<section class="rounded-xl border border-primary bg-container p-4 sm:p-6 space-y-4"
+         aria-labelledby="forecast-net-worth-projection-heading">
+  <div class="space-y-1">
+    <h3 id="forecast-net-worth-projection-heading" class="text-primary text-base font-medium">
+      <%= t("forecasts.overview.charts.net_worth.heading") %>
+    </h3>
+    <p class="text-secondary text-sm"><%= t("forecasts.overview.charts.net_worth.subtitle") %></p>
+  </div>
+
+  <% if series&.any? %>
+    <div id="forecastNetWorthProjection"
+         class="w-full min-h-52 privacy-sensitive"
+         data-controller="time-series-chart"
+         data-time-series-chart-data-value="<%= series.to_json %>"></div>
+  <% else %>
+    <div class="flex min-h-52 w-full items-center justify-center">
+      <p class="text-secondary text-sm"><%= t("forecasts.overview.charts.data_not_available") %></p>
+    </div>
+  <% end %>
+</section>
