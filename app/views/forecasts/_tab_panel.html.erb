@@ -6,9 +6,10 @@
 
   Run-derived tabs (CACHEABLE_TABS) are fragment-cached on the immutable run
   group, so revisiting them re-serves cached HTML instead of re-running the
-  read-model builders. The cache MUST live here in ERB (not a helper): `<%= render
-  %>` appends to the output buffer that `cache` captures, whereas `render` called
-  from a helper returns a string and `cache` would capture nothing.
+  read-model builders. The cache MUST live here in ERB (not a helper): a
+  rendering output tag appends to the output buffer that `cache` captures,
+  whereas `render` called from a helper returns a string and `cache` would
+  capture nothing.
 %>
 <% partial = ForecastsHelper::TAB_PARTIALS.fetch(tab_id) %>
 <% if ForecastsHelper::CACHEABLE_TABS.include?(tab_id) && workspace.run_group %>
