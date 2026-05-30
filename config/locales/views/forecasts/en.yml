@@ -875,6 +875,57 @@ en:
   # and the review approval views. Lives under the SAME top-level `en:` as
   # `forecasts:` above (a second `en:` key would overwrite it on parse).
   forecast:
+    scenarios:
+      create:
+        success: "Scenario created."
+      update:
+        success: "Scenario updated."
+      destroy:
+        success: "Scenario deleted."
+      toggle:
+        success: "Scenario updated."
+        archived: "Archived scenarios cannot be toggled. Restore it first."
+        error: "We could not update this scenario."
+      duplicate:
+        success: "Scenario duplicated. The copy is disabled until you turn it on."
+        error: "We could not duplicate this scenario: %{message}"
+    events:
+      create:
+        success: "Event created."
+      update:
+        success: "Event updated."
+      destroy:
+        success: "Event deleted."
+    goals:
+      create:
+        success: "Goal created."
+      update:
+        success: "Goal updated."
+      destroy:
+        success: "Goal deleted."
+    account_liquidity_settings:
+      create:
+        success: "Liquidity override saved."
+      update:
+        success: "Liquidity override updated."
+      destroy:
+        success: "Liquidity override removed."
+    budget_overrides:
+      create:
+        success: "Forecast budget override saved."
+      update:
+        success: "Forecast budget override updated."
+      destroy:
+        success: "Forecast budget override removed."
+    event_links:
+      create:
+        success: "Match accepted."
+        error: "We could not accept that match."
+      update:
+        success: "Match updated."
+        error: "We could not update that match."
+      destroy:
+        success: "Match removed."
     templates:
       create:
         success: "Applied \"%{name}\" as a disabled scenario. Activate it to include it in your forecast."

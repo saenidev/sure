@@ -31,7 +31,8 @@
         <%= render DS::Link.new(
           text: t("forecasts.reconciliation.empty.new_event"),
           icon: "plus",
-          href: new_forecast_event_path
+          href: new_forecast_event_path,
+          frame: "modal"
         ) %>
       </div>
     </div>

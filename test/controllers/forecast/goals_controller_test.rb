@@ -19,7 +19,7 @@ class Forecast::GoalsControllerTest < ActionDispatch::IntegrationTest
     # Exactly one modal frame: DS::Dialog already wraps in turbo-frame#modal, so a
     # manual wrapper would nest a duplicate id and Turbo renders "content missing".
     assert_select "turbo-frame#modal", count: 1
-    assert_select "turbo-frame#modal form"
+    assert_select "turbo-frame#modal form[data-turbo-frame=?]", "_top"
   end
 
   test "edit renders the form inside the modal turbo frame" do
@@ -31,7 +31,7 @@ class Forecast::GoalsControllerTest < ActionDispatch::IntegrationTest
     # Exactly one modal frame: DS::Dialog already wraps in turbo-frame#modal, so a
     # manual wrapper would nest a duplicate id and Turbo renders "content missing".
     assert_select "turbo-frame#modal", count: 1
-    assert_select "turbo-frame#modal form"
+    assert_select "turbo-frame#modal form[data-turbo-frame=?]", "_top"
   end
 
   def runway_params(overrides = {})
@@ -75,12 +75,22 @@ class Forecast::GoalsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=goals-empty-state]"
   end
 
+  # Regression: the "New goal" trigger opens a modal, so it must be a GET anchor
+  # that navigates the "modal" turbo frame -- NOT a button_to POST form (which
+  # would POST to a GET-only route and make Turbo render "content missing").
   test "index renders the new trigger as a GET modal link, not a POST form" do
     get forecast_goals_path
 
     assert_response :success
-    assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_goal_path
-    assert_select "form[action=?]", new_forecast_goal_path, false
+
+    new_path = new_forecast_goal_path
+    modal_link_hrefs = css_select("a[data-turbo-frame=modal]").map { |a| a["href"] }
+    assert_includes modal_link_hrefs, new_path,
+      "expected a GET <a> to #{new_path} in the modal frame (button_to POST regression -> Turbo 'content missing')"
+
+    form_actions = css_select("form").map { |f| f["action"] }
+    assert_not_includes form_actions, new_path,
+      "the New goal trigger must not be a button_to POST form to the GET-only #{new_path}"
   end
 
   # --- create happy paths: each branch ---------------------------------------
@@ -91,6 +101,7 @@ class Forecast::GoalsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to forecast_goals_path
+    assert_equal "Goal created.", flash[:notice]
     goal = @family.forecast_goals.order(:created_at).last
     assert_equal "minimum_cash_runway", goal.goal_type
     assert_equal 180, goal.target_duration_days

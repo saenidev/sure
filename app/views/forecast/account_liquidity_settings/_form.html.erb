@@ -8,7 +8,8 @@
 
 <%= styled_form_with model: setting,
                      url: setting.persisted? ? forecast_account_liquidity_setting_path(setting) : forecast_account_liquidity_settings_path,
-                     class: "space-y-4" do |f| %>
+                     class: "space-y-4",
+                     data: { turbo_frame: "_top" } do |f| %>
   <% if setting.errors.any? %>
     <%= render "shared/form_errors", model: setting %>
   <% end %>

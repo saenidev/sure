@@ -20,7 +20,7 @@ class Forecast::TemplatesControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[type=hidden][name=template_key][value=major_purchase]"
   end
 
-  test "index scenario manager trigger is a GET link, not a POST form" do
+  test "index renders the scenarios navigation as a GET link, not a POST form" do
     get forecast_templates_path
 
     assert_response :success

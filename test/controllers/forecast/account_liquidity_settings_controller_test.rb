@@ -13,6 +13,24 @@ class Forecast::AccountLiquiditySettingsControllerTest < ActionDispatch::Integra
 
   # --- index -----------------------------------------------------------------
 
+  test "new renders the form inside the modal turbo frame" do
+    get new_forecast_account_liquidity_setting_url(account_id: @account.id), headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :success
+    assert_select "turbo-frame#modal", count: 1
+    assert_select "turbo-frame#modal form[data-turbo-frame=?]", "_top"
+  end
+
+  test "edit renders the form inside the modal turbo frame" do
+    setting = @family.forecast_account_liquidity_settings.create!(account: @account, liquidity_class: "cash")
+
+    get edit_forecast_account_liquidity_setting_url(setting), headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :success
+    assert_select "turbo-frame#modal", count: 1
+    assert_select "turbo-frame#modal form[data-turbo-frame=?]", "_top"
+  end
+
   test "index lists the family's visible accounts with their classification" do
     get forecast_account_liquidity_settings_path
 
@@ -20,24 +38,30 @@ class Forecast::AccountLiquiditySettingsControllerTest < ActionDispatch::Integra
     assert_select "##{dom_id(@account, :liquidity)}"
   end
 
-  test "index override and edit controls are GET modal links, not POST forms" do
-    setting = @family.forecast_account_liquidity_settings.create!(
-      account: @account,
-      liquidity_class: "cash"
-    )
-
+  test "index renders override and edit triggers as GET modal links, not POST forms" do
     get forecast_account_liquidity_settings_path
 
     assert_response :success
-    assert_select "a[href=?][data-turbo-frame=modal]", edit_forecast_account_liquidity_setting_path(setting)
-    assert_select "form[action=?]", edit_forecast_account_liquidity_setting_path(setting), false
 
-    account_without_setting = @family.accounts.visible.where.not(id: @account.id).first
-    if account_without_setting
-      new_path = new_forecast_account_liquidity_setting_path(account_id: account_without_setting.id)
-      assert_select "a[href=?][data-turbo-frame=modal]", new_path
-      assert_select "form[action=?]", new_path, false
-    end
+    new_path = new_forecast_account_liquidity_setting_path(account_id: @account.id)
+    modal_link_hrefs = css_select("a[data-turbo-frame=modal]").map { |a| a["href"] }
+
+    assert_includes modal_link_hrefs, new_path
+
+    form_actions = css_select("form").map { |f| f["action"] }
+    assert_not_includes form_actions, new_path
+
+    setting = @family.forecast_account_liquidity_settings.create!(account: @account, liquidity_class: "cash")
+    get forecast_account_liquidity_settings_path
+
+    assert_response :success
+
+    edit_path = edit_forecast_account_liquidity_setting_path(setting)
+    modal_link_hrefs = css_select("a[data-turbo-frame=modal]").map { |a| a["href"] }
+    assert_includes modal_link_hrefs, edit_path
+
+    form_actions = css_select("form").map { |f| f["action"] }
+    assert_not_includes form_actions, edit_path
   end
 
   test "index renders an empty list when the family has no accounts" do

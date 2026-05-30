@@ -27,6 +27,24 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
 
   # --- index -----------------------------------------------------------------
 
+  test "new renders the form inside the modal turbo frame" do
+    get new_forecast_event_url, headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :success
+    assert_select "turbo-frame#modal", count: 1
+    assert_select "turbo-frame#modal form[data-turbo-frame=?]", "_top"
+  end
+
+  test "edit renders the form inside the modal turbo frame" do
+    event = @family.forecast_events.create!(base_params_model)
+
+    get edit_forecast_event_url(event), headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :success
+    assert_select "turbo-frame#modal", count: 1
+    assert_select "turbo-frame#modal form[data-turbo-frame=?]", "_top"
+  end
+
   test "index lists only the current family's events" do
     mine = @family.forecast_events.create!(base_params_model)
     other = families(:empty).forecast_events.create!(
@@ -48,12 +66,19 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=events-empty-state]"
   end
 
-  test "index new event trigger is a GET modal link, not a POST form" do
+  test "index renders the new trigger as a GET modal link, not a POST form" do
     get forecast_events_path
 
     assert_response :success
-    assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_event_path
-    assert_select "form[action=?]", new_forecast_event_path, false
+
+    new_path = new_forecast_event_path
+    modal_link_hrefs = css_select("a[data-turbo-frame=modal]").map { |a| a["href"] }
+    assert_includes modal_link_hrefs, new_path,
+      "expected a GET <a> to #{new_path} in the modal frame (button_to POST regression -> Turbo 'content missing')"
+
+    form_actions = css_select("form").map { |f| f["action"] }
+    assert_not_includes form_actions, new_path,
+      "the New event trigger must not be a button_to POST form to the GET-only #{new_path}"
   end
 
   test "index scoped to a scenario lists only that scenario's events" do
@@ -87,6 +112,7 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
       end
 
       assert_redirected_to forecast_events_path
+      assert_equal "Event created.", flash[:notice]
       event = @family.forecast_events.order(:created_at).last
       assert_equal effect_type, event.effect_type
       assert_equal "additive", event.behavior

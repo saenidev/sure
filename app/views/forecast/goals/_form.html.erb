@@ -9,7 +9,7 @@
 <%= styled_form_with model: goal,
                      url: goal.persisted? ? forecast_goal_path(goal) : forecast_goals_path,
                      class: "space-y-4",
-                     data: { controller: "forecast-goal-form" } do |f| %>
+                     data: { controller: "forecast-goal-form", turbo_frame: "_top" } do |f| %>
   <% if goal.errors.any? %>
     <%= render "shared/form_errors", model: goal %>
   <% end %>

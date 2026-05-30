@@ -2,7 +2,8 @@
 
 <%= styled_form_with model: scenario,
                      url: scenario.persisted? ? forecast_scenario_path(scenario) : forecast_scenarios_path,
-                     class: "space-y-4" do |f| %>
+                     class: "space-y-4",
+                     data: { turbo_frame: "_top" } do |f| %>
   <% if scenario.errors.any? %>
     <%= render "shared/form_errors", model: scenario %>
   <% end %>

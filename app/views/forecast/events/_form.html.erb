@@ -13,7 +13,7 @@
 <%= styled_form_with model: event,
                      url: event.persisted? ? forecast_event_path(event) : forecast_events_path(scenario_id: scenario&.id),
                      class: "space-y-4",
-                     data: { controller: "forecast-event-form" } do |f| %>
+                     data: { controller: "forecast-event-form", turbo_frame: "_top" } do |f| %>
   <% if event.errors.any? %>
     <%= render "shared/form_errors", model: event %>
   <% end %>
