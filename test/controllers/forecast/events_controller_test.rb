@@ -35,6 +35,15 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#modal form[data-turbo-frame=?]", "_top"
   end
 
+  test "new within a future scenario defaults the event date to the scenario start" do
+    @scenario.update!(starts_on: 2.months.from_now.to_date)
+
+    get new_forecast_event_url(scenario_id: @scenario.id), headers: { "Turbo-Frame" => "modal" }
+
+    assert_response :success
+    assert_select "input[name='forecast_event[starts_on]'][value=?]", @scenario.starts_on.to_s
+  end
+
   test "edit renders the form inside the modal turbo frame" do
     event = @family.forecast_events.create!(base_params_model)
 

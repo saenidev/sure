@@ -32,7 +32,7 @@ module Forecast
         behavior: "additive",
         status: "planned",
         currency: @family.currency,
-        starts_on: Date.current,
+        starts_on: default_starts_on,
         forecast_scenario: @scenario,
         probability_weight: 1.0
       )
@@ -86,6 +86,10 @@ module Forecast
 
       def scoped_events
         @scenario ? @scenario.forecast_events : @family.forecast_events
+      end
+
+      def default_starts_on
+        [ Date.current, @scenario&.starts_on ].compact.max
       end
 
       def set_index_breadcrumbs
