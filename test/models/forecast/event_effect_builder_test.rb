@@ -136,13 +136,14 @@ class Forecast::EventEffectBuilderTest < ActiveSupport::TestCase
     assert_equal(-400.to_d, row.fetch(:net_worth_delta))
   end
 
-  test "one time scenario events do not apply before scenario window" do
+  test "one time scenario events dated before the scenario window are clamped to the window start" do
     family = families(:dylan_family)
     user = users(:family_admin)
     scenario = family.forecast_scenarios.create!(
       name: "Move abroad",
       status: "active",
-      starts_on: 1.month.from_now.to_date
+      starts_on: 1.month.from_now.to_date,
+      ends_on: 1.month.from_now.to_date
     )
     event = family.forecast_events.create!(
       forecast_scenario: scenario,
@@ -152,6 +153,72 @@ class Forecast::EventEffectBuilderTest < ActiveSupport::TestCase
       amount: 2000,
       currency: family.currency,
       starts_on: Date.current
+    )
+
+    result = Forecast::EventEffectBuilder.new(
+      family: family,
+      user: user,
+      events: [ event ],
+      start_on: Date.current,
+      end_on: 36.months.from_now.to_date,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      scenario_ids: [ scenario.id ]
+    ).call
+
+    # A planned one-time expense must never silently vanish for being dated
+    # before its scenario window. It fires on the first valid day (the scenario
+    # start) instead of being dropped.
+    assert_equal 1, result.size
+    row = result.first
+    assert_equal scenario.starts_on, row.fetch(:date)
+    assert_equal 2000.to_d, row.fetch(:expected_spending)
+  end
+
+  test "one time event dated before the run start is clamped forward to the run start" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    event = family.forecast_events.create!(
+      name: "Overdue planned expense",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 5000,
+      currency: family.currency,
+      starts_on: 1.day.ago.to_date
+    )
+
+    result = Forecast::EventEffectBuilder.new(
+      family: family,
+      user: user,
+      events: [ event ],
+      start_on: Date.current,
+      end_on: 36.months.from_now.to_date,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      scenario_ids: []
+    ).call
+
+    assert_equal 1, result.size
+    row = result.first
+    assert_equal Date.current, row.fetch(:date)
+    assert_equal 5000.to_d, row.fetch(:expected_spending)
+  end
+
+  test "one time scenario events dated after the scenario window are dropped" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    scenario = family.forecast_scenarios.create!(
+      name: "Single day scenario",
+      status: "active",
+      starts_on: 1.month.from_now.to_date,
+      ends_on: 1.month.from_now.to_date
+    )
+    event = family.forecast_events.create!(
+      forecast_scenario: scenario,
+      name: "Too-late expense",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 2000,
+      currency: family.currency,
+      starts_on: 2.months.from_now.to_date
     )
 
     result = Forecast::EventEffectBuilder.new(

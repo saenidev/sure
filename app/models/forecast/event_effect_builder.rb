@@ -33,7 +33,13 @@ module Forecast
         last_date = [ event.ends_on || end_on, scenario&.ends_on || end_on, end_on ].compact.min
         return [] if first_date > last_date
         return [] if first_date > end_on || last_date < start_on
-        return [ event.starts_on ].select { |date| first_date <= date && date <= last_date } if event.recurrence_rule.blank?
+        # A one-time event fires on the first valid day of its window. When the
+        # event is dated before the window opens (before its scenario starts or
+        # before the run date) it is CLAMPED forward to first_date rather than
+        # silently dropped, so a planned cash flow never vanishes for being
+        # early. It is only dropped when dated after the window ends (caught by
+        # the first_date > last_date guard above).
+        return [ first_date ] if event.recurrence_rule.blank?
 
         frequency = event.recurrence_rule.fetch("frequency", "monthly")
         interval = event.recurrence_rule.fetch("interval", 1).to_i.clamp(1, 60)
