@@ -85,6 +85,20 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
       forecast_tab_path(tab_id: "comparison")
     assert_select "turbo-frame#forecast_tab_timeline[loading=lazy]"
     assert_select "[data-testid=forecast-comparison-table]", count: 0
+    # Both eager and lazy panel frames must target _top so the forms/links inside
+    # a panel drive full-page navigation (they redirect to standalone pages with
+    # no matching frame); without this they would render "content missing".
+    assert_select "turbo-frame#forecast_tab_overview[target='_top']"
+    assert_select "turbo-frame#forecast_tab_comparison[target='_top']"
+  end
+
+  test "tab endpoint frame targets _top so panel forms drive full-page navigation" do
+    build_completed_run_group(family: @family, user: @user, runs: 2)
+
+    get forecast_tab_url(tab_id: "scenarios")
+
+    assert_response :success
+    assert_select "turbo-frame#forecast_tab_scenarios[target='_top']"
   end
 
   test "tab endpoint renders a single tab body inside its matching Turbo Frame" do

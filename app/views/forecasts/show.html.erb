@@ -71,17 +71,24 @@
           Turbo Frame whose body is fetched from ForecastsController#tab the first
           time the tab is shown: DS::Tabs unhides the panel, the frame becomes
           visible, and Turbo loads its src. This keeps a single /forecast load
-          from rendering all nine panels (and their builders) server-side at once. %>
+          from rendering all nine panels (and their builders) server-side at once.
+
+          target: "_top" makes every link/form INSIDE a panel drive full-page
+          navigation by default — restoring the pre-frame behavior, since the
+          panels' forms redirect to standalone pages (forecast_scenarios_path,
+          etc.) that carry no matching frame. Links that must stay framed (modal
+          new/edit) set their own data-turbo-frame, which overrides this default. %>
       <% @workspace.tab_ids.each do |tab_id| %>
         <% tabs.with_panel(tab_id: tab_id) do %>
           <% if tab_id == active_tab %>
-            <%= turbo_frame_tag forecast_tab_frame_id(tab_id) do %>
+            <%= turbo_frame_tag forecast_tab_frame_id(tab_id), target: "_top" do %>
               <%= render "forecasts/tab_panel", tab_id: tab_id, workspace: @workspace %>
             <% end %>
           <% else %>
             <%= turbo_frame_tag forecast_tab_frame_id(tab_id),
                                 src: forecast_tab_path(tab_id: tab_id),
-                                loading: :lazy do %>
+                                loading: :lazy,
+                                target: "_top" do %>
               <%= render "forecasts/tab_loading", tab_id: tab_id %>
             <% end %>
           <% end %>

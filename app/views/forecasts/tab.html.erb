@@ -2,6 +2,9 @@
     ForecastsController#tab (layout: false) when an inactive tab first becomes
     visible on the show page. The frame id matches the placeholder in
     forecasts/show so Turbo swaps the loaded panel in place. %>
-<%= turbo_frame_tag forecast_tab_frame_id(@tab_id) do %>
+<%# target: "_top" mirrors the show-page placeholder frame so that after Turbo
+    swaps this loaded body in, links/forms inside the panel still drive full-page
+    navigation by default (modal links override via their own data-turbo-frame). %>
+<%= turbo_frame_tag forecast_tab_frame_id(@tab_id), target: "_top" do %>
   <%= render "forecasts/tab_panel", tab_id: @tab_id, workspace: @workspace %>
 <% end %>
