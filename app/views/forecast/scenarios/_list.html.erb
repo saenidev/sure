@@ -1,4 +1,4 @@
-<%# locals: (scenario_groups:) %>
+<%# locals: (scenario_groups:, events_return_to: nil) %>
 
 <% total = scenario_groups.values.sum(&:size) %>
 
@@ -32,7 +32,7 @@
         </h2>
         <div class="space-y-3">
           <% scenarios.each do |scenario| %>
-            <%= render "forecast/scenarios/scenario_row", scenario: scenario %>
+            <%= render "forecast/scenarios/scenario_row", scenario: scenario, events_return_to: events_return_to %>
           <% end %>
         </div>
       </section>

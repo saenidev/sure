@@ -13,5 +13,7 @@
     ) %>
   </div>
 
-  <%= render "forecast/scenarios/list", scenario_groups: workspace.scenario_groups %>
+  <%= render "forecast/scenarios/list",
+             scenario_groups: workspace.scenario_groups,
+             events_return_to: forecast_path(tab: "scenarios") %>
 </section>

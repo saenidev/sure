@@ -8,10 +8,14 @@
   amount_types = ForecastEvent::AMOUNT_EFFECT_TYPES.join(" ")
   category_types = "income expense"
   transfer_types = "transfer"
+  return_route_params = {}.tap do |route_params|
+    route_params[:return_to] = params[:return_to] if params[:return_to].present?
+  end
+  new_route_params = { scenario_id: scenario&.id }.compact.merge(return_route_params)
 %>
 
 <%= styled_form_with model: event,
-                     url: event.persisted? ? forecast_event_path(event) : forecast_events_path(scenario_id: scenario&.id),
+                     url: event.persisted? ? forecast_event_path(event, return_route_params) : forecast_events_path(new_route_params),
                      class: "space-y-4",
                      data: { controller: "forecast-event-form", turbo_frame: "_top" } do |f| %>
   <% if event.errors.any? %>

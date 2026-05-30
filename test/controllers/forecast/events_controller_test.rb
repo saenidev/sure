@@ -70,6 +70,19 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     ], @controller.send(:breadcrumbs)
   end
 
+  test "index forecast breadcrumb uses a safe return target when provided" do
+    return_to = forecast_path(tab: "reconciliation")
+
+    get forecast_events_path(return_to: return_to)
+
+    assert_response :success
+    assert_equal [
+      [ "Home", root_path ],
+      [ "Forecast", return_to ],
+      [ "Events", nil ]
+    ], @controller.send(:breadcrumbs)
+  end
+
   test "index renders an empty state when the family has no events" do
     get forecast_events_path
 
@@ -103,14 +116,15 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_select "##{dom_id(family_level)}", count: 0
   end
 
-  test "scenario-scoped index breadcrumbs include scenarios" do
-    get forecast_events_path(scenario_id: @scenario.id)
+  test "scenario-scoped index breadcrumbs stay under forecast" do
+    return_to = forecast_path(tab: "scenarios")
+
+    get forecast_events_path(scenario_id: @scenario.id, return_to: return_to)
 
     assert_response :success
     assert_equal [
       [ "Home", root_path ],
-      [ "Forecast", forecast_path ],
-      [ "Scenarios", forecast_scenarios_path ],
+      [ "Forecast", return_to ],
       [ "Events", nil ]
     ], @controller.send(:breadcrumbs)
   end
@@ -185,6 +199,17 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to forecast_events_path(scenario_id: @scenario.id)
     event = @family.forecast_events.order(:created_at).last
     assert_equal @scenario.id, event.forecast_scenario_id
+  end
+
+  test "create within a scenario preserves return target on redirect" do
+    return_to = forecast_path(tab: "scenarios")
+
+    assert_difference "@scenario.forecast_events.count", 1 do
+      post forecast_events_path(scenario_id: @scenario.id, return_to: return_to),
+           params: { forecast_event: base_params(forecast_scenario_id: @scenario.id) }
+    end
+
+    assert_redirected_to forecast_events_path(scenario_id: @scenario.id, return_to: return_to)
   end
 
   # --- create validation / failure surfacing (422) ---------------------------

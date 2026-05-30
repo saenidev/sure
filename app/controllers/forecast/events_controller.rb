@@ -91,14 +91,52 @@ module Forecast
       def set_index_breadcrumbs
         @breadcrumbs = [
           [ t("breadcrumbs.home"), root_path ],
-          [ t("forecasts.show.title"), forecast_path ]
+          [ t("forecasts.show.title"), forecast_breadcrumb_path ]
         ]
 
-        if @scenario
-          @breadcrumbs << [ t("forecasts.scenarios.index.title"), forecast_scenarios_path ]
-        end
-
         @breadcrumbs << [ t("forecasts.events.index.title"), nil ]
+      end
+
+      def forecast_breadcrumb_path
+        safe_return_path || forecast_path
+      end
+
+      def safe_return_path
+        safe_param_return_path || safe_referer_return_path
+      end
+
+      def safe_param_return_path
+        normalized_safe_return_path(params[:return_to])
+      end
+
+      def safe_referer_return_path
+        path = normalized_safe_return_path(request.referer)
+        return if path&.start_with?(forecast_events_path)
+
+        path
+      end
+
+      def normalized_safe_return_path(candidate)
+        return if candidate.blank?
+
+        safe_url = url_from(candidate)
+        return if safe_url.blank?
+
+        normalized_return_path(safe_url)
+      rescue URI::InvalidURIError
+        nil
+      end
+
+      def normalized_return_path(safe_url)
+        return if safe_url == request.fullpath
+        return safe_url if safe_url.start_with?("/")
+
+        uri = URI.parse(safe_url)
+        path = uri.path.presence || "/"
+        path = "#{path}?#{uri.query}" if uri.query.present?
+        path = "#{path}##{uri.fragment}" if uri.fragment.present?
+
+        path unless path == request.fullpath
       end
 
       # Strong params: only model-safe, user-authorable attributes. family_id is
@@ -164,11 +202,11 @@ module Forecast
       end
 
       def after_save_path
-        if @scenario
-          forecast_events_path(scenario_id: @scenario.id)
-        else
-          forecast_events_path
-        end
+        route_params = {}
+        route_params[:scenario_id] = @scenario.id if @scenario
+        route_params[:return_to] = safe_param_return_path if safe_param_return_path.present?
+
+        forecast_events_path(route_params)
       end
   end
 end

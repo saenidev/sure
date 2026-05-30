@@ -107,6 +107,16 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[action=?]", new_forecast_scenario_path, false
   end
 
+  test "forecast workspace scenario event links return to the scenarios tab" do
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+    scenario = @family.forecast_scenarios.create!(name: "Move", status: "active", approval_status: "manual")
+
+    get forecast_url(tab: "scenarios")
+
+    assert_response :success
+    assert_select "a[href=?]", forecast_events_path(scenario_id: scenario.id, return_to: forecast_path(tab: "scenarios"))
+  end
+
   test "forecast workspace new event trigger is a GET modal link, not a POST form" do
     build_completed_run_group(family: @family, user: @user, runs: 1)
 

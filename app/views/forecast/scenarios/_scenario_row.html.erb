@@ -1,4 +1,4 @@
-<%# locals: (scenario:) %>
+<%# locals: (scenario:, events_return_to: nil) %>
 
 <%
   approval_tones = {
@@ -9,6 +9,9 @@
   }
   approval_tone = approval_tones.fetch(scenario.approval_status, :gray)
   events = scenario.forecast_events.to_a.sort_by { |event| [ event.starts_on, event.created_at || Time.zone.at(0) ] }
+  event_route_params = { scenario_id: scenario.id }.tap do |route_params|
+    route_params[:return_to] = events_return_to if events_return_to.present?
+  end
 %>
 
 <div id="<%= dom_id(scenario) %>"
@@ -115,14 +118,14 @@
           <%= render DS::Link.new(
             text: t("forecasts.scenarios.row.events_manage"),
             icon: "list",
-            href: forecast_events_path(scenario_id: scenario.id),
+            href: forecast_events_path(event_route_params),
             variant: :outline,
             size: :sm
           ) %>
           <%= render DS::Link.new(
             text: t("forecasts.scenarios.row.events_add"),
             icon: "plus",
-            href: new_forecast_event_path(scenario_id: scenario.id),
+            href: new_forecast_event_path(event_route_params),
             frame: "modal",
             size: :sm
           ) %>
