@@ -1,0 +1,64 @@
+<%# locals: (event:) %>
+
+<%
+  effect_tones = {
+    "income" => :indigo,
+    "expense" => :fuchsia,
+    "transfer" => :violet,
+    "debt_drawdown" => :amber,
+    "debt_payment" => :indigo,
+    "debt_interest" => :fuchsia,
+    "portfolio_contribution" => :indigo,
+    "portfolio_withdrawal" => :amber,
+    "market_shock" => :gray
+  }
+  effect_tone = effect_tones.fetch(event.effect_type, :gray)
+%>
+
+<div id="<%= dom_id(event, :scenario_event) %>"
+     class="flex flex-wrap items-center justify-between gap-3 py-3">
+  <div class="min-w-0 space-y-1">
+    <div class="flex flex-wrap items-center gap-2">
+      <h5 class="text-primary text-sm font-medium truncate"><%= event.name %></h5>
+      <%= render DS::Pill.new(
+        label: t("forecasts.events.effect_types.#{event.effect_type}"),
+        tone: effect_tone,
+        show_dot: false
+      ) %>
+      <%= render DS::Pill.new(
+        label: t("forecasts.events.statuses.#{event.status}"),
+        tone: event.status == "accepted" ? :indigo : :gray,
+        show_dot: false
+      ) %>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2 text-secondary text-xs">
+      <% if event.amount.present? %>
+        <span><%= Money.new(event.amount, event.currency || Current.family.currency).format %></span>
+        <span aria-hidden="true">&middot;</span>
+      <% end %>
+
+      <span><%= l(event.starts_on, format: :long) %></span>
+
+      <% if event.ends_on.present? %>
+        <span aria-hidden="true">&middot;</span>
+        <span><%= t("forecasts.events.row.until", date: l(event.ends_on, format: :long)) %></span>
+      <% end %>
+
+      <span aria-hidden="true">&middot;</span>
+      <span class="inline-flex items-center gap-1">
+        <%= icon(event.recurring? ? "repeat" : "calendar", size: "xs") %>
+        <%= event.recurring? ? t("forecasts.events.row.recurring") : t("forecasts.events.row.one_time") %>
+      </span>
+    </div>
+  </div>
+
+  <%= render DS::Link.new(
+    text: t("forecasts.events.row.edit"),
+    icon: "pencil",
+    href: edit_forecast_event_path(event),
+    frame: "modal",
+    variant: :outline,
+    size: :sm
+  ) %>
+</div>

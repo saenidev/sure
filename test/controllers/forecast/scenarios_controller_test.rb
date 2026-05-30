@@ -77,6 +77,29 @@ class Forecast::ScenariosControllerTest < ActionDispatch::IntegrationTest
       "the New scenario trigger must not be a button_to POST form to the GET-only #{new_path}"
   end
 
+  test "index exposes scenario events in a visible row disclosure" do
+    scenario = @family.forecast_scenarios.create!(name: "Move abroad", status: "active")
+    event = scenario.forecast_events.create!(
+      family: @family,
+      name: "Visa fees",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 1250,
+      currency: @family.currency,
+      starts_on: Date.current,
+      status: "planned"
+    )
+
+    get forecast_scenarios_path
+
+    assert_response :success
+    assert_select "##{dom_id(scenario)} details[data-testid=scenario-events]"
+    assert_select "##{dom_id(scenario)} summary", text: /Events \(1\)/
+    assert_select "##{dom_id(scenario)} details[data-testid=scenario-events]", text: /#{Regexp.escape(event.name)}/
+    assert_select "##{dom_id(scenario)} a[href=?]", forecast_events_path(scenario_id: scenario.id)
+    assert_select "##{dom_id(scenario)} a[href=?][data-turbo-frame=modal]", new_forecast_event_path(scenario_id: scenario.id)
+  end
+
   # --- create (happy path) ---------------------------------------------------
 
   test "create persists a scenario scoped to the current family" do

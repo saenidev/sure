@@ -8,96 +8,136 @@
     "rejected" => :fuchsia
   }
   approval_tone = approval_tones.fetch(scenario.approval_status, :gray)
+  events = scenario.forecast_events.to_a.sort_by { |event| [ event.starts_on, event.created_at || Time.zone.at(0) ] }
 %>
 
 <div id="<%= dom_id(scenario) %>"
-     class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary bg-container p-4">
-  <div class="min-w-0 space-y-1">
-    <div class="flex items-center gap-2">
-      <% if scenario.color.present? %>
-        <span class="inline-block w-2.5 h-2.5 rounded-full shrink-0" style="background-color: <%= scenario.color %>" aria-hidden="true"></span>
+     class="rounded-xl border border-primary bg-container">
+  <div class="flex flex-wrap items-center justify-between gap-3 p-4">
+    <div class="min-w-0 space-y-1">
+      <div class="flex items-center gap-2">
+        <% if scenario.color.present? %>
+          <span class="inline-block w-2.5 h-2.5 rounded-full shrink-0" style="background-color: <%= scenario.color %>" aria-hidden="true"></span>
+        <% end %>
+        <h4 class="text-primary text-sm font-medium truncate"><%= scenario.name %></h4>
+        <%= render DS::Pill.new(
+          label: t("forecasts.scenarios.approval_statuses.#{scenario.approval_status}"),
+          tone: approval_tone,
+          show_dot: false
+        ) %>
+      </div>
+
+      <% if scenario.description.present? %>
+        <p class="text-secondary text-sm line-clamp-2"><%= scenario.description %></p>
       <% end %>
-      <h4 class="text-primary text-sm font-medium truncate"><%= scenario.name %></h4>
-      <%= render DS::Pill.new(
-        label: t("forecasts.scenarios.approval_statuses.#{scenario.approval_status}"),
-        tone: approval_tone,
-        show_dot: false
-      ) %>
+
+      <% if scenario.starts_on.present? || scenario.ends_on.present? %>
+        <p class="text-secondary text-xs">
+          <%= t("forecasts.scenarios.row.date_window",
+                start_date: scenario.starts_on ? l(scenario.starts_on, format: :long) : t("forecasts.scenarios.row.open_start"),
+                end_date: scenario.ends_on ? l(scenario.ends_on, format: :long) : t("forecasts.scenarios.row.open_end")) %>
+        </p>
+      <% end %>
     </div>
 
-    <% if scenario.description.present? %>
-      <p class="text-secondary text-sm line-clamp-2"><%= scenario.description %></p>
-    <% end %>
-
-    <% if scenario.starts_on.present? || scenario.ends_on.present? %>
-      <p class="text-secondary text-xs">
-        <%= t("forecasts.scenarios.row.date_window",
-              start_date: scenario.starts_on ? l(scenario.starts_on, format: :long) : t("forecasts.scenarios.row.open_start"),
-              end_date: scenario.ends_on ? l(scenario.ends_on, format: :long) : t("forecasts.scenarios.row.open_end")) %>
-      </p>
-    <% end %>
-  </div>
-
-  <div class="flex items-center gap-3 shrink-0">
-    <% unless scenario.archived? %>
-      <%= form_with url: toggle_forecast_scenario_path(scenario),
-                    method: :patch,
-                    data: { controller: "auto-submit-form" },
-                    class: "flex items-center" do %>
-        <span class="sr-only"><%= t("forecasts.scenarios.row.toggle_label", name: scenario.name) %></span>
-        <%= render DS::Toggle.new(
-          id: dom_id(scenario, :toggle),
-          name: "active",
-          checked: scenario.active?,
-          data: { auto_submit_form_target: "auto" }
-        ) %>
-      <% end %>
-    <% end %>
-
-    <%= render DS::Menu.new do |menu| %>
-      <% menu.with_item(
-        variant: "link",
-        text: t("forecasts.scenarios.row.events", count: scenario.forecast_events.size),
-        href: forecast_events_path(scenario_id: scenario.id),
-        icon: "list"
-      ) %>
-      <% menu.with_item(
-        variant: "link",
-        text: t("forecasts.scenarios.row.edit"),
-        href: edit_forecast_scenario_path(scenario),
-        icon: "pencil",
-        frame: "modal"
-      ) %>
-      <% menu.with_item(
-        variant: "button",
-        text: t("forecasts.scenarios.row.duplicate"),
-        method: :post,
-        href: duplicate_forecast_scenario_path(scenario),
-        icon: "copy"
-      ) %>
+    <div class="flex items-center gap-3 shrink-0">
       <% unless scenario.archived? %>
+        <%= form_with url: toggle_forecast_scenario_path(scenario),
+                      method: :patch,
+                      data: { controller: "auto-submit-form" },
+                      class: "flex items-center" do %>
+          <span class="sr-only"><%= t("forecasts.scenarios.row.toggle_label", name: scenario.name) %></span>
+          <%= render DS::Toggle.new(
+            id: dom_id(scenario, :toggle),
+            name: "active",
+            checked: scenario.active?,
+            data: { auto_submit_form_target: "auto" }
+          ) %>
+        <% end %>
+      <% end %>
+
+      <%= render DS::Menu.new do |menu| %>
+        <% menu.with_item(
+          variant: "link",
+          text: t("forecasts.scenarios.row.edit"),
+          href: edit_forecast_scenario_path(scenario),
+          icon: "pencil",
+          frame: "modal"
+        ) %>
         <% menu.with_item(
           variant: "button",
-          text: t("forecasts.scenarios.row.archive"),
-          method: :patch,
-          href: forecast_scenario_path(scenario, forecast_scenario: { status: "archived" }),
-          icon: "archive",
-          confirm: CustomConfirm.new(
-            destructive: true,
-            title: t("forecasts.scenarios.archive_confirm.title"),
-            body: t("forecasts.scenarios.archive_confirm.body", name: scenario.name),
-            btn_text: t("forecasts.scenarios.archive_confirm.confirm")
-          )
+          text: t("forecasts.scenarios.row.duplicate"),
+          method: :post,
+          href: duplicate_forecast_scenario_path(scenario),
+          icon: "copy"
+        ) %>
+        <% unless scenario.archived? %>
+          <% menu.with_item(
+            variant: "button",
+            text: t("forecasts.scenarios.row.archive"),
+            method: :patch,
+            href: forecast_scenario_path(scenario, forecast_scenario: { status: "archived" }),
+            icon: "archive",
+            confirm: CustomConfirm.new(
+              destructive: true,
+              title: t("forecasts.scenarios.archive_confirm.title"),
+              body: t("forecasts.scenarios.archive_confirm.body", name: scenario.name),
+              btn_text: t("forecasts.scenarios.archive_confirm.confirm")
+            )
+          ) %>
+        <% end %>
+        <% menu.with_item(
+          variant: "button",
+          text: t("forecasts.scenarios.row.delete"),
+          method: :delete,
+          href: forecast_scenario_path(scenario),
+          icon: "trash-2",
+          confirm: CustomConfirm.for_resource_deletion(scenario.name)
         ) %>
       <% end %>
-      <% menu.with_item(
-        variant: "button",
-        text: t("forecasts.scenarios.row.delete"),
-        method: :delete,
-        href: forecast_scenario_path(scenario),
-        icon: "trash-2",
-        confirm: CustomConfirm.for_resource_deletion(scenario.name)
-      ) %>
-    <% end %>
+    </div>
   </div>
+
+  <details class="group border-t border-primary" data-testid="scenario-events">
+    <summary class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 hover:bg-container-inset-hover">
+      <span class="flex min-w-0 items-center gap-2 text-primary text-sm font-medium">
+        <%= icon "chevron-right", size: "sm", class: "shrink-0 transition-transform group-open:rotate-90" %>
+        <span class="truncate"><%= t("forecasts.scenarios.row.events", count: events.size) %></span>
+      </span>
+
+      <span class="text-secondary text-xs"><%= t("forecasts.scenarios.row.events_hint") %></span>
+    </summary>
+
+    <div class="border-t border-primary px-4 py-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <p class="text-secondary text-xs"><%= t("forecasts.scenarios.row.events_description") %></p>
+        <div class="flex flex-wrap items-center gap-2">
+          <%= render DS::Link.new(
+            text: t("forecasts.scenarios.row.events_manage"),
+            icon: "list",
+            href: forecast_events_path(scenario_id: scenario.id),
+            variant: :outline,
+            size: :sm
+          ) %>
+          <%= render DS::Link.new(
+            text: t("forecasts.scenarios.row.events_add"),
+            icon: "plus",
+            href: new_forecast_event_path(scenario_id: scenario.id),
+            frame: "modal",
+            size: :sm
+          ) %>
+        </div>
+      </div>
+
+      <% if events.any? %>
+        <div class="mt-3 divide-y divide-secondary">
+          <% events.each do |event| %>
+            <%= render "forecast/scenarios/scenario_event_row", event: event %>
+          <% end %>
+        </div>
+      <% else %>
+        <p class="mt-3 text-secondary text-sm"><%= t("forecasts.scenarios.row.events_empty") %></p>
+      <% end %>
+    </div>
+  </details>
 </div>
