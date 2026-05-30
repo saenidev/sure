@@ -5,7 +5,7 @@ module Forecast
       @included_account_ids = included_account_ids&.map(&:to_s)
     end
 
-    def call(source_account:, destination_account:, amount:, destination_amount: nil, date: Date.current)
+    def call(source_account:, destination_account:, amount:, date:, destination_amount: nil)
       return non_transfer(source_account: source_account, amount: amount, date: date) if destination_account.blank?
 
       kind = transfer_kind(source_account, destination_account)
@@ -98,7 +98,7 @@ module Forecast
         end
       end
 
-      def non_transfer(source_account:, amount:, date: Date.current)
+      def non_transfer(source_account:, amount:, date:)
         absolute_amount = amount.to_d.abs
         return liability_non_transfer(source_account, amount, absolute_amount) if source_account&.liability?
 

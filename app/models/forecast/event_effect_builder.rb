@@ -131,7 +131,7 @@ module Forecast
         end
       end
 
-      def standard_effect(direction, amount, account: nil, date: Date.current)
+      def standard_effect(direction, amount, date:, account: nil)
         signed_amount = direction == "income" ? -amount : amount
         transfer_classifier.call(source_account: account, destination_account: nil, amount: signed_amount, date: date)
       end

@@ -1,12 +1,27 @@
 require "test_helper"
 
 class Forecast::TransferClassifierTest < ActiveSupport::TestCase
+  # A fixed run date: classification here never depends on the calendar, so the
+  # value is arbitrary — it just proves the threaded date is always supplied
+  # rather than silently defaulting to the wall clock.
+  RUN_DATE = Date.new(2024, 1, 15)
+
+  test "call requires an explicit run date instead of defaulting to the wall clock" do
+    classifier = Forecast::TransferClassifier.new(
+      liquidity_classifier: Forecast::LiquidityClassifier.new(family: families(:dylan_family), scenario_ids: [])
+    )
+
+    assert_raises(ArgumentError) do
+      classifier.call(source_account: accounts(:depository), destination_account: accounts(:credit_card), amount: 250)
+    end
+  end
+
   test "credit card payment is budget-neutral but reduces debt" do
     classifier = Forecast::TransferClassifier.new(
       liquidity_classifier: Forecast::LiquidityClassifier.new(family: families(:dylan_family), scenario_ids: [])
     )
 
-    effect = classifier.call(source_account: accounts(:depository), destination_account: accounts(:credit_card), amount: 250)
+    effect = classifier.call(source_account: accounts(:depository), destination_account: accounts(:credit_card), amount: 250, date: RUN_DATE)
 
     assert_equal "cc_payment", effect.fetch(:transaction_kind)
     assert_equal "none", effect.fetch(:budget_flow_type)
@@ -19,7 +34,7 @@ class Forecast::TransferClassifierTest < ActiveSupport::TestCase
       liquidity_classifier: Forecast::LiquidityClassifier.new(family: families(:dylan_family), scenario_ids: [])
     )
 
-    effect = classifier.call(source_account: accounts(:investment), destination_account: accounts(:credit_card), amount: 250)
+    effect = classifier.call(source_account: accounts(:investment), destination_account: accounts(:credit_card), amount: 250, date: RUN_DATE)
 
     assert_equal "cc_payment", effect.fetch(:transaction_kind)
     assert_equal "none", effect.fetch(:budget_flow_type)
@@ -41,7 +56,7 @@ class Forecast::TransferClassifierTest < ActiveSupport::TestCase
       liquidity_classifier: Forecast::LiquidityClassifier.new(family: family, scenario_ids: [])
     )
 
-    effect = classifier.call(source_account: accounts(:investment), destination_account: other_investment, amount: 500)
+    effect = classifier.call(source_account: accounts(:investment), destination_account: other_investment, amount: 500, date: RUN_DATE)
 
     assert_equal "funds_movement", effect.fetch(:transaction_kind)
     assert_equal "none", effect.fetch(:budget_flow_type)
@@ -54,7 +69,7 @@ class Forecast::TransferClassifierTest < ActiveSupport::TestCase
       included_account_ids: [ accounts(:depository).id ]
     )
 
-    effect = classifier.call(source_account: accounts(:depository), destination_account: accounts(:investment), amount: 400)
+    effect = classifier.call(source_account: accounts(:depository), destination_account: accounts(:investment), amount: 400, date: RUN_DATE)
 
     assert_equal "investment_contribution", effect.fetch(:transaction_kind)
     assert_equal "expense", effect.fetch(:budget_flow_type)
@@ -71,7 +86,7 @@ class Forecast::TransferClassifierTest < ActiveSupport::TestCase
       included_account_ids: [ accounts(:depository).id ]
     )
 
-    effect = classifier.call(source_account: accounts(:investment), destination_account: accounts(:depository), amount: 400)
+    effect = classifier.call(source_account: accounts(:investment), destination_account: accounts(:depository), amount: 400, date: RUN_DATE)
 
     assert_equal "funds_movement", effect.fetch(:transaction_kind)
     assert_equal "none", effect.fetch(:budget_flow_type)
@@ -88,7 +103,7 @@ class Forecast::TransferClassifierTest < ActiveSupport::TestCase
       included_account_ids: [ accounts(:loan).id ]
     )
 
-    effect = classifier.call(source_account: accounts(:depository), destination_account: accounts(:loan), amount: 200)
+    effect = classifier.call(source_account: accounts(:depository), destination_account: accounts(:loan), amount: 200, date: RUN_DATE)
 
     assert_equal "loan_payment", effect.fetch(:transaction_kind)
     assert_equal "none", effect.fetch(:budget_flow_type)
@@ -103,7 +118,7 @@ class Forecast::TransferClassifierTest < ActiveSupport::TestCase
       included_account_ids: [ accounts(:depository).id, accounts(:loan).id ]
     )
 
-    effect = classifier.call(source_account: accounts(:depository), destination_account: accounts(:loan), amount: 200, destination_amount: 180)
+    effect = classifier.call(source_account: accounts(:depository), destination_account: accounts(:loan), amount: 200, destination_amount: 180, date: RUN_DATE)
 
     assert_equal "loan_payment", effect.fetch(:transaction_kind)
     assert_equal 200.to_d, effect.fetch(:expected_spending)
@@ -117,7 +132,7 @@ class Forecast::TransferClassifierTest < ActiveSupport::TestCase
       liquidity_classifier: Forecast::LiquidityClassifier.new(family: families(:dylan_family), scenario_ids: [])
     )
 
-    effect = classifier.call(source_account: accounts(:investment), destination_account: nil, amount: -125)
+    effect = classifier.call(source_account: accounts(:investment), destination_account: nil, amount: -125, date: RUN_DATE)
 
     assert_equal "standard", effect.fetch(:transaction_kind)
     assert_equal "income", effect.fetch(:budget_flow_type)
@@ -132,7 +147,7 @@ class Forecast::TransferClassifierTest < ActiveSupport::TestCase
       liquidity_classifier: Forecast::LiquidityClassifier.new(family: families(:dylan_family), scenario_ids: [])
     )
 
-    effect = classifier.call(source_account: accounts(:credit_card), destination_account: nil, amount: 80)
+    effect = classifier.call(source_account: accounts(:credit_card), destination_account: nil, amount: 80, date: RUN_DATE)
 
     assert_equal "standard", effect.fetch(:transaction_kind)
     assert_equal "liability_charge", effect.fetch(:effect_label)

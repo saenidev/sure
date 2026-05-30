@@ -27,7 +27,8 @@ class Forecast::RecurringExpanderTest < ActiveSupport::TestCase
     effect = classifier.call(
       source_account: accounts(:depository),
       destination_account: accounts(:connected),
-      amount: 500
+      amount: 500,
+      date: Date.new(2024, 1, 15)
     )
 
     assert_equal "funds_movement", effect.fetch(:transaction_kind)
@@ -45,7 +46,8 @@ class Forecast::RecurringExpanderTest < ActiveSupport::TestCase
     effect = classifier.call(
       source_account: accounts(:investment),
       destination_account: accounts(:depository),
-      amount: 500
+      amount: 500,
+      date: Date.new(2024, 1, 15)
     )
 
     assert_equal "funds_movement", effect.fetch(:transaction_kind)
