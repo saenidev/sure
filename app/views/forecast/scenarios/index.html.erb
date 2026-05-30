@@ -7,7 +7,7 @@
       <p class="text-secondary text-sm"><%= t("forecasts.scenarios.index.description") %></p>
     </div>
 
-    <%= render DS::Button.new(
+    <%= render DS::Link.new(
       text: t("forecasts.scenarios.index.new"),
       icon: "plus",
       href: new_forecast_scenario_path,

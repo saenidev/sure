@@ -75,6 +75,14 @@ class Forecast::GoalsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=goals-empty-state]"
   end
 
+  test "index renders the new trigger as a GET modal link, not a POST form" do
+    get forecast_goals_path
+
+    assert_response :success
+    assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_goal_path
+    assert_select "form[action=?]", new_forecast_goal_path, false
+  end
+
   # --- create happy paths: each branch ---------------------------------------
 
   test "create persists a runway goal scoped to the current family" do

@@ -58,6 +58,14 @@ class Forecast::ScenariosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=scenarios-empty-state]"
   end
 
+  test "index renders the new triggers as GET modal links, not POST forms" do
+    get forecast_scenarios_path
+
+    assert_response :success
+    assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_scenario_path, minimum: 1
+    assert_select "form[action=?]", new_forecast_scenario_path, false
+  end
+
   # --- create (happy path) ---------------------------------------------------
 
   test "create persists a scenario scoped to the current family" do

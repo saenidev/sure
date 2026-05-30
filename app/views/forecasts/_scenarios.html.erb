@@ -4,7 +4,7 @@
   <div class="flex flex-wrap items-center justify-between gap-3">
     <p class="text-secondary text-sm"><%= t("forecasts.scenarios.index.description") %></p>
 
-    <%= render DS::Button.new(
+    <%= render DS::Link.new(
       text: t("forecasts.scenarios.index.new"),
       icon: "plus",
       href: new_forecast_scenario_path,

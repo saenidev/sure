@@ -86,6 +86,26 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=forecast-sensitivity-loading]"
   end
 
+  test "forecast workspace new goal trigger is a GET modal link, not a POST form" do
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    get forecast_url(tab: "goals")
+
+    assert_response :success
+    assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_goal_path, minimum: 1
+    assert_select "form[action=?]", new_forecast_goal_path, false
+  end
+
+  test "forecast workspace new scenario triggers are GET modal links, not POST forms" do
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    get forecast_url(tab: "scenarios")
+
+    assert_response :success
+    assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_scenario_path, minimum: 1
+    assert_select "form[action=?]", new_forecast_scenario_path, false
+  end
+
   test "surfaces failure alert with error message when latest run failed" do
     build_failed_run_group(family: @family, user: @user, error_message: "MoneyConverter::MissingRate: USD->EUR")
 
