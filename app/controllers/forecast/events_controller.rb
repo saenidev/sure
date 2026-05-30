@@ -17,6 +17,8 @@ module Forecast
     # Eager-loads the associations every row renders so the list never N+1s
     # over account/destination/category/scenario.
     def index
+      set_index_breadcrumbs
+
       @events = scoped_events
         .includes(:account, :destination_account, :category, :forecast_scenario)
         .order(starts_on: :desc, created_at: :desc)
@@ -84,6 +86,19 @@ module Forecast
 
       def scoped_events
         @scenario ? @scenario.forecast_events : @family.forecast_events
+      end
+
+      def set_index_breadcrumbs
+        @breadcrumbs = [
+          [ t("breadcrumbs.home"), root_path ],
+          [ t("forecasts.show.title"), forecast_path ]
+        ]
+
+        if @scenario
+          @breadcrumbs << [ t("forecasts.scenarios.index.title"), forecast_scenarios_path ]
+        end
+
+        @breadcrumbs << [ t("forecasts.events.index.title"), nil ]
       end
 
       # Strong params: only model-safe, user-authorable attributes. family_id is

@@ -59,6 +59,17 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_select "##{dom_id(other)}", count: 0
   end
 
+  test "index breadcrumbs are nested under forecast" do
+    get forecast_events_path
+
+    assert_response :success
+    assert_equal [
+      [ "Home", root_path ],
+      [ "Forecast", forecast_path ],
+      [ "Events", nil ]
+    ], @controller.send(:breadcrumbs)
+  end
+
   test "index renders an empty state when the family has no events" do
     get forecast_events_path
 
@@ -90,6 +101,18 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "##{dom_id(in_scenario)}"
     assert_select "##{dom_id(family_level)}", count: 0
+  end
+
+  test "scenario-scoped index breadcrumbs include scenarios" do
+    get forecast_events_path(scenario_id: @scenario.id)
+
+    assert_response :success
+    assert_equal [
+      [ "Home", root_path ],
+      [ "Forecast", forecast_path ],
+      [ "Scenarios", forecast_scenarios_path ],
+      [ "Events", nil ]
+    ], @controller.send(:breadcrumbs)
   end
 
   # --- create happy paths: each amount effect type ---------------------------
