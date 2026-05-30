@@ -16,6 +16,7 @@ en:
         reconciliation: "Reconciliation"
         review: "Review"
       tab_placeholder: "This section becomes available in an upcoming release."
+      tab_loading: "Loading…"
     empty_state:
       onboarding:
         title: "Plan your financial future"

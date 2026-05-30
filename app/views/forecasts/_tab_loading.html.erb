@@ -1,0 +1,11 @@
+<%# locals: (tab_id:) %>
+<%#
+  Lightweight placeholder shown inside a lazy tab Turbo Frame until its real body
+  loads. Kept intentionally minimal so the show page paints instantly and the
+  swap is near-imperceptible on fast tabs.
+%>
+<div class="flex items-center justify-center py-12 text-secondary text-sm"
+     role="status" aria-live="polite"
+     data-testid="forecast-tab-loading-<%= tab_id %>">
+  <span><%= t("forecasts.show.tab_loading") %></span>
+</div>

@@ -288,6 +288,14 @@ Rails.application.routes.draw do
 
   resource :forecast, only: :show
 
+  # Lazy-loaded body for a single workspace tab (ForecastsController#tab). Only
+  # the active tab renders eagerly on the show page; the rest fetch here when
+  # first shown. Defined standalone (not nested in `resource :forecast`) so the
+  # helper is the natural `forecast_tab_path`, not the order-flipped
+  # `tab_forecast_path` a singular-resource block would produce. Constrained to
+  # the tab-id shape; the controller allowlists it against TAB_PARTIALS.
+  get "forecast/tab/:tab_id", to: "forecasts#tab", as: :forecast_tab, constraints: { tab_id: /[a-z_]+/ }
+
   # Additive namespace that later forecasting slices hang off. Its controllers
   # inherit Forecast::BaseController, which scopes every query to Current.family.
   # Routes are added incrementally per slice.

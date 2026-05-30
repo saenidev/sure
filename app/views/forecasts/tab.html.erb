@@ -1,0 +1,7 @@
+<%# Lazy Turbo Frame body for a single forecast workspace tab. Rendered by
+    ForecastsController#tab (layout: false) when an inactive tab first becomes
+    visible on the show page. The frame id matches the placeholder in
+    forecasts/show so Turbo swaps the loaded panel in place. %>
+<%= turbo_frame_tag forecast_tab_frame_id(@tab_id) do %>
+  <%= render "forecasts/tab_panel", tab_id: @tab_id, workspace: @workspace %>
+<% end %>

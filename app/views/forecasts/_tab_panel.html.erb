@@ -1,0 +1,20 @@
+<%# locals: (tab_id:, workspace:) %>
+<%#
+  Renders one workspace tab panel, shared by the eager active-tab render (show)
+  and the lazy tab Turbo Frame endpoint (#tab) so partial selection and caching
+  stay identical across both paths.
+
+  Run-derived tabs (CACHEABLE_TABS) are fragment-cached on the immutable run
+  group, so revisiting them re-serves cached HTML instead of re-running the
+  read-model builders. The cache MUST live here in ERB (not a helper): `<%= render
+  %>` appends to the output buffer that `cache` captures, whereas `render` called
+  from a helper returns a string and `cache` would capture nothing.
+%>
+<% partial = ForecastsHelper::TAB_PARTIALS.fetch(tab_id) %>
+<% if ForecastsHelper::CACHEABLE_TABS.include?(tab_id) && workspace.run_group %>
+  <% cache [ workspace.run_group, tab_id, I18n.locale ] do %>
+    <%= render partial, workspace: workspace %>
+  <% end %>
+<% else %>
+  <%= render partial, workspace: workspace %>
+<% end %>

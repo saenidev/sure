@@ -59,38 +59,31 @@
   <% elsif @workspace.has_run? %>
     <%= render "forecasts/run_summary_header", workspace: @workspace %>
 
-    <%= render DS::Tabs.new(active_tab: params[:tab].presence || "overview", url_param_key: "tab") do |tabs| %>
+    <% active_tab = params[:tab].presence || "overview" %>
+    <%= render DS::Tabs.new(active_tab: active_tab, url_param_key: "tab") do |tabs| %>
       <% tabs.with_nav do |nav| %>
         <% @workspace.tab_ids.each do |tab_id| %>
           <% nav.with_btn(id: tab_id, label: t("forecasts.show.tabs.#{tab_id}")) %>
         <% end %>
       <% end %>
 
+      <%# Only the active tab renders its panel eagerly. Every other tab is a lazy
+          Turbo Frame whose body is fetched from ForecastsController#tab the first
+          time the tab is shown: DS::Tabs unhides the panel, the frame becomes
+          visible, and Turbo loads its src. This keeps a single /forecast load
+          from rendering all nine panels (and their builders) server-side at once. %>
       <% @workspace.tab_ids.each do |tab_id| %>
         <% tabs.with_panel(tab_id: tab_id) do %>
-          <% if tab_id == "overview" %>
-            <%= render "forecasts/overview", workspace: @workspace %>
-          <% elsif tab_id == "comparison" %>
-            <%= render "forecasts/comparison", workspace: @workspace %>
-          <% elsif tab_id == "timeline" %>
-            <%= render "forecasts/timeline", workspace: @workspace %>
-          <% elsif tab_id == "scenarios" %>
-            <%= render "forecasts/scenarios", workspace: @workspace %>
-          <% elsif tab_id == "goals" %>
-            <%= render "forecasts/goals", workspace: @workspace %>
-          <% elsif tab_id == "templates" %>
-            <%= render "forecasts/templates", workspace: @workspace %>
-          <% elsif tab_id == "sensitivity" %>
-            <%= render "forecasts/sensitivity", workspace: @workspace %>
-          <% elsif tab_id == "reconciliation" %>
-            <%= render "forecasts/reconciliation", workspace: @workspace %>
-          <% elsif tab_id == "review" %>
-            <%= render "forecasts/review_history", workspace: @workspace %>
+          <% if tab_id == active_tab %>
+            <%= turbo_frame_tag forecast_tab_frame_id(tab_id) do %>
+              <%= render "forecasts/tab_panel", tab_id: tab_id, workspace: @workspace %>
+            <% end %>
           <% else %>
-            <section class="rounded-xl border border-primary bg-container p-6"
-                     aria-label="<%= t("forecasts.show.tabs.#{tab_id}") %>">
-              <p class="text-secondary text-sm"><%= t("forecasts.show.tab_placeholder") %></p>
-            </section>
+            <%= turbo_frame_tag forecast_tab_frame_id(tab_id),
+                                src: forecast_tab_path(tab_id: tab_id),
+                                loading: :lazy do %>
+              <%= render "forecasts/tab_loading", tab_id: tab_id %>
+            <% end %>
           <% end %>
         <% end %>
       <% end %>

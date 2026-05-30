@@ -69,20 +69,80 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # --- lazy tab loading ------------------------------------------------------
+
+  test "show renders the active tab eagerly and the rest as lazy Turbo Frames" do
+    build_completed_run_group(family: @family, user: @user, runs: 2)
+
+    get forecast_url
+
+    assert_response :success
+    # The active (default overview) panel is an eager frame rendered inline...
+    assert_select "turbo-frame#forecast_tab_overview"
+    # ...while every other tab is a lazy frame pointing at the tab endpoint, and
+    # its (heavy) body is NOT rendered inline on the show page.
+    assert_select "turbo-frame#forecast_tab_comparison[loading=lazy][src=?]",
+      forecast_tab_path(tab_id: "comparison")
+    assert_select "turbo-frame#forecast_tab_timeline[loading=lazy]"
+    assert_select "[data-testid=forecast-comparison-table]", count: 0
+  end
+
+  test "tab endpoint renders a single tab body inside its matching Turbo Frame" do
+    build_completed_run_group(family: @family, user: @user, runs: 2)
+
+    get forecast_tab_url(tab_id: "comparison")
+
+    assert_response :success
+    assert_select "turbo-frame#forecast_tab_comparison" do
+      assert_select "[data-testid=forecast-comparison-table] tbody tr", count: 2
+    end
+  end
+
+  test "tab endpoint 404s for an unknown tab id" do
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    get forecast_tab_url(tab_id: "bogus")
+
+    assert_response :not_found
+  end
+
+  test "tab endpoint never renders another family's run (cross-family denial)" do
+    other_family = families(:empty)
+    other_family.forecast_run_groups.delete_all
+    build_completed_run_group(family: other_family, user: users(:empty), runs: 2)
+
+    # The current family has no run of its own, so the comparison body must show
+    # its own empty state, never the other family's stacks.
+    get forecast_tab_url(tab_id: "comparison")
+
+    assert_response :success
+    assert_select "turbo-frame#forecast_tab_comparison"
+    assert_select "[data-testid=forecast-comparison-table]", count: 0
+    assert_select "#forecast-comparison-empty-title"
+  end
+
   test "renders the new templates and sensitivity tab buttons with their panels" do
     build_completed_run_group(family: @family, user: @user, runs: 1)
 
     get forecast_url
 
     assert_response :success
-    # Both new tab nav buttons render.
+    # Both new tab nav buttons render on the show page (all nav buttons always
+    # render; only the active tab's panel body is eager, others lazy-load).
     assert_select "button[data-id='templates']", text: I18n.t("forecasts.show.tabs.templates")
     assert_select "button[data-id='sensitivity']", text: I18n.t("forecasts.show.tabs.sensitivity")
-    # The templates panel now renders the real apply-card catalog (not a stub).
+
+    # The templates panel renders the real apply-card catalog (not a stub) when
+    # its tab is the active, eagerly-rendered one.
+    get forecast_url(tab: "templates")
+    assert_response :success
     assert_select "[data-testid=forecast-templates-list]"
     assert_select "[data-testid=forecast-template-card]", count: Forecast::ScenarioTemplate.all.size
-    # With a completed run, sensitivity renders its lazy analysis Turbo Frame
-    # (the empty-state only shows when there is no completed run to analyze).
+
+    # With a completed run, the sensitivity panel renders its lazy analysis Turbo
+    # Frame (the empty-state only shows when there is no completed run to analyze).
+    get forecast_url(tab: "sensitivity")
+    assert_response :success
     assert_select "turbo-frame#forecast_sensitivity"
     assert_select "[data-testid=forecast-sensitivity-loading]"
   end
@@ -195,7 +255,7 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     )
     build_completed_run_group(family: @family, user: @user, runs: 1)
 
-    get forecast_url
+    get forecast_url(tab: "review")
 
     assert_response :success
     assert_select "section[aria-label=?]", I18n.t("forecasts.review.heading")
@@ -212,7 +272,7 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     build_completed_run_group(family: @family, user: @user, runs: 1)
 
     assert_queries_count(matcher: /forecast_run_groups/, max: 2) do
-      get forecast_url
+      get forecast_url(tab: "review")
     end
 
     assert_response :success

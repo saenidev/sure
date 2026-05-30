@@ -47,6 +47,14 @@ services:
       - app-storage:/rails/storage
     environment:
       <<: *rails_env
+      # Web server sizing (override per-host in the Dokploy env tab). 2 Puma
+      # workers x 5 threads. RAILS_MAX_THREADS also sizes the DB connection pool
+      # (see config/database.yml), so threads and pool stay matched. Drop
+      # WEB_CONCURRENCY to 1 on a RAM-constrained host (each extra worker is
+      # ~300-400MB). The Sidekiq `worker` service keeps its own default
+      # concurrency, so this only affects request serving, not background jobs.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      RAILS_MAX_THREADS: ${RAILS_MAX_THREADS:-5}
     depends_on:
       db:
         condition: service_healthy
