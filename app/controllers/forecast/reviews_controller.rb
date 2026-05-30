@@ -74,8 +74,10 @@ module Forecast
     # response_packet) into a real, editable ForecastScenario owned by
     # Current.family. The new scenario is created with approval_status "approved"
     # but status "disabled" — it is inert until the user toggles it on, so a
-    # Hermes draft NEVER auto-activates (the Hermes approval boundary). Child
-    # draft events are copied onto it (disabled).
+    # Hermes draft NEVER auto-activates (the Hermes approval boundary). The
+    # scenario's disabled status is the inertness gate; child draft events are
+    # copied onto it ENABLED ("planned") so an approved-then-enabled draft
+    # actually projects.
     #
     # The draft is located by index within the stored response_packet, so a
     # foreign payload can never inject a scenario into another family: family is
@@ -157,10 +159,14 @@ module Forecast
       end
 
       # Materialize a draft scenario into a real, family-owned ForecastScenario.
-      # Mirrors the slice-4 duplicate/deep-copy contract: created disabled so it
-      # is inert, with approval_status "approved" (the human approved this Hermes
-      # draft). family + created_by_user are set server-side. Child draft events
-      # are copied as disabled events. Runs in a transaction so a single invalid
+      # Mirrors the duplicate/deep-copy contract: the SCENARIO is created disabled
+      # so it is inert (ScenarioStack only loads `active` scenarios — that
+      # disabled status is the inertness gate, NOT the children's), with
+      # approval_status "approved" (the human approved this Hermes draft). family
+      # + created_by_user are set server-side. Child draft events are created
+      # ENABLED ("planned") so the moment the user toggles the approved scenario
+      # on it actually projects — disabling them would make an approved-then-
+      # enabled draft project nothing. Runs in a transaction so a single invalid
       # child rolls the whole approval back rather than leaving a partial copy.
       def create_scenario_from_draft!(draft)
         ForecastScenario.transaction do
@@ -188,7 +194,7 @@ module Forecast
               currency: event["currency"].presence || @run_group.currency,
               starts_on: event["starts_on"].presence || @run_group.horizon_start_on,
               ends_on: event["ends_on"],
-              status: "disabled",
+              status: "planned",
               source_metadata: { "source" => "hermes_draft" }
             )
           end

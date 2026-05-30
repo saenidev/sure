@@ -18,9 +18,11 @@ module Forecast
   #   * blocked   — the goal evaluation status is "blocking" (a required goal that
   #     failed in a way that blocks the scenario/stack). A blocked goal is the
   #     strongest signal and forces the stack to the bottom of the ranking.
-  #   * at_risk   — anything else: "warn", "fail", an "unknown"/missing evaluation,
-  #     or a goal the stack did not evaluate at all. These are NOT counted as
-  #     satisfied — an unknown/warn goal must never read as on-track.
+  #   * at_risk   — anything else the stack DID evaluate: "warn", "fail", or an
+  #     "unknown" evaluation. These are NOT counted as satisfied — an unknown/warn
+  #     goal must never read as on-track. A goal the stack never evaluated is NOT
+  #     APPLICABLE to that stack and is skipped entirely (not counted at_risk), so a
+  #     scenario-only goal does not overstate the baseline stack's risk.
   #
   # Ranking is deterministic with stable tie-breaks, in order:
   #   1. has-any-blocked-goal, ascending (clean stacks rank above ANY blocked
@@ -162,6 +164,11 @@ module Forecast
         blocked = []
 
         goal_keys.each do |goal_key|
+          # A goal this run never evaluated is NOT APPLICABLE to it (e.g. a
+          # scenario-only goal on the baseline row). Skip it entirely — routing it
+          # into at_risk would overstate this run's risk.
+          next unless evaluations.key?(goal_key)
+
           case status_for(evaluations[goal_key])
           when SATISFIED_STATUS then satisfied << goal_key
           when BLOCKED_STATUS   then blocked << goal_key
@@ -245,8 +252,8 @@ module Forecast
       end
 
       # Normalize an evaluation's status to one of the three classes' driving
-      # statuses. A missing evaluation (goal the stack never graded) is treated as
-      # at_risk — never satisfied.
+      # statuses. Only called for goals the run actually evaluated (callers skip
+      # goals the stack never graded), so a non-nil status is expected here.
       def status_for(evaluation)
         return nil if evaluation.nil?
 

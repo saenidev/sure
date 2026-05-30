@@ -13,6 +13,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
     period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: budget.start_date, end_date: budget.end_date, precision: "daily_backed")
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -41,6 +42,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -70,6 +72,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -110,6 +113,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -145,6 +149,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -166,6 +171,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -188,6 +194,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -220,6 +227,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -246,6 +254,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -272,6 +281,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -296,6 +306,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -330,6 +341,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -358,6 +370,7 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
 
     result = Forecast::BudgetInputBuilder.new(
       family: family,
+      start_on: Date.current,
       user: user,
       periods: [ period ],
       money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
@@ -368,5 +381,47 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
     category = result.first.fetch(:categories).find { |row| row.fetch(:category_id) == loan_category.id }
     assert_equal "actual", category.fetch(:source)
     assert_equal 100.to_d, category.fetch(:actual_spending)
+  end
+
+  test "actual spending is gated by the threaded run date instead of today" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    family.budgets.destroy_all
+    category = categories(:food_and_drink)
+
+    # Pin a deterministic run date in a calendar month that is not the current month.
+    run_date = Date.new(2023, 6, 15)
+    run_month_start = run_date.beginning_of_month
+    run_month_end = run_date.end_of_month
+    assert_not_equal Date.current.beginning_of_month, run_month_start, "test must run in a different month than the pinned run date"
+
+    # Entry in the run-date month folds in because that period contains start_on.
+    run_purchase = entries(:transaction)
+    run_purchase.update!(date: run_date, amount: 100, account: accounts(:depository))
+    run_purchase.transaction.update!(kind: "standard", category: category)
+
+    # Entry in today's month must NOT fold in because that period does not contain start_on.
+    today_purchase = Transaction.create!(kind: "standard", category: category)
+    Entry.create!(account: accounts(:depository), entryable: today_purchase, name: "Today purchase", date: Date.current, amount: 250, currency: family.currency)
+
+    run_period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: run_month_start, end_date: run_month_end, precision: "daily_backed")
+    today_period = Forecast::PeriodBuilder::PeriodWindow.new(index: 1, start_date: Date.current.beginning_of_month, end_date: Date.current.end_of_month, precision: "monthly")
+
+    result = Forecast::BudgetInputBuilder.new(
+      family: family,
+      start_on: run_date,
+      user: user,
+      periods: [ run_period, today_period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: run_date),
+      scenario_ids: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call
+
+    run_row = result.first.fetch(:categories).find { |row| row.fetch(:category_id) == category.id }
+    assert_equal "actual", run_row.fetch(:source)
+    assert_equal 100.to_d, run_row.fetch(:actual_spending)
+
+    today_row = result.second.fetch(:categories).find { |row| row.fetch(:category_id) == category.id }
+    assert_nil today_row, "period containing today but not the run date must not fold actual spending"
   end
 end

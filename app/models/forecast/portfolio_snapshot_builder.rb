@@ -1,9 +1,10 @@
 module Forecast
   class PortfolioSnapshotBuilder
-    def initialize(family:, user:, money_converter:)
+    def initialize(family:, user:, money_converter:, run_date:)
       @family = family
       @user = user
       @money_converter = money_converter
+      @run_date = run_date
     end
 
     def call
@@ -25,7 +26,7 @@ module Forecast
     end
 
     private
-      attr_reader :family, :user, :money_converter
+      attr_reader :family, :user, :money_converter, :run_date
 
       def investment_accounts
         @investment_accounts ||= family.accounts.visible
@@ -110,11 +111,11 @@ module Forecast
 
       def market_data_quality(holdings)
         security_ids = holdings.map(&:security_id).uniq
-        provisional_count = Security::Price.where(security_id: security_ids, provisional: true).where(date: 7.days.ago.to_date..Date.current).count
+        provisional_count = Security::Price.where(security_id: security_ids, provisional: true).where(date: (run_date - 7.days)..run_date).count
 
         {
           provisional_recent_price_count: provisional_count,
-          as_of: Date.current
+          as_of: run_date
         }
       end
   end

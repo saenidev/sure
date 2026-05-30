@@ -39,14 +39,18 @@ module Family::ForecastSchedulable
     forecasting_preview_enabled? && forecast_projectable?
   end
 
-  # True when a completed-or-in-flight run group of `run_type` already exists for
-  # `on` (defaults to today). Used by the scheduled jobs to stay idempotent-ish:
-  # a second tick on the same day must not stack a duplicate group. Failed groups
-  # do NOT count, so a retry after a failure is allowed.
+  # True when a same-day run group of `run_type` already exists for `on`
+  # (defaults to today) that should suppress a re-run. Used by the scheduled
+  # jobs to stay idempotent-ish: a second tick on the same day must not stack a
+  # duplicate group, nor re-run the Runner when an earlier tick already decided
+  # the move was immaterial. So pending/running/completed groups count, and so
+  # does a `discarded` group (an immaterial-movement tick that left a durable
+  # marker instead of deleting itself). Only `failed` groups do NOT count, so a
+  # retry after a failure is still allowed.
   def scheduled_forecast_group_exists?(run_type:, on: Date.current)
     forecast_run_groups
       .where(run_type: run_type)
-      .where(status: %w[pending running completed])
+      .where(status: %w[pending running completed discarded])
       .where(created_at: on.all_day)
       .exists?
   end

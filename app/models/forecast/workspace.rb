@@ -515,10 +515,27 @@ module Forecast
       persisted = {
         "cash_balance" => last_month.cash_balance,
         "net_worth" => last_month.net_worth,
-        "debt_balance" => last_month.debt_balance
+        "debt_balance" => last_month.debt_balance,
+        # The analyzer's baseline runway is the worst (minimum) projected
+        # cash_runway_days across the WHOLE horizon, not the last month — so the
+        # persisted side must compute the same trough over every monthly row. A
+        # live-data change that moves only the runway trough (leaving the
+        # end-of-horizon balances identical) must still mark the panel stale.
+        "minimum_cash_runway_days" => monthly_rows.filter_map(&:cash_runway_days).min
       }
 
       persisted.any? do |metric, persisted_value|
+        if metric == "minimum_cash_runway_days"
+          # Runway is nilable on both sides (nil == unbounded: no projected
+          # spend). Both nil is equal; exactly one nil is a divergence; otherwise
+          # compare the integer day counts.
+          recomputed_runway = recomputed[metric]
+          next false if persisted_value.nil? && recomputed_runway.nil?
+          next true if persisted_value.nil? || recomputed_runway.nil?
+
+          next recomputed_runway != persisted_value
+        end
+
         next false if persisted_value.nil?
 
         recomputed[metric].to_d != persisted_value.to_d

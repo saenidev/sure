@@ -369,11 +369,78 @@ class Forecast::WorkspaceTest < ActiveSupport::TestCase
     assert_nil labels[other_goal.id]
   end
 
+  test "sensitivity_baseline_stale? is true when only minimum_cash_runway_days diverges" do
+    @family.forecast_run_groups.delete_all
+    # Persist a baseline run whose monthly rows carry a known runway trough (the
+    # minimum cash_runway_days across the horizon) and end-of-horizon balances.
+    build_run_group_with_series(
+      family: @family, user: @user, days: 1, months: 3,
+      month_attrs: ->(i) { { cash_runway_days: 120 - (i * 30) } }
+    )
+
+    workspace = Forecast::Workspace.new(family: @family)
+    last_month = workspace.monthly_rows.last
+    persisted_runway = workspace.monthly_rows.filter_map(&:cash_runway_days).min
+
+    # The recomputed baseline matches the persisted run EXACTLY on cash/net_worth/
+    # debt but diverges ONLY in the minimum projected cash runway. A live family
+    # change that moves only runway must still mark the panel's baseline stale.
+    stale_row = sensitivity_result_with_baseline(
+      "cash_balance" => last_month.cash_balance,
+      "net_worth" => last_month.net_worth,
+      "debt_balance" => last_month.debt_balance,
+      "minimum_cash_runway_days" => persisted_runway - 15
+    )
+    workspace.stubs(:sensitivity_rows).returns([ stale_row ])
+
+    assert workspace.sensitivity_baseline_stale?,
+      "divergence in minimum_cash_runway_days alone must mark the sensitivity baseline stale"
+  end
+
+  test "sensitivity_baseline_stale? is false when every tracked metric (incl. runway) matches" do
+    @family.forecast_run_groups.delete_all
+    build_run_group_with_series(
+      family: @family, user: @user, days: 1, months: 3,
+      month_attrs: ->(i) { { cash_runway_days: 120 - (i * 30) } }
+    )
+
+    workspace = Forecast::Workspace.new(family: @family)
+    last_month = workspace.monthly_rows.last
+    persisted_runway = workspace.monthly_rows.filter_map(&:cash_runway_days).min
+
+    matching_row = sensitivity_result_with_baseline(
+      "cash_balance" => last_month.cash_balance,
+      "net_worth" => last_month.net_worth,
+      "debt_balance" => last_month.debt_balance,
+      "minimum_cash_runway_days" => persisted_runway
+    )
+    workspace.stubs(:sensitivity_rows).returns([ matching_row ])
+
+    assert_not workspace.sensitivity_baseline_stale?,
+      "an identical recompute (incl. runway) must not mark the baseline stale"
+  end
+
   private
     # A minimal InputBuilder::Result stand-in for the memoization test, where the
     # analyzer is stubbed and never actually reads the input.
     def sensitivity_stub_input
       Object.new
+    end
+
+    # A minimal SensitivityAnalyzer::Result carrying only the unperturbed
+    # `baseline_metric` hash that `sensitivity_baseline_stale?` reads off the
+    # first row. The other fields are inert placeholders.
+    def sensitivity_result_with_baseline(baseline_metric)
+      Forecast::SensitivityAnalyzer::Result.new(
+        perturbation_key: "stub",
+        kind: :income,
+        magnitude: 0.to_d,
+        description: "stub",
+        baseline_metric: baseline_metric,
+        perturbed_metric: baseline_metric,
+        delta: {},
+        goal_status_changes: []
+      )
     end
 
     # Builds a completed comparison group with one ForecastRun per stack key, each

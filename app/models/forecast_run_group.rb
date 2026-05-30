@@ -3,7 +3,7 @@ class ForecastRunGroup < ApplicationRecord
   include Forecast::UserSnapshot
 
   RUN_TYPES = %w[manual weekly market_close hermes].freeze
-  STATUSES = %w[pending running completed failed].freeze
+  STATUSES = %w[pending running completed failed discarded].freeze
 
   enum :status, STATUSES.index_with(&:itself), validate: false
 

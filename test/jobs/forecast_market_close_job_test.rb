@@ -27,12 +27,29 @@ class ForecastMarketCloseJobTest < ActiveJob::TestCase
   test "immaterial movement discards the generated group to avoid noise" do
     stub_material(false)
 
+    ForecastMarketCloseJob.perform_now(@family.id)
+
+    group = @family.forecast_run_groups.where(run_type: "market_close").order(:created_at).last
+    assert_not_nil group, "an immaterial movement should leave a durable discarded marker"
+    assert_equal "discarded", group.status,
+      "an immaterial movement must mark the group discarded, not delete it"
+  end
+
+  test "a discarded immaterial group suppresses a second same-day re-run" do
+    stub_material(false)
+
+    ForecastMarketCloseJob.perform_now(@family.id)
+    discarded = @family.forecast_run_groups.where(run_type: "market_close").order(:created_at).last
+    assert_equal "discarded", discarded.status
+
+    # A SECOND same-day tick must NOT re-run the Runner (no wasted Runner +
+    # MaterialMovement work on a quiet day) and must not stack a new group.
+    Forecast::Runner.expects(:new).never
+    Forecast::MaterialMovement.expects(:new).never
+
     assert_no_difference -> { @family.forecast_run_groups.where(run_type: "market_close").count } do
       ForecastMarketCloseJob.perform_now(@family.id)
     end
-
-    assert_not @family.forecast_run_groups.where(run_type: "market_close").exists?,
-      "an immaterial movement must leave no market_close group behind"
   end
 
   test "is idempotent: skips when a same-day market_close group already exists" do

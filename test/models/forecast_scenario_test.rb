@@ -96,19 +96,22 @@ class ForecastScenarioTest < ActiveSupport::TestCase
     assert_equal 1, copy.forecast_goals.count
     assert_equal 1, copy.forecast_account_liquidity_settings.count
 
-    # Children are re-scoped to the family and carry an inert status, so the
-    # duplicated active-uniqueness on budget overrides cannot collide.
+    # Children are re-scoped to the family and created ENABLED. The scenario's
+    # own "disabled" status (ScenarioStack.active) is the inertness gate, and
+    # override uniqueness is scenario-scoped so active copies never collide with
+    # the source's. Disabling children would mean an activated copy projects
+    # nothing, which is the defect this guards against.
     copied_event = copy.forecast_events.first
     assert_equal @family.id, copied_event.family_id
-    assert_equal "disabled", copied_event.status
+    assert_equal "planned", copied_event.status
 
     copied_override = copy.forecast_budget_overrides.first
     assert_equal @family.id, copied_override.family_id
-    assert_equal "disabled", copied_override.status
+    assert_equal "active", copied_override.status
 
     copied_goal = copy.forecast_goals.first
     assert_equal @family.id, copied_goal.family_id
-    assert_equal "disabled", copied_goal.status
+    assert_equal "active", copied_goal.status
   end
 
   test "duplicate succeeds for a scenario with zero children" do
@@ -135,11 +138,46 @@ class ForecastScenarioTest < ActiveSupport::TestCase
       status: "active"
     )
 
-    # The copy's overrides are disabled, so the active-uniqueness index that is
-    # scoped per (period, scenario, type, category) is never violated.
+    # The copy's overrides are created ACTIVE, but the active-uniqueness index is
+    # scoped per (period, scenario, type, category) — the copy is a NEW scenario,
+    # so its active override can never collide with the source's.
+    copy = nil
     assert_nothing_raised do
-      source.duplicate_for_family!(family: @family, user: @user)
+      copy = source.duplicate_for_family!(family: @family, user: @user)
     end
+
+    assert_equal "active", copy.forecast_budget_overrides.first.status
+  end
+
+  test "activating a duplicated scenario projects its children (event runnable, goal active)" do
+    source = @family.forecast_scenarios.create!(name: "Activatable", status: "active")
+    source.forecast_events.create!(
+      family: @family,
+      name: "Raise",
+      effect_type: "income",
+      behavior: "additive",
+      amount: 1200,
+      currency: @family.currency,
+      starts_on: Date.current,
+      status: "planned"
+    )
+    source.forecast_goals.create!(
+      family: @family,
+      name: "Runway",
+      goal_type: "minimum_cash_runway",
+      target_duration_days: 90,
+      blocking_behavior: "warn",
+      status: "active"
+    )
+
+    copy = source.duplicate_for_family!(family: @family, user: @user)
+
+    # Toggling the copy on is the ONLY gate; its children must already be in the
+    # engine-runnable statuses so an activated copy actually projects something.
+    copy.update!(status: "active")
+
+    assert_includes %w[planned accepted], copy.forecast_events.first.status
+    assert_equal "active", copy.forecast_goals.first.status
   end
 
   test "duplicate rolls back entirely when a child is invalid" do

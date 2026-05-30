@@ -1,12 +1,13 @@
 module Forecast
   class BudgetInputBuilder
-    def initialize(family:, user:, periods:, money_converter:, scenario_ids:, included_account_scope:)
+    def initialize(family:, user:, periods:, money_converter:, scenario_ids:, included_account_scope:, start_on:)
       @family = family
       @user = user
       @periods = periods
       @money_converter = money_converter
       @scenario_ids = Array(scenario_ids).compact_blank
       @included_account_scope = included_account_scope
+      @start_on = start_on
     end
 
     def call
@@ -18,7 +19,7 @@ module Forecast
     end
 
     private
-      attr_reader :family, :user, :periods, :money_converter, :scenario_ids, :included_account_scope
+      attr_reader :family, :user, :periods, :money_converter, :scenario_ids, :included_account_scope, :start_on
 
       def snapshot_for(period)
         source_budget = source_budget_for(period)
@@ -201,7 +202,7 @@ module Forecast
       end
 
       def grouped_actuals_for(period)
-        return {} unless period.start_date <= Date.current && period.end_date >= Date.current
+        return {} unless period.start_date <= start_on && period.end_date >= start_on
 
         actual_entries(period).select { |entry| entry.transaction.category_id.present? }.each_with_object({}) do |entry, hash|
           category = entry.transaction.category
@@ -217,7 +218,7 @@ module Forecast
       end
 
       def period_actual_spending(budget_category, period)
-        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= Date.current && period.end_date >= Date.current
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= start_on && period.end_date >= start_on
 
         amount = 0.to_d
         risk_flags = []
@@ -234,7 +235,7 @@ module Forecast
       end
 
       def period_actual_spending_for_category(category, period)
-        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= Date.current && period.end_date >= Date.current
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= start_on && period.end_date >= start_on
 
         amount = 0.to_d
         risk_flags = []
@@ -297,7 +298,7 @@ module Forecast
       end
 
       def actual_income_for(period)
-        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= Date.current && period.end_date >= Date.current
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= start_on && period.end_date >= start_on
 
         amount = 0.to_d
         risk_flags = []
@@ -325,7 +326,7 @@ module Forecast
       end
 
       def uncategorized_actual_spending_for(period)
-        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= Date.current && period.end_date >= Date.current
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= start_on && period.end_date >= start_on
 
         amount = 0.to_d
         risk_flags = []
@@ -349,7 +350,7 @@ module Forecast
       def actual_entries(period)
         @actual_entries ||= {}
         scope = family.entries.visible.excluding_pending
-          .where(date: period.start_date..[ period.end_date, Date.current ].min, excluded: false, account_id: included_account_scope.ids)
+          .where(date: period.start_date..[ period.end_date, start_on ].min, excluded: false, account_id: included_account_scope.ids)
           .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
           .where.not(transactions: { kind: Transaction::BUDGET_EXCLUDED_KINDS })
           .where("transactions.investment_activity_label IS NULL OR transactions.investment_activity_label NOT IN (?)", Transaction::INTERNAL_MOVEMENT_LABELS)

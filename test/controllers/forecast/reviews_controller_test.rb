@@ -186,17 +186,45 @@ class Forecast::ReviewsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to forecast_review_path(group)
     scenario = @family.forecast_scenarios.order(:created_at).last
     assert_equal "Refinance mortgage", scenario.name
-    # Hermes boundary: approved but NOT auto-active.
+    # Hermes boundary: approved but NOT auto-active. The SCENARIO's "disabled"
+    # status (ScenarioStack.active) is the inertness gate.
     assert_equal "disabled", scenario.status
     assert_equal "approved", scenario.approval_status
     assert_equal @family.id, scenario.family_id
     assert_equal @user.id, scenario.created_by_user_id
-    # Child draft events are copied (disabled).
+    # Child draft events are created ENABLED ("planned") so that once the human
+    # toggles the scenario on, it actually projects — disabling them would make
+    # an approved-then-enabled draft project nothing.
     assert_equal 1, scenario.forecast_events.count
     event = scenario.forecast_events.first
     assert_equal "Lower payment", event.name
-    assert_equal "disabled", event.status
+    assert_equal "planned", event.status
     assert_equal @family.id, event.family_id
+  end
+
+  test "approving a Hermes draft then enabling the scenario yields engine-runnable events" do
+    group = build_completed_run_group(family: @family, user: @user)
+    review = ensure_review(group)
+    review.update!(response_packet: {
+      "draft_scenarios" => [
+        {
+          "name" => "Cut spending",
+          "events" => [
+            { "name" => "Lower groceries", "effect_type" => "expense", "amount" => "300", "starts_on" => Date.current.iso8601 }
+          ]
+        }
+      ]
+    })
+
+    post approve_draft_forecast_review_path(group), params: { draft_index: 0 }
+
+    scenario = @family.forecast_scenarios.order(:created_at).last
+    # The copied event must be in an engine-loadable status (not "disabled"), so
+    # enabling the approved scenario projects the draft rather than nothing.
+    assert_includes %w[planned accepted], scenario.forecast_events.first.status
+
+    scenario.update!(status: "active")
+    assert_includes %w[planned accepted], scenario.forecast_events.first.reload.status
   end
 
   test "approve_draft with a missing draft index does not create a scenario" do

@@ -13,8 +13,10 @@
 #     Forecast::MaterialMovement;
 #   - if material: annotate the draft ForecastReview with the trigger reason +
 #     flags so a human reviews it;
-#   - if immaterial: discard the just-generated group (raw delete, bypassing the
-#     completed-output immutability guard) so the cadence leaves no noise.
+#   - if immaterial: discard the just-generated group by marking it "discarded"
+#     (a durable terminal marker, bypassing the completed-output immutability
+#     guard) so the cadence leaves no review noise yet a second same-day tick is
+#     still suppressed instead of wastefully re-running.
 #
 # A Runner failure is rescued and logged so one family's failure never aborts
 # the batch; the Runner persists the failed group + error_message before
@@ -79,10 +81,15 @@ class ForecastMarketCloseJob < ApplicationJob
       end
     end
 
-    # Hard-delete the just-generated group (and its cascade-deleted runs/days/
-    # months/projections/review) without firing the completed-output immutability
-    # guard. `delete_all` issues a raw DELETE; the DB foreign keys cascade.
+    # Mark the just-generated group "discarded" instead of deleting it. The
+    # discarded status is a durable, terminal marker the same-day idempotency
+    # guard (Family#scheduled_forecast_group_exists?) recognizes as "already
+    # processed today", so a SECOND quiet-day tick is suppressed and never
+    # re-runs the Runner + MaterialMovement. We write the status column directly
+    # to bypass the completed-output immutability guard (the group is already
+    # "completed" here) without touching the rest of the persisted output, so the
+    # marker stays cheap and the immutable forecast days/months are untouched.
     def discard_group!(group)
-      ForecastRunGroup.where(id: group.id).delete_all
+      group.update_columns(status: "discarded", updated_at: Time.current)
     end
 end

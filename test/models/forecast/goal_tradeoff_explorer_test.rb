@@ -175,11 +175,11 @@ class Forecast::GoalTradeoffExplorerTest < ActiveSupport::TestCase
     assert_not_includes keys, "failed_stack"
   end
 
-  # --- unknown/warn state classified as at_risk, never satisfied --------------
+  # --- unknown/warn state classified as at_risk; un-evaluated goals are N/A -----
 
-  test "a goal in unknown or warn state is classified at_risk not satisfied" do
+  test "an evaluated warn goal is at_risk while a goal this stack never graded is N/A" do
     group = new_group
-    # goal_warn -> warn, goal_missing -> not evaluated at all by this stack.
+    # goal_warn -> warn (evaluated), goal_missing -> not evaluated at all by candidate.
     build_run(group, stack_key: "baseline", goals: [
       { key: "goal_warn", status: "warn" },
       { key: "goal_missing", status: "pass" } # evaluated here so it enters the universe
@@ -191,9 +191,44 @@ class Forecast::GoalTradeoffExplorerTest < ActiveSupport::TestCase
     group.update!(status: "completed", finished_at: Time.current)
 
     candidate = explorer_for(group).explore.find { |r| r[:stack_key] == "candidate" }
-    assert_empty candidate[:satisfied_goal_keys], "warn/missing goals are never satisfied"
-    assert_equal %w[goal_missing goal_warn], candidate[:at_risk_goal_keys]
+    assert_empty candidate[:satisfied_goal_keys], "a warn goal is never satisfied"
+    # Only the goal candidate actually evaluated (goal_warn) is at_risk. The goal it
+    # never graded (goal_missing) is NOT APPLICABLE and excluded from at_risk.
+    assert_equal %w[goal_warn], candidate[:at_risk_goal_keys]
+    assert_not_includes candidate[:at_risk_goal_keys], "goal_missing",
+      "a goal this stack never evaluated is N/A, not at_risk"
     assert_empty candidate[:blocked_goal_keys]
+  end
+
+  # --- un-evaluated goals are N/A (not at_risk) on the run that skipped them ---
+
+  test "a scenario-only goal is not counted at_risk on the baseline row that never evaluated it" do
+    group = new_group
+    # The baseline run evaluates only the family-wide goal. The scenario-only goal
+    # (graded only by the scenario stack) is NOT APPLICABLE to the baseline and must
+    # not be routed into the baseline's at_risk set, which would overstate baseline risk.
+    build_run(group, stack_key: "baseline", goals: [
+      { key: "family_goal", status: "pass" }
+      # scenario_goal intentionally NOT evaluated by the baseline run
+    ])
+    build_run(group, stack_key: "scenario", goals: [
+      { key: "family_goal", status: "pass" },
+      { key: "scenario_goal", status: "warn" } # only the scenario stack grades this
+    ])
+    group.update!(status: "completed", finished_at: Time.current)
+
+    result = explorer_for(group).explore
+    baseline = result.find { |r| r[:stack_key] == "baseline" }
+
+    assert_not_includes baseline[:at_risk_goal_keys], "scenario_goal",
+      "a goal the baseline never evaluated is N/A, not at_risk, on the baseline row"
+    assert_empty baseline[:at_risk_goal_keys],
+      "the baseline's at_risk set must exclude goals it never graded"
+    assert_equal %w[family_goal], baseline[:satisfied_goal_keys]
+
+    # The scenario stack actually graded scenario_goal as warn -> it IS at_risk there.
+    scenario = result.find { |r| r[:stack_key] == "scenario" }
+    assert_includes scenario[:at_risk_goal_keys], "scenario_goal"
   end
 
   # --- empty group -> [] ------------------------------------------------------

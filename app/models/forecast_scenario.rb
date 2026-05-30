@@ -45,19 +45,23 @@ class ForecastScenario < ApplicationRecord
 
   # Deep-copies this scenario and its planning children into a (possibly the
   # same) family. The copy is created with:
-  #   - status "disabled" so it is inert until the user toggles it on. This also
-  #     keeps the per-period active-uniqueness on budget overrides from colliding
-  #     with the source's active overrides.
+  #   - status "disabled" so it is inert until the user toggles it on. The
+  #     scenario's OWN "disabled" status is the inertness gate: ScenarioStack
+  #     only loads `family.forecast_scenarios.active`, so a disabled copy
+  #     projects nothing regardless of its children.
   #   - approval_status reset to "manual" (a copy is user-authored, never an
   #     approved/pending AI artifact).
   #   - parent_scenario pointing at the source so lineage is preserved.
   #   - created_by_user set to the supplied user (server-side, never params).
   #
-  # All children are re-scoped to the target family and to the new scenario.
-  # Children carry their own "disabled" status (overrides/goals) so an active
-  # override cannot collide on the active-uniqueness index. Runs inside a
-  # transaction so a single invalid child rolls the whole duplicate back, which
-  # the controller surfaces as an error rather than a 500/partial copy.
+  # All children are re-scoped to the target family and to the new scenario and
+  # created ENABLED (events "planned", goals/overrides "active"), so the moment
+  # the user toggles the copy on it actually projects. Disabling children would
+  # mean an activated copy projects nothing — the defect this guards against.
+  # Active override uniqueness is SCENARIO-scoped, so a new scenario's active
+  # overrides can never collide with the source's. Runs inside a transaction so a
+  # single invalid child rolls the whole duplicate back, which the controller
+  # surfaces as an error rather than a 500/partial copy.
   def duplicate_for_family!(family:, user: nil, name: nil)
     transaction do
       copy = family.forecast_scenarios.create!(
@@ -101,7 +105,7 @@ class ForecastScenario < ApplicationRecord
           starts_on: event.starts_on,
           ends_on: event.ends_on,
           recurrence_rule: event.recurrence_rule,
-          status: "disabled",
+          status: "planned",
           probability_weight: event.probability_weight,
           apply_order: event.apply_order,
           source_metadata: event.source_metadata
@@ -118,7 +122,7 @@ class ForecastScenario < ApplicationRecord
           override_type: override.override_type,
           amount: override.amount,
           currency: override.currency,
-          status: "disabled",
+          status: "active",
           note: override.note,
           source_metadata: override.source_metadata
         )
@@ -139,7 +143,7 @@ class ForecastScenario < ApplicationRecord
           ends_on: goal.ends_on,
           required: goal.required,
           blocking_behavior: goal.blocking_behavior,
-          status: "disabled",
+          status: "active",
           condition_metadata: goal.condition_metadata
         )
       end
