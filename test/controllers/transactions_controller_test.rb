@@ -189,6 +189,33 @@ class TransactionsControllerTest < ActionDispatch::IntegrationTest
   assert_operator overflow_count, :>, 0, "Overflow should show some transactions"
 end
 
+  test "filterless visit does not restore a stale page number" do
+    # Visiting a deep page persists that page in the session.
+    get transactions_url(page: 2, per_page: 10)
+    assert_response :success
+
+    # Returning to /transactions with no query string must NOT bounce back to the
+    # stale page — the most recent transactions live on page 1.
+    get transactions_url
+    assert_response :success, "filterless revisit should render page 1, not redirect to a stored page"
+    if response.redirect?
+      assert_no_match(/page=2/, response.location, "must not restore the stale page")
+    end
+  end
+
+  test "saved search filters are restored but reset to page 1" do
+    # Save a filter while sitting on a deep page.
+    get transactions_url(q: { search: "groceries" }, page: 3, per_page: 10)
+    assert_response :success
+
+    # A filterless revisit restores the filter, but starts on page 1 (never the stale page).
+    get transactions_url
+    assert_response :redirect
+    assert_match(/groceries/, CGI.unescape(response.location), "saved search filter should be restored")
+    assert_match(/page=1/, response.location, "restored view should start on page 1")
+    assert_no_match(/page=3/, response.location, "must not restore the stale page")
+  end
+
   test "calls Transaction::Search totals method with correct search parameters" do
     family = families(:empty)
     sign_in users(:empty)

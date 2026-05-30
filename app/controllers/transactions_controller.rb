@@ -507,7 +507,9 @@ class TransactionsController < ApplicationController
         params_to_restore = {}
 
         params_to_restore[:q] = stored_params["q"].presence || {}
-        params_to_restore[:page] = stored_params["page"].presence || 1
+        # Always land on the first (most recent) page. Restoring a stale page number
+        # silently stranded users deep in their history, hiding recent transactions.
+        params_to_restore[:page] = 1
         params_to_restore[:per_page] = stored_params["per_page"].presence || 50
 
         redirect_to transactions_path(params_to_restore)
@@ -523,7 +525,9 @@ class TransactionsController < ApplicationController
     end
 
     def should_restore_params?
-      request.query_parameters.blank? && (stored_params["q"].present? || stored_params["page"].present? || stored_params["per_page"].present?)
+      # Only restore saved search filters, never pagination state. A stored page
+      # must not pull a filterless visit away from page 1.
+      request.query_parameters.blank? && stored_params["q"].present?
     end
 
     def stored_params
