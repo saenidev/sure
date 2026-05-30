@@ -86,6 +86,29 @@ class Forecast::InputBuilderTest < ActiveSupport::TestCase
     assert_equal [], result.reclassifications
   end
 
+  test "threads start_on into budget actuals and portfolio market quality" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    family.budgets.destroy_all
+    run_date = 2.months.ago.to_date.beginning_of_month + 5.days
+    entry = entries(:transaction)
+    entry.update!(date: run_date, amount: 75, account: accounts(:depository))
+    entry.transaction.update!(kind: "standard", category: categories(:food_and_drink))
+
+    result = Forecast::InputBuilder.new(
+      family: family,
+      user: user,
+      scenario_ids: [],
+      start_on: run_date,
+      months: 1,
+      daily_days: 7
+    ).call
+
+    category = result.budgets.first.fetch(:categories).find { |row| row.fetch(:category_id) == categories(:food_and_drink).id }
+    assert_equal 75.to_d, category.fetch(:actual_spending)
+    assert_equal run_date, result.portfolio.fetch(:market_data_quality).fetch(:as_of)
+  end
+
   test "accepted future link remains in inputs after source event deletion" do
     family = families(:dylan_family)
     event = family.forecast_events.create!(

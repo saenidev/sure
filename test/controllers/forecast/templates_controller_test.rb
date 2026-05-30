@@ -20,6 +20,14 @@ class Forecast::TemplatesControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[type=hidden][name=template_key][value=major_purchase]"
   end
 
+  test "index scenario manager trigger is a GET link, not a POST form" do
+    get forecast_templates_path
+
+    assert_response :success
+    assert_select "a[href=?]", forecast_scenarios_path
+    assert_select "form[action=?]", forecast_scenarios_path, false
+  end
+
   # --- create (happy path) ---------------------------------------------------
 
   test "applying a template creates a disabled scenario with events scoped to the family" do

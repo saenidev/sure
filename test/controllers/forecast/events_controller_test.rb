@@ -48,6 +48,14 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=events-empty-state]"
   end
 
+  test "index new event trigger is a GET modal link, not a POST form" do
+    get forecast_events_path
+
+    assert_response :success
+    assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_event_path
+    assert_select "form[action=?]", new_forecast_event_path, false
+  end
+
   test "index scoped to a scenario lists only that scenario's events" do
     in_scenario = @family.forecast_events.create!(base_params_model(forecast_scenario: @scenario))
     family_level = @family.forecast_events.create!(base_params_model(name: "Family level"))

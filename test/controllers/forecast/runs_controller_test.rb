@@ -14,13 +14,15 @@ class Forecast::RunsControllerTest < ActionDispatch::IntegrationTest
   # --- create: enqueues the async job, never runs the Runner inline ----------
 
   test "create enqueues ForecastGenerationJob with the baseline stack args" do
-    assert_enqueued_with(
-      job: ForecastGenerationJob,
-      args: [ { family: @family, user: @user, name: I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long)), scenario_stacks: [ [] ] } ]
-    ) do
+    assert_difference "@family.forecast_run_groups.pending.count", 1 do
       post forecast_runs_path
     end
 
+    group = @family.forecast_run_groups.order(:created_at).last
+    assert_enqueued_with(
+      job: ForecastGenerationJob,
+      args: [ { run_group: group, scenario_stacks: [ [] ] } ]
+    )
     assert_redirected_to forecast_path
     assert_equal I18n.t("forecasts.runs.enqueued"), flash[:notice]
   end
@@ -31,6 +33,18 @@ class Forecast::RunsControllerTest < ActionDispatch::IntegrationTest
     assert_enqueued_jobs 1, only: ForecastGenerationJob do
       post forecast_runs_path
     end
+  end
+
+  test "create reserves a pending group before enqueue so duplicate submits are blocked" do
+    post forecast_runs_path
+    assert_redirected_to forecast_path
+
+    assert_no_enqueued_jobs only: ForecastGenerationJob do
+      post forecast_runs_path
+    end
+
+    assert_redirected_to forecast_path
+    assert_equal I18n.t("forecasts.runs.already_running"), flash[:alert]
   end
 
   # --- empty/edge: a family with no accounts/budgets still enqueues -----------
@@ -139,12 +153,12 @@ class Forecast::RunsControllerTest < ActionDispatch::IntegrationTest
   test "create only scopes generation to the current family" do
     # A signed-in member of dylan_family can never enqueue against empty family;
     # the job always carries Current.family/Current.user.
-    assert_enqueued_with(
-      job: ForecastGenerationJob,
-      args: [ { family: @family, user: @user, name: I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long)), scenario_stacks: [ [] ] } ]
-    ) do
-      post forecast_runs_path
-    end
+    post forecast_runs_path
+
+    group = @family.forecast_run_groups.order(:created_at).last
+    assert_equal @family.id, group.family_id
+    assert_equal @user.id, group.user_id
+    assert_enqueued_with(job: ForecastGenerationJob, args: [ { run_group: group, scenario_stacks: [ [] ] } ])
   end
 
   # --- comparison: scenario_stacks param -------------------------------------
@@ -156,38 +170,27 @@ class Forecast::RunsControllerTest < ActionDispatch::IntegrationTest
 
     expected_name = I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long))
 
+    post forecast_runs_path, params: {
+      scenario_stacks: {
+        "0" => { scenario_ids: [ scenario_a.id ] },
+        "1" => { scenario_ids: [ scenario_a.id, scenario_b.id ] }
+      }
+    }
+
+    group = @family.forecast_run_groups.order(:created_at).last
+    assert_equal expected_name, group.name
     assert_enqueued_with(
       job: ForecastGenerationJob,
-      args: [ {
-        family: @family,
-        user: @user,
-        name: expected_name,
-        scenario_stacks: [ [], [ scenario_a.id ], [ scenario_a.id, scenario_b.id ] ]
-      } ]
-    ) do
-      post forecast_runs_path, params: {
-        scenario_stacks: {
-          "0" => { scenario_ids: [ scenario_a.id ] },
-          "1" => { scenario_ids: [ scenario_a.id, scenario_b.id ] }
-        }
-      }
-    end
-
+      args: [ { run_group: group, scenario_stacks: [ [], [ scenario_a.id ], [ scenario_a.id, scenario_b.id ] ] } ]
+    )
     assert_redirected_to forecast_path
   end
 
   test "empty scenario_stacks submission defaults to baseline-only" do
-    assert_enqueued_with(
-      job: ForecastGenerationJob,
-      args: [ {
-        family: @family,
-        user: @user,
-        name: I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long)),
-        scenario_stacks: [ [] ]
-      } ]
-    ) do
-      post forecast_runs_path, params: { scenario_stacks: { "0" => { scenario_ids: [] } } }
-    end
+    post forecast_runs_path, params: { scenario_stacks: { "0" => { scenario_ids: [] } } }
+
+    group = @family.forecast_run_groups.order(:created_at).last
+    assert_enqueued_with(job: ForecastGenerationJob, args: [ { run_group: group, scenario_stacks: [ [] ] } ])
   end
 
   # --- validation / authorization: foreign or over-cap stacks reject ----------
@@ -209,6 +212,30 @@ class Forecast::RunsControllerTest < ActionDispatch::IntegrationTest
     assert_no_enqueued_jobs only: ForecastGenerationJob do
       post forecast_runs_path, params: {
         scenario_stacks: { "0" => { scenario_ids: [ "00000000-0000-0000-0000-000000000000" ] } }
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "a disabled scenario id is rejected with 422 and enqueues nothing" do
+    scenario = @family.forecast_scenarios.create!(name: "Disabled", status: "disabled")
+
+    assert_no_enqueued_jobs only: ForecastGenerationJob do
+      post forecast_runs_path, params: {
+        scenario_stacks: { "0" => { scenario_ids: [ scenario.id ] } }
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "an archived scenario id is rejected with 422 and enqueues nothing" do
+    scenario = @family.forecast_scenarios.create!(name: "Archived", status: "archived")
+
+    assert_no_enqueued_jobs only: ForecastGenerationJob do
+      post forecast_runs_path, params: {
+        scenario_stacks: { "0" => { scenario_ids: [ scenario.id ] } }
       }
     end
 

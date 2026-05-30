@@ -202,7 +202,7 @@ module Forecast
       end
 
       def grouped_actuals_for(period)
-        return {} unless period.start_date <= start_on && period.end_date >= start_on
+        return {} unless actual_period?(period)
 
         actual_entries(period).select { |entry| entry.transaction.category_id.present? }.each_with_object({}) do |entry, hash|
           category = entry.transaction.category
@@ -218,7 +218,7 @@ module Forecast
       end
 
       def period_actual_spending(budget_category, period)
-        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= start_on && period.end_date >= start_on
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless actual_period?(period)
 
         amount = 0.to_d
         risk_flags = []
@@ -235,7 +235,7 @@ module Forecast
       end
 
       def period_actual_spending_for_category(category, period)
-        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= start_on && period.end_date >= start_on
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless actual_period?(period)
 
         amount = 0.to_d
         risk_flags = []
@@ -298,7 +298,7 @@ module Forecast
       end
 
       def actual_income_for(period)
-        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= start_on && period.end_date >= start_on
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless actual_period?(period)
 
         amount = 0.to_d
         risk_flags = []
@@ -326,7 +326,7 @@ module Forecast
       end
 
       def uncategorized_actual_spending_for(period)
-        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless period.start_date <= start_on && period.end_date >= start_on
+        return { amount: 0.to_d, risk_flags: [], source_snapshot: [] } unless actual_period?(period)
 
         amount = 0.to_d
         risk_flags = []
@@ -362,6 +362,10 @@ module Forecast
         @actual_entries[period.start_date] ||= scope.to_a.reject do |entry|
           actual_budget_excluded?(entry)
         end
+      end
+
+      def actual_period?(period)
+        period.start_date <= start_on && period.end_date >= start_on
       end
 
       def actual_budget_excluded?(entry)

@@ -1,6 +1,6 @@
 module Forecast
   class Runner
-    def initialize(family:, user:, scenario_stacks:, run_type:, name:, start_on: Date.current, trigger_metadata: {})
+    def initialize(family:, user:, scenario_stacks:, run_type:, name:, start_on: Date.current, trigger_metadata: {}, run_group: nil)
       @family = family
       @user = user
       @scenario_stacks = scenario_stacks
@@ -8,13 +8,14 @@ module Forecast
       @name = name
       @start_on = start_on
       @trigger_metadata = trigger_metadata
+      @run_group = run_group
     end
 
     def call
       raise ArgumentError, "scenario_stacks must include at least one stack" if scenario_stacks.blank?
 
       group = create_group!
-      create_review!(group)
+      create_review!(group) unless group.forecast_review
       group.update!(status: "running", started_at: Time.current)
 
       # Persist each scenario stack in its OWN transaction so a single stack
@@ -41,7 +42,7 @@ module Forecast
     end
 
     private
-      attr_reader :family, :user, :scenario_stacks, :run_type, :name, :start_on, :trigger_metadata
+      attr_reader :family, :user, :scenario_stacks, :run_type, :name, :start_on, :trigger_metadata, :run_group
 
       # Build + persist one scenario stack inside its own transaction so a raise
       # here rolls back only this stack's rows, never its completed siblings.
@@ -116,6 +117,8 @@ module Forecast
       end
 
       def create_group!
+        return run_group if run_group.present?
+
         family.forecast_run_groups.create!(
           user: user,
           name: name,

@@ -13,7 +13,7 @@
       </p>
     </div>
 
-    <%= render DS::Button.new(
+    <%= render DS::Link.new(
       text: t("forecasts.events.index.new"),
       icon: "plus",
       href: new_forecast_event_path(scenario_id: @scenario&.id),

@@ -18,14 +18,18 @@ class ForecastGenerationJob < ApplicationJob
   # rows under one ForecastRunGroup. The controller is responsible for
   # validating that every id belongs to the family before enqueuing, so the job
   # trusts the already-vetted stacks.
-  def perform(family:, user:, name: nil, scenario_stacks: [ [] ])
+  def perform(family: nil, user: nil, name: nil, scenario_stacks: [ [] ], run_group: nil)
+    family ||= run_group&.family
+    user ||= run_group&.user
+
     Forecast::Runner.new(
       family: family,
       user: user,
       scenario_stacks: scenario_stacks.presence || [ [] ],
       run_type: "manual",
-      name: name.presence || default_name,
-      start_on: Date.current
+      name: name.presence || run_group&.name || default_name,
+      start_on: run_group&.horizon_start_on || Date.current,
+      run_group: run_group
     ).call
   rescue StandardError => e
     # The Runner has already flipped the group to failed with the message; the

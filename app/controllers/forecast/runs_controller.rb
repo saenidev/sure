@@ -22,23 +22,17 @@ module Forecast
     # id MUST belong to Current.family or the whole request is rejected (422)
     # and nothing is enqueued — a foreign id never reaches the Runner.
     def create
-      if generation_in_flight?
-        respond_to do |format|
-          format.html { redirect_to forecast_path, alert: t("forecasts.runs.already_running") }
-          format.json { render json: { error: t("forecasts.runs.already_running") }, status: :conflict }
-        end
-        return
-      end
-
       stacks = build_scenario_stacks
       return if stacks == :invalid
 
-      ForecastGenerationJob.perform_later(
-        family: @family,
-        user: Current.user,
-        name: t("forecasts.runs.default_name", date: l(Date.current, format: :long)),
-        scenario_stacks: stacks
+      run_start_on = Date.current
+      group = reserve_pending_group!(
+        name: t("forecasts.runs.default_name", date: l(run_start_on, format: :long)),
+        start_on: run_start_on
       )
+      return render_generation_in_flight if group == :in_flight
+
+      ForecastGenerationJob.perform_later(run_group: group, scenario_stacks: stacks)
 
       redirect_to forecast_path, notice: t("forecasts.runs.enqueued")
     end
@@ -67,6 +61,38 @@ module Forecast
         @family.forecast_run_groups.where(status: %w[pending running]).exists?
       end
 
+      # Reserve the run group synchronously inside a family row lock before
+      # enqueuing. That closes the request/job-start race where two rapid submits
+      # could both pass generation_in_flight? before the first worker created its
+      # pending group.
+      def reserve_pending_group!(name:, start_on:)
+        @family.with_lock do
+          return :in_flight if generation_in_flight?
+
+          @family.forecast_run_groups.create!(
+            user: Current.user,
+            name: name,
+            run_type: "manual",
+            status: "pending",
+            currency: @family.currency,
+            horizon_start_on: start_on,
+            horizon_end_on: Forecast::PeriodBuilder.new(family: @family, start_on: start_on, months: 36, daily_days: 90).call.months.last.end_date,
+            daily_until_on: start_on + 89.days,
+            currency_snapshot: {
+              "currency" => @family.currency,
+              "as_of" => start_on.iso8601
+            }
+          )
+        end
+      end
+
+      def render_generation_in_flight
+        respond_to do |format|
+          format.html { redirect_to forecast_path, alert: t("forecasts.runs.already_running") }
+          format.json { render json: { error: t("forecasts.runs.already_running") }, status: :conflict }
+        end
+      end
+
       # Normalize and validate the submitted scenario stacks. Returns the
       # cleaned `scenario_stacks` array on success, or `:invalid` after rendering
       # a 422 — in which case the caller must stop (nothing is enqueued).
@@ -91,7 +117,7 @@ module Forecast
         submitted_ids = normalized.flatten.uniq
         if submitted_ids.any?
           # Single family-scoped query: any id not returned is foreign/unknown.
-          known_ids = @family.forecast_scenarios.where(id: submitted_ids).pluck(:id)
+          known_ids = @family.forecast_scenarios.active.where(id: submitted_ids).pluck(:id)
           unknown_ids = submitted_ids - known_ids
           if unknown_ids.any?
             return reject_stacks(t("forecasts.comparison.errors.unknown_scenarios"))

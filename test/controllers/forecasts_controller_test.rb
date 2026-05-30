@@ -44,7 +44,7 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "#forecast-empty-state-title", text: I18n.t("forecasts.empty_state.onboarding.title")
     assert_select "button", text: I18n.t("forecasts.show.generate")
-    assert_select "button", text: I18n.t("forecasts.show.set_up_scenarios")
+    assert_select "a[href=?]", forecast_scenarios_path, text: I18n.t("forecasts.show.set_up_scenarios")
   end
 
   test "renders ready state when planning data exists but no completed run" do
@@ -104,6 +104,16 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_scenario_path, minimum: 1
     assert_select "form[action=?]", new_forecast_scenario_path, false
+  end
+
+  test "reconciliation empty state new event trigger is a GET link, not a POST form" do
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    get forecast_url(tab: "reconciliation")
+
+    assert_response :success
+    assert_select "a[href=?]", new_forecast_event_path
+    assert_select "form[action=?]", new_forecast_event_path, false
   end
 
   test "surfaces failure alert with error message when latest run failed" do

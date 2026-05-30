@@ -28,6 +28,27 @@ class ForecastGenerationJobTest < ActiveJob::TestCase
     assert_equal I18n.t("forecasts.runs.default_name", date: I18n.l(Date.current, format: :long)), group.name
   end
 
+  test "uses a reserved pending run group instead of creating a duplicate group" do
+    group = @family.forecast_run_groups.create!(
+      user: @user,
+      name: "Reserved manual run",
+      run_type: "manual",
+      status: "pending",
+      currency: @family.currency,
+      horizon_start_on: Date.current,
+      horizon_end_on: 36.months.from_now.to_date,
+      daily_until_on: 90.days.from_now.to_date
+    )
+
+    assert_no_difference "@family.forecast_run_groups.count" do
+      ForecastGenerationJob.perform_now(run_group: group, scenario_stacks: [ [] ])
+    end
+
+    assert group.reload.completed?
+    assert_equal "Reserved manual run", group.name
+    assert_equal 1, group.forecast_runs.count
+  end
+
   test "rescues a Runner failure and leaves the group failed with an error message" do
     scenario = @family.forecast_scenarios.create!(
       created_by_user: @user,

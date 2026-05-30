@@ -29,7 +29,7 @@
 
         <div class="flex items-center gap-2 shrink-0">
           <% if setting.present? %>
-            <%= render DS::Button.new(
+            <%= render DS::Link.new(
               text: t("forecasts.liquidity_settings.row.edit"),
               variant: "outline",
               size: :sm,
@@ -45,7 +45,7 @@
               <%= icon "rotate-ccw", size: "sm" %>
             <% end %>
           <% else %>
-            <%= render DS::Button.new(
+            <%= render DS::Link.new(
               text: t("forecasts.liquidity_settings.row.override"),
               variant: "outline",
               size: :sm,

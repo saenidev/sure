@@ -20,6 +20,26 @@ class Forecast::AccountLiquiditySettingsControllerTest < ActionDispatch::Integra
     assert_select "##{dom_id(@account, :liquidity)}"
   end
 
+  test "index override and edit controls are GET modal links, not POST forms" do
+    setting = @family.forecast_account_liquidity_settings.create!(
+      account: @account,
+      liquidity_class: "cash"
+    )
+
+    get forecast_account_liquidity_settings_path
+
+    assert_response :success
+    assert_select "a[href=?][data-turbo-frame=modal]", edit_forecast_account_liquidity_setting_path(setting)
+    assert_select "form[action=?]", edit_forecast_account_liquidity_setting_path(setting), false
+
+    account_without_setting = @family.accounts.visible.where.not(id: @account.id).first
+    if account_without_setting
+      new_path = new_forecast_account_liquidity_setting_path(account_id: account_without_setting.id)
+      assert_select "a[href=?][data-turbo-frame=modal]", new_path
+      assert_select "form[action=?]", new_path, false
+    end
+  end
+
   test "index renders an empty list when the family has no accounts" do
     empty_user = users(:empty)
     sign_in empty_user

@@ -27,7 +27,7 @@
       <% if workspace.onboarding? %>
         <%# Scenario setup affordance: opens the manual scenario manager so a
             family can build planning data before generating a forecast. %>
-        <%= render DS::Button.new(
+        <%= render DS::Link.new(
           text: t("forecasts.show.set_up_scenarios"),
           variant: "outline",
           icon: "settings-2",

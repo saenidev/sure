@@ -240,6 +240,40 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
     assert_equal 50.to_d, category.fetch(:actual_spending)
   end
 
+  test "actual spending is gated by threaded run date instead of today" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    family.budgets.destroy_all
+    run_date = 2.months.ago.to_date.beginning_of_month + 5.days
+    included_entry = entries(:transaction)
+    included_entry.update!(date: run_date, amount: 50, account: accounts(:depository))
+    included_entry.transaction.update!(kind: "standard", category: categories(:food_and_drink))
+    future_transaction = Transaction.create!(kind: "standard", category: categories(:food_and_drink))
+    Entry.create!(
+      account: accounts(:depository),
+      entryable: future_transaction,
+      name: "After run date",
+      date: run_date + 1.day,
+      amount: 500,
+      currency: family.currency
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: run_date.beginning_of_month, end_date: run_date.end_of_month, precision: "daily_backed")
+
+    result = Forecast::BudgetInputBuilder.new(
+      family: family,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: run_date),
+      scenario_ids: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user),
+      start_on: run_date
+    ).call
+
+    category = result.first.fetch(:categories).find { |row| row.fetch(:category_id) == categories(:food_and_drink).id }
+    assert_equal "actual", category.fetch(:source)
+    assert_equal 50.to_d, category.fetch(:actual_spending)
+  end
+
   test "actual FX conversion uses each entry date instead of the run date" do
     family = families(:dylan_family)
     user = users(:family_admin)
