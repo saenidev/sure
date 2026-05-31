@@ -9,6 +9,7 @@ export default class extends Controller {
   static targets = [
     "chart",
     "eventList",
+    "inspector",
     "legend",
     "metricButton",
     "rangeButton",
@@ -105,9 +106,13 @@ export default class extends Controller {
   #renderSource() {
     if (!this.hasSourceLabelTarget) return;
 
-    const labels = this.payload.labels?.source || {};
-    const pieces = [labels[this.payload.source]].filter(Boolean);
+    const labels = this.payload.labels || {};
+    const sourceLabels = labels.source || {};
+    const pieces = [
+      this.payload.preview ? labels.preview : sourceLabels[this.payload.source],
+    ].filter(Boolean);
     if (this.payload.generated_label) pieces.push(this.payload.generated_label);
+    if (this.payload.stale && labels.stale) pieces.push(labels.stale);
     this.sourceLabelTarget.textContent = pieces.join(" ");
   }
 
@@ -126,7 +131,7 @@ export default class extends Controller {
       checkbox.type = "checkbox";
       checkbox.checked = this.activeSeriesIds.has(series.id);
       checkbox.dataset.seriesId = series.id;
-      checkbox.dataset.action = "forecast-canvas-preview#toggleSeries";
+      checkbox.dataset.action = "forecast-canvas-chart#toggleSeries";
       checkbox.className = "rounded border-primary";
 
       const swatch = document.createElement("span");
@@ -140,10 +145,10 @@ export default class extends Controller {
       left.append(checkbox, swatch, name);
       label.append(left);
 
-      if (series.prototype) {
+      if (series.prototype || series.preview) {
         const badge = document.createElement("span");
         badge.className = "text-secondary text-xs";
-        badge.textContent = this.payload.labels?.prototype || "";
+        badge.textContent = this.payload.labels?.prototype || "Preview";
         label.append(badge);
       }
 
@@ -231,15 +236,23 @@ export default class extends Controller {
       .attr("role", "img")
       .attr("viewBox", `0 0 ${width} ${height}`);
 
+    if (activeSeries.length === 0) {
+      this.#renderEmptyChart(
+        svg,
+        width,
+        height,
+        this.payload.labels?.line_empty,
+      );
+      return;
+    }
+
     if (allPoints.length < 2) {
-      svg
-        .append("text")
-        .attr("x", width / 2)
-        .attr("y", height / 2)
-        .attr("text-anchor", "middle")
-        .attr("class", "fill-current text-secondary")
-        .style("font-size", "13px")
-        .text(this.payload.labels?.event_empty || "");
+      this.#renderEmptyChart(
+        svg,
+        width,
+        height,
+        this.payload.labels?.metric_empty,
+      );
       return;
     }
 
@@ -408,7 +421,9 @@ export default class extends Controller {
         (exit) => exit.remove(),
       )
       .attr("stroke", (series) => series.color)
-      .attr("stroke-dasharray", (series) => (series.prototype ? "6 4" : null))
+      .attr("stroke-dasharray", (series) =>
+        series.prototype || series.preview ? "6 4" : null,
+      )
       .attr("d", (series) => line(series.points));
 
     this.#updateEvents();
@@ -422,7 +437,7 @@ export default class extends Controller {
 
     this.eventLayer
       .selectAll("line.forecast-event")
-      .data(events, (event) => `${event.label}-${event.date}`)
+      .data(events, (event) => event.id || `${event.label}-${event.date}`)
       .join("line")
       .attr("class", "forecast-event")
       .attr("x1", (event) => this.xScale(event.dateObject))
@@ -443,6 +458,17 @@ export default class extends Controller {
         points: series.metrics[this.selectedMetric] || [],
       }))
       .filter((series) => series.points.length > 1);
+  }
+
+  #renderEmptyChart(svg, width, height, message) {
+    svg
+      .append("text")
+      .attr("x", width / 2)
+      .attr("y", height / 2)
+      .attr("text-anchor", "middle")
+      .attr("class", "fill-current text-secondary")
+      .style("font-size", "13px")
+      .text(message || "");
   }
 
   #domainForRange(points) {
