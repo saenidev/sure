@@ -301,6 +301,8 @@ Rails.application.routes.draw do
   # Routes are added incrementally per slice.
   namespace :forecast do
     resource :canvas, only: :show, controller: :canvas
+    resources :canvas_drafts, path: "canvas/drafts", only: :create
+    post "canvas/forks", to: "canvas_drafts#fork", as: :canvas_forks
 
     resources :runs, only: %i[create] do
       get :status, on: :member

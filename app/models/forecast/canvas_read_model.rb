@@ -268,8 +268,8 @@ module Forecast
         {
           effect_types: ForecastEvent::EFFECT_TYPES,
           currencies: [ workspace.currency ],
-          create_event_url: nil,
-          fork_url: nil,
+          create_event_url: route_helpers.forecast_canvas_drafts_path,
+          fork_url: route_helpers.forecast_canvas_forks_path,
           scenario_targets: family.forecast_scenarios.active.ordered.map do |scenario|
             {
               id: scenario.id,
@@ -354,6 +354,10 @@ module Forecast
         else
           Money.new(value, workspace.currency).format
         end
+      end
+
+      def route_helpers
+        Rails.application.routes.url_helpers
       end
   end
 end
