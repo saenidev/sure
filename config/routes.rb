@@ -286,8 +286,6 @@ Rails.application.routes.draw do
     delete :destroy_all, on: :collection
   end
 
-  get "forecast/canvas", to: "forecasts#canvas", as: :forecast_canvas_preview
-
   resource :forecast, only: :show
 
   # Lazy-loaded body for a single workspace tab (ForecastsController#tab). Only
@@ -302,6 +300,8 @@ Rails.application.routes.draw do
   # inherit Forecast::BaseController, which scopes every query to Current.family.
   # Routes are added incrementally per slice.
   namespace :forecast do
+    resource :canvas, only: :show, controller: :canvas
+
     resources :runs, only: %i[create] do
       get :status, on: :member
     end

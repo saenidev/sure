@@ -38,6 +38,7 @@ module Forecast
 
       def forecast_collection_breadcrumb_label
         case controller_path
+        when "forecast/canvas" then t("forecasts.canvas.title")
         when "forecast/scenarios" then t("forecasts.scenarios.index.title")
         when "forecast/events" then t("forecasts.events.index.title")
         when "forecast/goals" then t("forecasts.goals.index.title")
@@ -53,6 +54,7 @@ module Forecast
 
       def forecast_collection_breadcrumb_path
         case controller_path
+        when "forecast/canvas" then forecast_canvas_path
         when "forecast/scenarios" then forecast_scenarios_path
         when "forecast/events" then forecast_events_path
         when "forecast/goals" then forecast_goals_path
