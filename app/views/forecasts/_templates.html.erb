@@ -83,6 +83,17 @@
             <p class="text-secondary text-sm"><%= t("forecasts.templates.#{key}.description") %></p>
           </div>
 
+          <div class="flex flex-wrap items-center gap-2 text-secondary text-xs">
+            <span class="inline-flex items-center gap-1">
+              <%= icon "list-checks", size: "xs", color: "default" %>
+              <%= t("forecasts.templates.card.input_count", count: template.param_specs.size) %>
+            </span>
+            <span class="inline-flex items-center gap-1">
+              <%= icon "pause-circle", size: "xs", color: "default" %>
+              <%= t("forecasts.templates.card.draft_output") %>
+            </span>
+          </div>
+
           <%= form_with url: forecast_templates_path, method: :post, class: "space-y-3" do %>
             <%= hidden_field_tag :template_key, key %>
 

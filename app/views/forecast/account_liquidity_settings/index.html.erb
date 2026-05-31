@@ -6,5 +6,27 @@
     <p class="text-secondary text-sm"><%= t("forecasts.liquidity_settings.index.description") %></p>
   </header>
 
-  <%= render "forecast/account_liquidity_settings/list", rows: @workspace.liquidity_rows %>
+  <% rows = @workspace.liquidity_rows %>
+  <% overridden_count = rows.count { |row| row[:setting].present? } %>
+  <% cash_like_count = rows.count { |row| row[:effective_class].in?(%w[cash liquid]) } %>
+  <% restricted_count = rows.count { |row| row[:effective_class].in?(%w[restricted illiquid ignored]) } %>
+
+  <% if rows.any? %>
+    <dl class="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="liquidity-summary">
+      <div class="rounded-xl border border-primary bg-container p-4">
+        <dt class="text-secondary text-xs"><%= t("forecasts.liquidity_settings.summary.cash_like") %></dt>
+        <dd class="mt-1 text-primary text-xl font-semibold tabular-nums"><%= cash_like_count %></dd>
+      </div>
+      <div class="rounded-xl border border-primary bg-container p-4">
+        <dt class="text-secondary text-xs"><%= t("forecasts.liquidity_settings.summary.restricted") %></dt>
+        <dd class="mt-1 text-primary text-xl font-semibold tabular-nums"><%= restricted_count %></dd>
+      </div>
+      <div class="rounded-xl border border-primary bg-container p-4">
+        <dt class="text-secondary text-xs"><%= t("forecasts.liquidity_settings.summary.overridden") %></dt>
+        <dd class="mt-1 text-primary text-xl font-semibold tabular-nums"><%= overridden_count %></dd>
+      </div>
+    </dl>
+  <% end %>
+
+  <%= render "forecast/account_liquidity_settings/list", rows: rows %>
 </div>

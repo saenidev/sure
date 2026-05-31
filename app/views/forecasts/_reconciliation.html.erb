@@ -39,6 +39,27 @@
   <% else %>
     <%# Lifecycle summary counts so the user sees the reconciliation backlog at a
         glance. Counts are computed once from the same rows load. %>
+    <% attention_count = reconciliation.counts["missed"] + reconciliation.counts["due_soon"] %>
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary bg-container p-4"
+         data-testid="reconciliation-work-queue">
+      <div class="space-y-1">
+        <p class="text-secondary text-xs font-medium uppercase tracking-wide"><%= t("forecasts.reconciliation.work_queue.eyebrow") %></p>
+        <h3 class="text-primary text-base font-medium">
+          <%= attention_count.positive? ? t("forecasts.reconciliation.work_queue.needs_attention", count: attention_count) : t("forecasts.reconciliation.work_queue.clear") %>
+        </h3>
+        <p class="text-secondary text-sm">
+          <%= attention_count.positive? ? t("forecasts.reconciliation.work_queue.review_matches") : t("forecasts.reconciliation.work_queue.monitor") %>
+        </p>
+      </div>
+      <%= render DS::Link.new(
+        text: t("forecasts.reconciliation.work_queue.manage_events"),
+        icon: "calendar-range",
+        href: forecast_events_path,
+        variant: "outline",
+        size: :sm
+      ) %>
+    </div>
+
     <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="reconciliation-summary">
       <% Forecast::Reconciliation::LIFECYCLE_STATES.each do |state| %>
         <div class="rounded-xl border border-primary bg-container p-4 space-y-1">

@@ -1,0 +1,75 @@
+<%# locals: (workspace:) %>
+<section class="space-y-8" aria-label="<%= t("forecasts.show.tabs.inputs") %>">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="space-y-1">
+      <h3 class="text-primary text-base font-medium"><%= t("forecasts.inputs.heading") %></h3>
+      <p class="text-secondary text-sm"><%= t("forecasts.inputs.description") %></p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <%= render DS::Link.new(
+        text: t("forecasts.inputs.actions.events"),
+        icon: "calendar-plus",
+        href: forecast_events_path,
+        variant: "outline",
+        size: :sm
+      ) %>
+      <%= render DS::Link.new(
+        text: t("forecasts.inputs.actions.budget"),
+        icon: "wallet-cards",
+        href: forecast_budget_overrides_path,
+        variant: "outline",
+        size: :sm
+      ) %>
+      <%= render DS::Link.new(
+        text: t("forecasts.inputs.actions.liquidity"),
+        icon: "droplets",
+        href: forecast_account_liquidity_settings_path,
+        variant: "outline",
+        size: :sm
+      ) %>
+    </div>
+  </div>
+
+  <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5" data-testid="forecast-inputs-summary">
+    <div class="rounded-xl border border-primary bg-container p-4">
+      <dt class="text-secondary text-xs"><%= t("forecasts.inputs.summary.scenarios.label") %></dt>
+      <dd class="mt-1 text-primary text-xl font-semibold tabular-nums">
+        <%= t("forecasts.inputs.summary.scenarios.value", count: workspace.active_scenarios_count) %>
+      </dd>
+    </div>
+    <div class="rounded-xl border border-primary bg-container p-4">
+      <dt class="text-secondary text-xs"><%= t("forecasts.inputs.summary.events.label") %></dt>
+      <dd class="mt-1 text-primary text-xl font-semibold tabular-nums">
+        <%= t("forecasts.inputs.summary.events.value", count: workspace.planned_events_count) %>
+      </dd>
+    </div>
+    <div class="rounded-xl border border-primary bg-container p-4">
+      <dt class="text-secondary text-xs"><%= t("forecasts.inputs.summary.goals.label") %></dt>
+      <dd class="mt-1 text-primary text-xl font-semibold tabular-nums">
+        <%= t("forecasts.inputs.summary.goals.value", count: workspace.active_goals_count) %>
+      </dd>
+    </div>
+    <div class="rounded-xl border border-primary bg-container p-4">
+      <dt class="text-secondary text-xs"><%= t("forecasts.inputs.summary.budget.label") %></dt>
+      <dd class="mt-1 text-primary text-xl font-semibold tabular-nums">
+        <%= t("forecasts.inputs.summary.budget.value", count: workspace.active_budget_overrides_count) %>
+      </dd>
+    </div>
+    <div class="rounded-xl border border-primary bg-container p-4">
+      <dt class="text-secondary text-xs"><%= t("forecasts.inputs.summary.liquidity.label") %></dt>
+      <dd class="mt-1 text-primary text-xl font-semibold tabular-nums">
+        <%= t("forecasts.inputs.summary.liquidity.value", count: workspace.liquidity_settings_count) %>
+      </dd>
+    </div>
+  </dl>
+
+  <%= render "forecasts/scenarios", workspace: workspace %>
+
+  <div class="border-t border-primary pt-6">
+    <%= render "forecasts/goals", workspace: workspace %>
+  </div>
+
+  <div class="border-t border-primary pt-6">
+    <%= render "forecasts/templates", workspace: workspace %>
+  </div>
+</section>

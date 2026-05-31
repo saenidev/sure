@@ -15,7 +15,18 @@ module Forecast
   # The "most recent wins" rule means a newer failed group supersedes an older
   # completed one, so users are never shown a stale success.
   class Workspace
-    TAB_IDS = %w[overview comparison timeline scenarios goals templates sensitivity reconciliation review].freeze
+    TAB_IDS = %w[outlook what_if inputs reconcile history].freeze
+    TAB_ALIASES = {
+      "overview" => "outlook",
+      "timeline" => "outlook",
+      "comparison" => "what_if",
+      "sensitivity" => "what_if",
+      "scenarios" => "inputs",
+      "goals" => "inputs",
+      "templates" => "inputs",
+      "reconciliation" => "reconcile",
+      "review" => "history"
+    }.freeze
     BASELINE_STACK_KEY = "baseline".freeze
 
     attr_reader :family
@@ -227,6 +238,26 @@ module Forecast
 
     def goals_count
       @goals_count ||= family.forecast_goals.count
+    end
+
+    def active_scenarios_count
+      scenario_groups.fetch("active", []).size
+    end
+
+    def planned_events_count
+      @planned_events_count ||= family.forecast_events.where(status: "planned").count
+    end
+
+    def active_goals_count
+      @active_goals_count ||= family.forecast_goals.where(status: "active").count
+    end
+
+    def active_budget_overrides_count
+      @active_budget_overrides_count ||= family.forecast_budget_overrides.where(status: "active").count
+    end
+
+    def liquidity_settings_count
+      @liquidity_settings_count ||= family.forecast_account_liquidity_settings.count
     end
 
     # Goals for the Goals tab, each paired with the status of its most recent
@@ -616,6 +647,11 @@ module Forecast
 
     def tab_ids
       TAB_IDS
+    end
+
+    def canonical_tab_id(tab_id)
+      candidate = tab_id.to_s.presence || TAB_IDS.first
+      TAB_ALIASES.fetch(candidate, candidate).presence_in(TAB_IDS) || TAB_IDS.first
     end
 
     # --- Review history --------------------------------------------------------

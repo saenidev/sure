@@ -1,0 +1,9 @@
+<%# locals: (workspace:) %>
+<section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.reconcile") %>">
+  <div class="space-y-1">
+    <h3 class="text-primary text-base font-medium"><%= t("forecasts.reconcile.heading") %></h3>
+    <p class="text-secondary text-sm"><%= t("forecasts.reconcile.description") %></p>
+  </div>
+
+  <%= render "forecasts/reconciliation", workspace: workspace %>
+</section>

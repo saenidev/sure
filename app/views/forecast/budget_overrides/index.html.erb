@@ -41,6 +41,26 @@
     <% end %>
   </div>
 
+  <%
+    inherited_total = @rows.sum { |row| row[:inherited_amount].presence || 0 }
+    override_total = @rows.sum { |row| row[:override]&.amount || 0 }
+    changed_count = @rows.count { |row| row[:override].present? }
+  %>
+  <dl class="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="forecast-budget-summary">
+    <div class="rounded-lg border border-primary bg-container p-4">
+      <dt class="text-secondary text-xs"><%= t("forecasts.budget_overrides.summary.inherited") %></dt>
+      <dd class="text-primary mt-1 text-lg font-semibold tabular-nums"><%= Money.new(inherited_total, Current.family.currency).format %></dd>
+    </div>
+    <div class="rounded-lg border border-primary bg-container p-4">
+      <dt class="text-secondary text-xs"><%= t("forecasts.budget_overrides.summary.override") %></dt>
+      <dd class="text-primary mt-1 text-lg font-semibold tabular-nums"><%= Money.new(override_total, Current.family.currency).format %></dd>
+    </div>
+    <div class="rounded-lg border border-primary bg-container p-4">
+      <dt class="text-secondary text-xs"><%= t("forecasts.budget_overrides.summary.changed") %></dt>
+      <dd class="text-primary mt-1 text-lg font-semibold tabular-nums"><%= t("forecasts.budget_overrides.summary.changed_count", count: changed_count) %></dd>
+    </div>
+  </dl>
+
   <div class="rounded-xl border border-primary bg-container overflow-hidden">
     <table class="w-full text-sm">
       <caption class="sr-only"><%= t("forecasts.budget_overrides.index.caption") %></caption>
@@ -52,7 +72,7 @@
           <th scope="col" class="px-4 py-3 font-medium text-right"><span class="sr-only"><%= t("forecasts.budget_overrides.index.actions") %></span></th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-alpha-black-100">
+      <tbody class="divide-y divide-primary">
         <% @rows.each do |row| %>
           <%= render "forecast/budget_overrides/row",
                      row: row,

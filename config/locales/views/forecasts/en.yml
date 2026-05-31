@@ -6,6 +6,11 @@ en:
       generate: "Generate forecast"
       set_up_scenarios: "Set up scenarios"
       tabs:
+        outlook: "Outlook"
+        what_if: "What-if"
+        inputs: "Inputs"
+        reconcile: "Reconcile"
+        history: "History"
         overview: "Overview"
         comparison: "Comparison"
         timeline: "Timeline"
@@ -17,13 +22,94 @@ en:
         review: "Review"
       tab_placeholder: "This section becomes available in an upcoming release."
       tab_loading: "Loading…"
+    brief:
+      eyebrow: "Forecast brief"
+      heading: "Your projected position"
+      description: "The latest run summarized into the numbers and follow-up that matter most."
+      no_projection_data: "This run completed, but there is not enough projection data to summarize yet."
+      next_action_heading: "Next best action"
+      next_actions:
+        review_risks: "Review the risk flags first, then adjust scenarios or budget assumptions before regenerating."
+        compare: "Compare at least one plan against your baseline to see whether the forecast is resilient."
+        reconcile: "Match expected events against actual transactions so the next forecast starts from cleaner assumptions."
+        monitor: "No immediate action is required. Keep inputs current and regenerate when your plan changes."
+      actions:
+        compare: "Compare plans"
+        inputs: "Edit inputs"
+      kpis:
+        cash:
+          label: "End cash"
+          meta: "Starts at %{value}"
+        runway:
+          label: "Cash runway"
+          days:
+            one: "%{count} day"
+            other: "%{count} days"
+          unbounded: "No limit"
+          meta: "Worst projected runway"
+        net_worth:
+          label: "End net worth"
+          meta: "Starts at %{value}"
+        risk:
+          label: "Risk flags"
+          count:
+            one: "%{count} flag"
+            other: "%{count} flags"
+          none: "None"
+          review: "Needs review"
+          meta: "No flags raised"
+    outlook:
+      heading: "Outlook"
+      description: "Start with the forecast answer, then inspect the timeline when you need to understand what drives it."
+    what_if:
+      heading: "What-if analysis"
+      description: "Compare plans, scenario bands, goal tradeoffs, and stress tests against the baseline."
+    inputs:
+      heading: "Inputs and assumptions"
+      description: "Manage the scenarios, events, goals, templates, budget assumptions, and liquidity settings that feed the forecast."
+      actions:
+        events: "Events"
+        budget: "Forecast budget"
+        liquidity: "Liquidity"
+      summary:
+        scenarios:
+          label: "Active scenarios"
+          value:
+            one: "%{count}"
+            other: "%{count}"
+        events:
+          label: "Planned events"
+          value:
+            one: "%{count}"
+            other: "%{count}"
+        goals:
+          label: "Active goals"
+          value:
+            one: "%{count}"
+            other: "%{count}"
+        budget:
+          label: "Budget overrides"
+          value:
+            one: "%{count}"
+            other: "%{count}"
+        liquidity:
+          label: "Liquidity rules"
+          value:
+            one: "%{count}"
+            other: "%{count}"
+    reconcile:
+      heading: "Reconcile plan vs actuals"
+      description: "Review expected events that are due, suggested matches, and variances before the next run."
+    history:
+      heading: "Forecast history"
+      description: "Review past manual and automated runs, including anything flagged for human review."
     empty_state:
       onboarding:
         title: "Plan your financial future"
         body: "Set up scenarios, events, and goals, then generate a forecast to project your budget, cash runway, debt, and portfolio across the next 36 months."
       ready:
         title: "Ready to generate your forecast"
-        body: "You have planning data in place. Generate a forecast to project the next 36 months across your scenario stacks."
+        body: "You have planning data in place. Generate a forecast to project the next 36 months across your plans."
     run_summary_header:
       title: "Latest forecast"
       generated_at: "Generated %{datetime}"
@@ -32,8 +118,8 @@ en:
       horizon_range: "%{start_date} to %{end_date}"
       horizon_unknown: "Horizon unavailable"
       scenario_stacks:
-        one: "%{count} scenario stack"
-        other: "%{count} scenario stacks"
+        one: "%{count} compared plan"
+        other: "%{count} compared plans"
     failure:
       title: "Your latest forecast failed"
       default_message: "The forecast could not be generated. Please review your scenarios and try again."
@@ -80,28 +166,28 @@ en:
         title: "No forecast runs yet"
         body: "Generate a forecast, or wait for the next scheduled weekly review, and your run history will appear here."
     comparison:
-      heading: "Compare scenario stacks"
-      description: "Generate several scenario stacks in one run and compare their end-of-horizon outcomes side by side. Baseline is always included as a reference."
+      heading: "Compare plans"
+      description: "Generate several plans in one run and compare their outcomes against your baseline."
       baseline_label: "Baseline"
       compose:
-        open: "Compare scenarios"
-        title: "Compose scenario stacks"
-        subtitle: "Pick the active scenarios that make up each stack. Each stack is projected across the full 36-month horizon."
-        baseline_note: "Baseline (no scenarios) is always compared as a reference, so you do not need to add it."
-        stacks_legend: "Scenario stacks to compare"
-        stack_label: "Stack %{number}"
-        stack_scenarios_legend: "Scenarios in stack %{number}"
+        open: "Compare plans"
+        title: "Build plans to compare"
+        subtitle: "Pick active scenarios for each plan. Every plan is projected across the full 36-month horizon."
+        baseline_note: "Baseline is always included as your reference plan."
+        stacks_legend: "Plans to compare"
+        stack_label: "Plan %{number}"
+        stack_scenarios_legend: "Scenarios in plan %{number}"
         no_scenarios: "You have no active scenarios to compare yet. Create and activate a scenario first."
         new_scenario: "New scenario"
         cancel: "Cancel"
         close: "Close"
         submit: "Run comparison"
       partial_failure:
-        title: "Some scenario stacks could not be projected"
-        body: "These stacks failed and are shown without results: %{stacks}. The stacks that completed are still shown below."
+        title: "Some plans could not be projected"
+        body: "These plans failed and are shown without results: %{stacks}. The plans that completed are still shown below."
       table:
-        caption: "End-of-horizon cash, net worth, debt, feasibility, and risk flags for each scenario stack."
-        stack: "Scenario stack"
+        caption: "End-of-horizon cash, net worth, debt, feasibility, and risk flags for each plan."
+        stack: "Plan"
         feasibility: "Feasibility"
         end_cash: "End cash"
         end_net_worth: "End net worth"
@@ -110,21 +196,29 @@ en:
         no_risk_flags: "None"
         status_failed: "Failed"
       charts:
-        heading: "Net worth by scenario stack"
+        heading: "Net worth by plan"
         stack_aria: "Net worth projection for %{label}"
-        failed: "This scenario stack failed, so there is nothing to chart."
+        failed: "This plan failed, so there is nothing to chart."
       empty:
         title: "Nothing to compare yet"
-        body: "Generate a forecast, then compose scenario stacks to compare their projected outcomes side by side."
+        body: "Generate a forecast, then compare one or more plans against the baseline."
       errors:
-        too_many: "You can compare at most %{max} scenario stacks at once."
+        too_many: "You can compare at most %{max} plans at once."
         unknown_scenarios: "One or more selected scenarios could not be found. Please refresh and try again."
+      highlights:
+        end_cash: "Highest end cash"
+        net_worth: "Highest net worth"
+        debt: "Lowest debt"
+        risk: "Fewest risk flags"
+        risk_count:
+          one: "%{count} flag"
+          other: "%{count} flags"
     distribution:
-      empty_band_note: "No common projected months across these scenario stacks yet."
-      trimmed_to_common_months_note: "Bands span only the months projected by every scenario stack."
+      empty_band_note: "No common projected months across these plans yet."
+      trimmed_to_common_months_note: "Bands span only the months projected by every plan."
       heading: "Scenario bands"
-      description: "See the deterministic low, middle, and high outcome across your scenario stacks for each projected month. These are scenario bands, not statistical percentiles."
-      disclaimer: "These are deterministic scenario bands — the low, middle, and high outcome across your scenario stacks each month. They are not statistical percentiles, confidence intervals, or a Monte Carlo simulation."
+      description: "See the deterministic low, middle, and high outcome across compared plans for each projected month. These are scenario bands, not statistical percentiles."
+      disclaimer: "These are deterministic scenario bands — the low, middle, and high outcome across compared plans each month. They are not statistical percentiles, confidence intervals, or a Monte Carlo simulation."
       band_labels:
         deterministic_low: "Low"
         deterministic_mid: "Middle"
@@ -133,18 +227,18 @@ en:
         net_worth: "Net worth"
         cash_balance: "Cash balance"
         debt_balance: "Debt balance"
-      metric_aria: "Deterministic %{metric} scenario band: low, middle, and high outcome across scenario stacks"
+      metric_aria: "Deterministic %{metric} scenario band: low, middle, and high outcome across plans"
       edge_chart_aria: "%{edge} %{metric} outcome across the horizon"
       attribution:
-        heading: "Which scenario stack formed each band edge"
+        heading: "Which plan formed each band edge"
         low: "Low edge from"
         mid: "Middle edge from"
         high: "High edge from"
-        contributing: "Stacks compared"
+        contributing: "Plans compared"
         none: "—"
       empty:
         title: "No scenario bands yet"
-        body: "Compare more than one scenario stack in a single forecast run to see the deterministic low, middle, and high outcome bands across the horizon."
+        body: "Compare more than one plan in a single forecast run to see the deterministic low, middle, and high outcome bands across the horizon."
     sensitivity:
       heading: "Sensitivity"
       description: "See how one change at a time — lower income, higher expenses, a market drawdown, or a higher debt rate — moves your end-of-horizon balances, your cash runway, and your goals."
@@ -192,11 +286,11 @@ en:
         body: "We could not perturb this forecast. Try regenerating it, then reopen this tab."
     tradeoff:
       heading: "Goal tradeoffs"
-      description: "Rank your scenario stacks by how many goals they keep on track, and see the explicit tradeoffs each stack makes against the baseline."
+      description: "Rank your plans by how many goals they keep on track, and see the explicit tradeoffs each plan makes against the baseline."
       table:
-        caption: "Scenario stacks ranked by goals kept on track, with the satisfied, at-risk, and blocked goal counts and tradeoffs versus baseline."
+        caption: "Plans ranked by goals kept on track, with the satisfied, at-risk, and blocked goal counts and tradeoffs versus baseline."
         rank: "Rank"
-        stack: "Scenario stack"
+        stack: "Plan"
         satisfied: "On track"
         at_risk: "At risk"
         blocked: "Blocked"
@@ -230,10 +324,15 @@ en:
         other: "%{count} days"
       empty:
         title: "No goal tradeoffs yet"
-        body: "Add goals, then compare more than one scenario stack in a single forecast run to rank the stacks by the goals they keep on track."
+        body: "Add goals, then compare more than one plan in a single forecast run to rank the plans by the goals they keep on track."
     templates:
       heading: "Scenario templates"
       description: "Start from a preset life-event template — a country move, a job change, a market drawdown, and more — then tailor the generated scenario, events, and goals to your situation."
+      card:
+        input_count:
+          one: "%{count} input"
+          other: "%{count} inputs"
+        draft_output: "Creates a disabled draft"
       index:
         title: "Scenario templates"
         description: "Browse preset life-event templates and apply one to instantiate an editable scenario, with its events and goals, ready for you to tailor and project."
@@ -346,6 +445,16 @@ en:
         label: "Choose the timeline resolution"
         daily: "Daily (0-90)"
         monthly: "Monthly (4-36)"
+      summary:
+        lowest_cash: "Lowest cash"
+        cash_runway: "Cash runway"
+        worst_runway: "Worst projected runway"
+        weakest_flow: "Weakest month"
+        debt_pressure: "Debt pressure"
+        debt_pressure_count:
+          one: "%{count} month"
+          other: "%{count} months"
+        no_period: "No period"
       empty:
         title: "No timeline yet"
         body: "Generate a forecast to build a synchronized timeline of your cash, budget, portfolio, debt, goals, and scenarios."
@@ -597,7 +706,8 @@ en:
         interval_label: "Every (interval)"
         day_of_month_label: "Day of month"
         ends_on_label: "Ends on"
-        probability_weight_label: "Confidence (0–1)"
+        probability_weight_label: "Confidence"
+        probability_weight_hint: "Use 1 for certain, 0.5 for a coin-flip, and 0 for ignored assumptions."
         status_label: "Status"
         description_label: "Notes"
         description_placeholder: "Optional details about this event"
@@ -634,11 +744,16 @@ en:
       blocking_behaviors:
         warn: "Warn only"
         blocks_scenario: "Blocks the scenario"
-        blocks_stack: "Blocks the whole stack"
+        blocks_stack: "Blocks the whole plan"
       statuses:
         active: "Active"
         disabled: "Disabled"
         archived: "Archived"
+      summary:
+        pass: "On track"
+        warn: "At risk"
+        fail: "Missed or blocking"
+        unknown: "Not evaluated"
       evaluation_statuses:
         pass: "On track"
         warn: "At risk"
@@ -667,7 +782,7 @@ en:
         blocking_behavior_label: "If missed"
         status_label: "Status"
         required_label: "Required goal"
-        required_hint: "Required goals can block a scenario or stack when they fail, depending on the behavior above."
+        required_hint: "Required goals can block a scenario or plan when they fail, depending on the behavior above."
         create: "Create goal"
         update: "Save goal"
       create:
@@ -689,6 +804,15 @@ en:
         due_soon: "Due soon"
         matched: "Matched"
         missed: "Missed"
+      work_queue:
+        eyebrow: "Work queue"
+        needs_attention:
+          one: "%{count} item needs review"
+          other: "%{count} items need review"
+        clear: "No due or missed items"
+        review_matches: "Start with missed and due-soon events, then accept the best transaction matches."
+        monitor: "Planned events are not due yet. Keep expected events current before the next run."
+        manage_events: "Manage events"
       row:
         expected: "Expected %{amount} on %{date}"
         no_amount: "No amount"
@@ -766,6 +890,13 @@ en:
         update: "Save override"
         duplicate_notice: "An active override already exists for this month, scenario, and row."
         edit_existing: "Edit the existing override"
+      summary:
+        inherited: "Inherited total"
+        override: "Override total"
+        changed: "Changed rows"
+        changed_count:
+          one: "%{count} row"
+          other: "%{count} rows"
       create:
         success: "Forecast budget override saved."
       update:
@@ -786,6 +917,10 @@ en:
       empty:
         title: "No accounts to classify"
         body: "Add an account to your family, then classify how readily it can fund spending."
+      summary:
+        cash_like: "Cash or liquid"
+        restricted: "Restricted or ignored"
+        overridden: "Custom rules"
       classes:
         cash: "Cash"
         liquid: "Liquid"
@@ -956,7 +1091,7 @@ en:
         horizon: "Horizon"
         horizon_range: "%{start_date} to %{end_date}"
         months_projected: "Months projected"
-        scenario_stacks: "Scenario stacks"
+        scenario_stacks: "Plans"
         failed_title: "This forecast failed to generate"
         failed_body: "The forecast could not be generated, so there are no facts to review."
         incomplete: "This forecast is still generating. Facts will appear once it completes."

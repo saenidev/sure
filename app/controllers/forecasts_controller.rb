@@ -9,12 +9,16 @@ class ForecastsController < ApplicationController
   # body here when first shown, so one /forecast load no longer renders all nine
   # panels (and their builders) server-side at once. Scoped to Current.family and
   # the tab allowlist (ForecastsHelper::TAB_PARTIALS), so no untrusted id reaches
-  # the render path.
+  # the render path. Legacy tab ids are accepted and mapped to the newer grouped
+  # decision areas so old links keep working.
   def tab
-    @tab_id = params[:tab_id]
-    return head(:not_found) unless ForecastsHelper::TAB_PARTIALS.key?(@tab_id)
-
     @workspace = Forecast::Workspace.new(family: Current.family)
+    unless Forecast::Workspace::TAB_IDS.include?(params[:tab_id].to_s) ||
+        Forecast::Workspace::TAB_ALIASES.key?(params[:tab_id].to_s)
+      return head(:not_found)
+    end
+
+    @tab_id = @workspace.canonical_tab_id(params[:tab_id])
     render layout: false
   end
 end

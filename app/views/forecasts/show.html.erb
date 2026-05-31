@@ -58,8 +58,9 @@
     <%= render "forecasts/running", workspace: @workspace %>
   <% elsif @workspace.has_run? %>
     <%= render "forecasts/run_summary_header", workspace: @workspace %>
+    <%= render "forecasts/brief", workspace: @workspace %>
 
-    <% active_tab = params[:tab].presence || "overview" %>
+    <% active_tab = @workspace.canonical_tab_id(params[:tab]) %>
     <%= render DS::Tabs.new(active_tab: active_tab, url_param_key: "tab") do |tabs| %>
       <% tabs.with_nav do |nav| %>
         <% @workspace.tab_ids.each do |tab_id| %>
@@ -71,7 +72,7 @@
           Turbo Frame whose body is fetched from ForecastsController#tab the first
           time the tab is shown: DS::Tabs unhides the panel, the frame becomes
           visible, and Turbo loads its src. This keeps a single /forecast load
-          from rendering all nine panels (and their builders) server-side at once.
+          from rendering every decision area (and its builders) server-side at once.
 
           target: "_top" makes every link/form INSIDE a panel drive full-page
           navigation by default — restoring the pre-frame behavior, since the

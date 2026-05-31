@@ -35,6 +35,7 @@ class Forecast::AccountLiquiditySettingsControllerTest < ActionDispatch::Integra
     get forecast_account_liquidity_settings_path
 
     assert_response :success
+    assert_select "[data-testid=liquidity-summary]"
     assert_select "##{dom_id(@account, :liquidity)}"
   end
 

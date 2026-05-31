@@ -1,4 +1,4 @@
-<%# locals: (workspace:) %>
+<%# locals: (workspace:, include_monthly_table: true) %>
 <%#
   Overview tab for a completed baseline forecast run. Surfaces key metrics
   (current vs end-of-horizon), a feasibility badge, aggregated risk flags, and
@@ -85,8 +85,10 @@
       <% end %>
     </section>
 
-    <%# 36-month projection table %>
-    <%= render "forecasts/monthly_table", months: months, currency: currency %>
+    <% if include_monthly_table %>
+      <%# 36-month projection table %>
+      <%= render "forecasts/monthly_table", months: months, currency: currency %>
+    <% end %>
   </div>
 <% else %>
   <%# Completed run with no projectable data (e.g. no accounts/budgets yet). %>

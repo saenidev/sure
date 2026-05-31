@@ -66,6 +66,7 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "##{dom_id(mine)}"
     assert_select "##{dom_id(other)}", count: 0
+    assert_select "[data-testid=forecast-events-summary]"
   end
 
   test "index breadcrumbs are nested under forecast" do

@@ -35,7 +35,7 @@
               <th scope="row" class="px-4 py-2 text-left font-normal text-primary">
                 <span class="inline-flex items-center gap-2">
                   <% if group.forecast_review&.triggered? %>
-                    <span class="text-amber-600" aria-hidden="true"><%= icon "flag", size: "sm" %></span>
+                    <span class="text-warning" aria-hidden="true"><%= icon "flag", size: "sm" %></span>
                     <span class="sr-only"><%= t("forecasts.review.flagged") %></span>
                   <% end %>
                   <%= group.name %>

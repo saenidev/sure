@@ -1,0 +1,9 @@
+<%# locals: (workspace:) %>
+<section class="space-y-6" aria-label="<%= t("forecasts.show.tabs.history") %>">
+  <div class="space-y-1">
+    <h3 class="text-primary text-base font-medium"><%= t("forecasts.history.heading") %></h3>
+    <p class="text-secondary text-sm"><%= t("forecasts.history.description") %></p>
+  </div>
+
+  <%= render "forecasts/review_history", workspace: workspace %>
+</section>

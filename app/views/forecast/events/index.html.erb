@@ -22,6 +22,16 @@
   </header>
 
   <% if @events.any? %>
+    <% counts_by_status = @events.group_by(&:status).transform_values(&:size) %>
+    <dl class="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="forecast-events-summary">
+      <% ForecastEvent::STATUSES.each do |status| %>
+        <div class="rounded-xl border border-primary bg-container p-4">
+          <dt class="text-secondary text-xs"><%= t("forecasts.events.statuses.#{status}") %></dt>
+          <dd class="mt-1 text-primary text-xl font-semibold tabular-nums"><%= counts_by_status.fetch(status, 0) %></dd>
+        </div>
+      <% end %>
+    </dl>
+
     <div class="space-y-3">
       <% @events.each do |event| %>
         <%= render "forecast/events/event_row", event: event %>

@@ -1,0 +1,13 @@
+<%# locals: (workspace:) %>
+<section class="space-y-8" aria-label="<%= t("forecasts.show.tabs.what_if") %>">
+  <div class="space-y-1">
+    <h3 class="text-primary text-base font-medium"><%= t("forecasts.what_if.heading") %></h3>
+    <p class="text-secondary text-sm"><%= t("forecasts.what_if.description") %></p>
+  </div>
+
+  <%= render "forecasts/comparison", workspace: workspace %>
+
+  <div class="border-t border-primary pt-6">
+    <%= render "forecasts/sensitivity", workspace: workspace %>
+  </div>
+</section>

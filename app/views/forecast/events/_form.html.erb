@@ -157,6 +157,7 @@
                        min: 0,
                        max: 1,
                        step: 0.05 %>
+    <p class="text-secondary text-xs -mt-1"><%= t("forecasts.events.form.probability_weight_hint") %></p>
 
     <%= f.select :status,
                  ForecastEvent::STATUSES.map { |status| [ t("forecasts.events.statuses.#{status}"), status ] },

@@ -1,0 +1,105 @@
+<%# locals: (workspace:) %>
+<%
+  months = workspace.monthly_rows.to_a
+  first_month = months.first
+  last_month = months.last
+  currency = workspace.currency
+  risk_count = workspace.risk_flag_types.size
+  minimum_runway_days = months.filter_map(&:cash_runway_days).min
+
+  kpis = []
+  if first_month && last_month
+    kpis << {
+      label: t("forecasts.brief.kpis.cash.label"),
+      value: format_money(Money.new(last_month.cash_balance, currency)),
+      meta: t("forecasts.brief.kpis.cash.meta", value: format_money(Money.new(first_month.cash_balance, currency)))
+    }
+    kpis << {
+      label: t("forecasts.brief.kpis.runway.label"),
+      value: minimum_runway_days.present? ? t("forecasts.brief.kpis.runway.days", count: minimum_runway_days) : t("forecasts.brief.kpis.runway.unbounded"),
+      meta: t("forecasts.brief.kpis.runway.meta")
+    }
+    kpis << {
+      label: t("forecasts.brief.kpis.net_worth.label"),
+      value: format_money(Money.new(last_month.net_worth, currency)),
+      meta: t("forecasts.brief.kpis.net_worth.meta", value: format_money(Money.new(first_month.net_worth, currency)))
+    }
+    kpis << {
+      label: t("forecasts.brief.kpis.risk.label"),
+      value: risk_count.positive? ? t("forecasts.brief.kpis.risk.count", count: risk_count) : t("forecasts.brief.kpis.risk.none"),
+      meta: risk_count.positive? ? t("forecasts.brief.kpis.risk.review") : t("forecasts.brief.kpis.risk.meta")
+    }
+  end
+
+  next_action =
+    if risk_count.positive?
+      t("forecasts.brief.next_actions.review_risks")
+    elsif workspace.comparison_runs.size <= 1
+      t("forecasts.brief.next_actions.compare")
+    elsif workspace.reconciliation_data?
+      t("forecasts.brief.next_actions.reconcile")
+    else
+      t("forecasts.brief.next_actions.monitor")
+    end
+%>
+
+<section class="overflow-hidden rounded-xl border border-primary bg-container"
+         data-testid="forecast-brief"
+         aria-labelledby="forecast-brief-heading">
+  <div class="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
+    <div class="space-y-4 p-5 sm:p-6">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="space-y-1">
+          <p class="text-secondary text-xs font-medium uppercase tracking-wide"><%= t("forecasts.brief.eyebrow") %></p>
+          <h2 id="forecast-brief-heading" class="text-primary text-xl font-semibold"><%= t("forecasts.brief.heading") %></h2>
+          <p class="text-secondary text-sm"><%= t("forecasts.brief.description") %></p>
+        </div>
+        <%= render DS::Pill.new(
+          label: t("forecasts.overview.feasibility.#{workspace.feasibility_status}"),
+          tone: workspace.feasibility_tone,
+          style: :soft,
+          size: :md
+        ) %>
+      </div>
+
+      <% if kpis.any? %>
+        <dl class="grid grid-cols-1 divide-y divide-primary sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+          <% kpis.each do |kpi| %>
+            <div class="py-3 sm:px-4 sm:first:pl-0 lg:first:pl-0" data-testid="forecast-brief-kpi">
+              <dt class="text-secondary text-xs"><%= kpi[:label] %></dt>
+              <dd class="mt-1 text-primary text-lg font-semibold tabular-nums"><%= kpi[:value] %></dd>
+              <dd class="mt-1 text-secondary text-xs"><%= kpi[:meta] %></dd>
+            </div>
+          <% end %>
+        </dl>
+      <% else %>
+        <p class="text-secondary text-sm"><%= t("forecasts.brief.no_projection_data") %></p>
+      <% end %>
+    </div>
+
+    <aside class="border-t border-primary bg-surface p-5 sm:p-6 lg:border-l lg:border-t-0">
+      <div class="space-y-3">
+        <div class="space-y-1">
+          <h3 class="text-primary text-sm font-medium"><%= t("forecasts.brief.next_action_heading") %></h3>
+          <p class="text-secondary text-sm"><%= next_action %></p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <%= render DS::Link.new(
+            text: t("forecasts.brief.actions.compare"),
+            icon: "git-compare",
+            href: forecast_path(tab: "what_if"),
+            variant: "outline",
+            size: :sm
+          ) %>
+          <%= render DS::Link.new(
+            text: t("forecasts.brief.actions.inputs"),
+            icon: "settings-2",
+            href: forecast_path(tab: "inputs"),
+            variant: "outline",
+            size: :sm
+          ) %>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>

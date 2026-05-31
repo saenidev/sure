@@ -1,6 +1,6 @@
 <%# locals: (workspace:) %>
 <section class="rounded-xl border border-primary bg-container p-4" aria-label="<%= t("forecasts.run_summary_header.title") %>">
-  <div class="flex flex-wrap items-start justify-between gap-4">
+  <div class="space-y-4">
     <div class="space-y-1">
       <h2 class="text-primary text-base font-medium"><%= t("forecasts.run_summary_header.title") %></h2>
       <p class="text-secondary text-sm">
@@ -12,10 +12,10 @@
       </p>
     </div>
 
-    <dl class="flex flex-wrap gap-x-8 gap-y-2">
+    <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div class="space-y-0.5">
         <dt class="text-secondary text-xs uppercase tracking-wide"><%= t("forecasts.run_summary_header.horizon") %></dt>
-        <dd class="text-primary text-sm font-medium">
+        <dd class="text-primary text-sm font-medium break-words">
           <% if workspace.horizon_start_on.present? && workspace.horizon_end_on.present? %>
             <%= t("forecasts.run_summary_header.horizon_range",
                   start_date: l(workspace.horizon_start_on, format: :long),

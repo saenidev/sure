@@ -43,6 +43,7 @@ class Forecast::EventLinksControllerTest < ActionDispatch::IntegrationTest
     get forecast_event_links_path
 
     assert_response :success
+    assert_select "[data-testid=reconciliation-work-queue]"
     assert_select "##{dom_id(event, :reconciliation)}"
   end
 

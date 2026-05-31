@@ -15,6 +15,15 @@
   <% if workspace.timeline_data? %>
     <% model = workspace.timeline_read_model %>
     <% resolution = (params[:resolution].presence_in(%w[daily monthly]) || "daily") %>
+    <%
+      daily_entries = model.daily_entries
+      monthly_entries = model.all_monthly_entries
+      lowest_cash_entry = (daily_entries.presence || monthly_entries).min_by { |entry| entry.cash_balance.amount }
+      weakest_flow_month = monthly_entries.min_by { |entry| entry.net_cash_flow.amount }
+      runway_values = (daily_entries + monthly_entries).filter_map(&:cash_runway_days)
+      minimum_runway_days = runway_values.min
+      debt_pressure_count = monthly_entries.count { |entry| model.debt_pressure?(entry) }
+    %>
 
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="space-y-1">
@@ -22,6 +31,62 @@
         <p class="text-secondary text-sm"><%= t("forecasts.timeline.description") %></p>
       </div>
     </div>
+
+    <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="timeline-summary">
+      <div class="rounded-xl border border-primary bg-container p-4">
+        <dt class="flex items-center gap-2 text-secondary text-xs">
+          <%= icon "arrow-down-to-line", size: "xs", color: "default" %>
+          <span><%= t("forecasts.timeline.summary.lowest_cash") %></span>
+        </dt>
+        <dd class="mt-2 text-primary text-lg font-semibold tabular-nums">
+          <%= lowest_cash_entry ? format_money(lowest_cash_entry.cash_balance) : t("forecasts.overview.metrics.unavailable") %>
+        </dd>
+        <dd class="mt-1 text-secondary text-xs">
+          <% if lowest_cash_entry.respond_to?(:date) %>
+            <%= l(lowest_cash_entry.date, format: :long) %>
+          <% elsif lowest_cash_entry %>
+            <%= l(lowest_cash_entry.period_start_on, format: :long) %>
+          <% else %>
+            <%= t("forecasts.timeline.summary.no_period") %>
+          <% end %>
+        </dd>
+      </div>
+
+      <div class="rounded-xl border border-primary bg-container p-4">
+        <dt class="flex items-center gap-2 text-secondary text-xs">
+          <%= icon "timer", size: "xs", color: "default" %>
+          <span><%= t("forecasts.timeline.summary.cash_runway") %></span>
+        </dt>
+        <dd class="mt-2 text-primary text-lg font-semibold tabular-nums">
+          <%= minimum_runway_days.present? ? t("forecasts.timeline.cash_lane.runway_days", count: minimum_runway_days) : t("forecasts.brief.kpis.runway.unbounded") %>
+        </dd>
+        <dd class="mt-1 text-secondary text-xs"><%= t("forecasts.timeline.summary.worst_runway") %></dd>
+      </div>
+
+      <div class="rounded-xl border border-primary bg-container p-4">
+        <dt class="flex items-center gap-2 text-secondary text-xs">
+          <%= icon "activity", size: "xs", color: "default" %>
+          <span><%= t("forecasts.timeline.summary.weakest_flow") %></span>
+        </dt>
+        <dd class="mt-2 text-primary text-lg font-semibold tabular-nums">
+          <%= weakest_flow_month ? format_money(weakest_flow_month.net_cash_flow) : t("forecasts.overview.metrics.unavailable") %>
+        </dd>
+        <dd class="mt-1 text-secondary text-xs">
+          <%= weakest_flow_month ? l(weakest_flow_month.period_start_on, format: :long) : t("forecasts.timeline.summary.no_period") %>
+        </dd>
+      </div>
+
+      <div class="rounded-xl border border-primary bg-container p-4">
+        <dt class="flex items-center gap-2 text-secondary text-xs">
+          <%= icon "badge-alert", size: "xs", color: "default" %>
+          <span><%= t("forecasts.timeline.summary.debt_pressure") %></span>
+        </dt>
+        <dd class="mt-2 text-primary text-lg font-semibold tabular-nums">
+          <%= t("forecasts.timeline.summary.debt_pressure_count", count: debt_pressure_count) %>
+        </dd>
+        <dd class="mt-1 text-secondary text-xs"><%= t("forecasts.timeline.debt_lane.pressure.flag") %></dd>
+      </div>
+    </dl>
 
     <div class="space-y-4"
          data-controller="forecast-timeline"

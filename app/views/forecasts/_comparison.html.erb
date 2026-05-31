@@ -54,6 +54,62 @@
 
   <% if workspace.comparison_data? %>
     <% stacks = workspace.comparison_stacks %>
+    <%
+      completed_stacks = stacks.reject(&:failed)
+      highlight_items = []
+
+      if completed_stacks.any?
+        if (best_cash_stack = completed_stacks.select(&:end_cash).max_by { |stack| stack.end_cash.amount })
+          highlight_items << {
+            icon: "wallet",
+            label: t("forecasts.comparison.highlights.end_cash"),
+            plan: best_cash_stack.label,
+            value: format_money(best_cash_stack.end_cash)
+          }
+        end
+
+        if (best_net_worth_stack = completed_stacks.select(&:end_net_worth).max_by { |stack| stack.end_net_worth.amount })
+          highlight_items << {
+            icon: "trending-up",
+            label: t("forecasts.comparison.highlights.net_worth"),
+            plan: best_net_worth_stack.label,
+            value: format_money(best_net_worth_stack.end_net_worth)
+          }
+        end
+
+        if (lowest_debt_stack = completed_stacks.select(&:end_debt).min_by { |stack| stack.end_debt.amount })
+          highlight_items << {
+            icon: "badge-dollar-sign",
+            label: t("forecasts.comparison.highlights.debt"),
+            plan: lowest_debt_stack.label,
+            value: format_money(lowest_debt_stack.end_debt)
+          }
+        end
+
+        fewest_risks_stack = completed_stacks.min_by { |stack| [ stack.risk_flag_types.size, stack.label ] }
+        highlight_items << {
+          icon: "shield-check",
+          label: t("forecasts.comparison.highlights.risk"),
+          plan: fewest_risks_stack.label,
+          value: t("forecasts.comparison.highlights.risk_count", count: fewest_risks_stack.risk_flag_types.size)
+        }
+      end
+    %>
+
+    <% if highlight_items.any? %>
+      <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="forecast-comparison-highlights">
+        <% highlight_items.each do |item| %>
+          <div class="rounded-xl border border-primary bg-container p-4">
+            <dt class="flex items-center gap-2 text-secondary text-xs">
+              <%= icon item[:icon], size: "xs", color: "default" %>
+              <span><%= item[:label] %></span>
+            </dt>
+            <dd class="mt-2 text-primary text-lg font-semibold tabular-nums"><%= item[:value] %></dd>
+            <dd class="mt-1 text-secondary text-xs truncate"><%= item[:plan] %></dd>
+          </div>
+        <% end %>
+      </dl>
+    <% end %>
 
     <%# Side-by-side metric table (the chosen comparison surface). One row per
         scenario stack, ordered stably (baseline first). %>

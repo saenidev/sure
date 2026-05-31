@@ -69,6 +69,46 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "renders forecast brief and decision-area tabs for a completed run" do
+    build_run_group_with_series(
+      family: @family,
+      user: @user,
+      months: 36,
+      month_attrs: ->(i) {
+        {
+          cash_balance: 1_000 + (i * 100),
+          liquid_balance: 2_000 + (i * 100),
+          debt_balance: 5_000 - (i * 50),
+          net_worth: 10_000 + (i * 250)
+        }
+      }
+    )
+
+    get forecast_url
+
+    assert_response :success
+    assert_select "[data-testid=forecast-brief]"
+    assert_select "#forecast-brief-heading", text: I18n.t("forecasts.brief.heading")
+    assert_select "[data-testid=forecast-brief] [data-testid=forecast-brief-kpi]", minimum: 4
+    assert_select "button[data-id=outlook]", text: I18n.t("forecasts.show.tabs.outlook")
+    assert_select "button[data-id=what_if]", text: I18n.t("forecasts.show.tabs.what_if")
+    assert_select "button[data-id=inputs]", text: I18n.t("forecasts.show.tabs.inputs")
+    assert_select "button[data-id=reconcile]", text: I18n.t("forecasts.show.tabs.reconcile")
+    assert_select "button[data-id=history]", text: I18n.t("forecasts.show.tabs.history")
+    assert_select "button[data-id=overview]", count: 0
+    assert_select "button[data-id=timeline]", count: 0
+  end
+
+  test "legacy forecast tab params open their new grouped decision area" do
+    build_completed_run_group(family: @family, user: @user, runs: 1)
+
+    get forecast_url(tab: "scenarios")
+
+    assert_response :success
+    assert_select "button[data-id=inputs].bg-white"
+    assert_select "turbo-frame#forecast_tab_inputs"
+  end
+
   # --- lazy tab loading ------------------------------------------------------
 
   test "show renders the active tab eagerly and the rest as lazy Turbo Frames" do
@@ -77,37 +117,37 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     get forecast_url
 
     assert_response :success
-    # The active (default overview) panel is an eager frame rendered inline...
-    assert_select "turbo-frame#forecast_tab_overview"
+    # The active (default outlook) panel is an eager frame rendered inline...
+    assert_select "turbo-frame#forecast_tab_outlook"
     # ...while every other tab is a lazy frame pointing at the tab endpoint, and
     # its (heavy) body is NOT rendered inline on the show page.
-    assert_select "turbo-frame#forecast_tab_comparison[loading=lazy][src=?]",
-      forecast_tab_path(tab_id: "comparison")
-    assert_select "turbo-frame#forecast_tab_timeline[loading=lazy]"
+    assert_select "turbo-frame#forecast_tab_what_if[loading=lazy][src=?]",
+      forecast_tab_path(tab_id: "what_if")
+    assert_select "turbo-frame#forecast_tab_inputs[loading=lazy]"
     assert_select "[data-testid=forecast-comparison-table]", count: 0
     # Both eager and lazy panel frames must target _top so the forms/links inside
     # a panel drive full-page navigation (they redirect to standalone pages with
     # no matching frame); without this they would render "content missing".
-    assert_select "turbo-frame#forecast_tab_overview[target='_top']"
-    assert_select "turbo-frame#forecast_tab_comparison[target='_top']"
+    assert_select "turbo-frame#forecast_tab_outlook[target='_top']"
+    assert_select "turbo-frame#forecast_tab_what_if[target='_top']"
   end
 
   test "tab endpoint frame targets _top so panel forms drive full-page navigation" do
     build_completed_run_group(family: @family, user: @user, runs: 2)
 
-    get forecast_tab_url(tab_id: "scenarios")
+    get forecast_tab_url(tab_id: "inputs")
 
     assert_response :success
-    assert_select "turbo-frame#forecast_tab_scenarios[target='_top']"
+    assert_select "turbo-frame#forecast_tab_inputs[target='_top']"
   end
 
   test "tab endpoint renders a single tab body inside its matching Turbo Frame" do
     build_completed_run_group(family: @family, user: @user, runs: 2)
 
-    get forecast_tab_url(tab_id: "comparison")
+    get forecast_tab_url(tab_id: "what_if")
 
     assert_response :success
-    assert_select "turbo-frame#forecast_tab_comparison" do
+    assert_select "turbo-frame#forecast_tab_what_if" do
       assert_select "[data-testid=forecast-comparison-table] tbody tr", count: 2
     end
   end
@@ -125,37 +165,39 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     other_family.forecast_run_groups.delete_all
     build_completed_run_group(family: other_family, user: users(:empty), runs: 2)
 
-    # The current family has no run of its own, so the comparison body must show
+    # The current family has no run of its own, so the what-if body must show
     # its own empty state, never the other family's stacks.
-    get forecast_tab_url(tab_id: "comparison")
+    get forecast_tab_url(tab_id: "what_if")
 
     assert_response :success
-    assert_select "turbo-frame#forecast_tab_comparison"
+    assert_select "turbo-frame#forecast_tab_what_if"
     assert_select "[data-testid=forecast-comparison-table]", count: 0
     assert_select "#forecast-comparison-empty-title"
   end
 
-  test "renders the new templates and sensitivity tab buttons with their panels" do
+  test "renders grouped inputs and what-if panels" do
     build_completed_run_group(family: @family, user: @user, runs: 1)
 
     get forecast_url
 
     assert_response :success
-    # Both new tab nav buttons render on the show page (all nav buttons always
+    # Both grouped tab nav buttons render on the show page (all nav buttons always
     # render; only the active tab's panel body is eager, others lazy-load).
-    assert_select "button[data-id='templates']", text: I18n.t("forecasts.show.tabs.templates")
-    assert_select "button[data-id='sensitivity']", text: I18n.t("forecasts.show.tabs.sensitivity")
+    assert_select "button[data-id='inputs']", text: I18n.t("forecasts.show.tabs.inputs")
+    assert_select "button[data-id='what_if']", text: I18n.t("forecasts.show.tabs.what_if")
 
-    # The templates panel renders the real apply-card catalog (not a stub) when
-    # its tab is the active, eagerly-rendered one.
-    get forecast_url(tab: "templates")
+    # The inputs panel renders the real apply-card catalog (not a stub) when
+    # its grouped tab is the active, eagerly-rendered one.
+    get forecast_url(tab: "inputs")
     assert_response :success
+    assert_select "[data-testid=forecast-inputs-summary]"
+    assert_select "a[href=?]", forecast_events_path, text: I18n.t("forecasts.inputs.actions.events")
     assert_select "[data-testid=forecast-templates-list]"
     assert_select "[data-testid=forecast-template-card]", count: Forecast::ScenarioTemplate.all.size
 
     # With a completed run, the sensitivity panel renders its lazy analysis Turbo
     # Frame (the empty-state only shows when there is no completed run to analyze).
-    get forecast_url(tab: "sensitivity")
+    get forecast_url(tab: "what_if")
     assert_response :success
     assert_select "turbo-frame#forecast_sensitivity"
     assert_select "[data-testid=forecast-sensitivity-loading]"
@@ -163,10 +205,18 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
 
   test "forecast workspace new goal trigger is a GET modal link, not a POST form" do
     build_completed_run_group(family: @family, user: @user, runs: 1)
+    @family.forecast_goals.create!(
+      name: "Runway",
+      goal_type: "minimum_cash_runway",
+      target_duration_days: 90,
+      blocking_behavior: "warn",
+      status: "active"
+    )
 
-    get forecast_url(tab: "goals")
+    get forecast_url(tab: "inputs")
 
     assert_response :success
+    assert_select "[data-testid=forecast-goals-summary]"
     assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_goal_path, minimum: 1
     assert_select "form[action=?]", new_forecast_goal_path, false
   end
@@ -174,27 +224,27 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
   test "forecast workspace new scenario triggers are GET modal links, not POST forms" do
     build_completed_run_group(family: @family, user: @user, runs: 1)
 
-    get forecast_url(tab: "scenarios")
+    get forecast_url(tab: "inputs")
 
     assert_response :success
     assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_scenario_path, minimum: 1
     assert_select "form[action=?]", new_forecast_scenario_path, false
   end
 
-  test "forecast workspace scenario event links return to the scenarios tab" do
+  test "forecast workspace scenario event links return to the inputs tab" do
     build_completed_run_group(family: @family, user: @user, runs: 1)
     scenario = @family.forecast_scenarios.create!(name: "Move", status: "active", approval_status: "manual")
 
-    get forecast_url(tab: "scenarios")
+    get forecast_url(tab: "inputs")
 
     assert_response :success
-    assert_select "a[href=?]", forecast_events_path(scenario_id: scenario.id, return_to: forecast_path(tab: "scenarios"))
+    assert_select "a[href=?]", forecast_events_path(scenario_id: scenario.id, return_to: forecast_path(tab: "inputs"))
   end
 
   test "forecast workspace new event trigger is a GET modal link, not a POST form" do
     build_completed_run_group(family: @family, user: @user, runs: 1)
 
-    get forecast_url(tab: "reconciliation")
+    get forecast_url(tab: "reconcile")
 
     assert_response :success
     assert_select "a[href=?][data-turbo-frame=modal]", new_forecast_event_path, minimum: 1
@@ -394,6 +444,7 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "section[aria-label='#{I18n.t("forecasts.show.tabs.comparison")}']"
+    assert_select "[data-testid=forecast-comparison-highlights]"
     assert_select "[data-testid=forecast-comparison-table] caption", text: I18n.t("forecasts.comparison.table.caption")
     # One <tbody> row per stack (2 runs in the group).
     assert_select "[data-testid=forecast-comparison-table] tbody tr", count: 2
@@ -655,6 +706,7 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "section[aria-label='#{I18n.t("forecasts.show.tabs.timeline")}']"
+    assert_select "[data-testid=timeline-summary]"
     # The resolution toggle and all six lanes render.
     assert_select "[data-controller='forecast-timeline']"
     assert_select "[data-testid=timeline-cash-lane]"
