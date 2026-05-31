@@ -7,8 +7,8 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     @user = users(:family_admin)
     @family = @user.family
     @family.forecast_run_groups.delete_all
-    @family.forecast_scenarios.delete_all
     @family.forecast_events.delete_all
+    @family.forecast_scenarios.delete_all
     @family.forecast_goals.delete_all
     sign_in @user
   end
@@ -141,6 +141,17 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "turbo-frame#forecast_tab_inputs[target='_top']"
+  end
+
+  test "inputs tab does not load projection month rows" do
+    build_run_group_with_series(family: @family, user: @user, days: 0, months: 36)
+
+    assert_queries_count(matcher: /forecast_months/, max: 0) do
+      get forecast_tab_url(tab_id: "inputs")
+    end
+
+    assert_response :success
+    assert_select "turbo-frame#forecast_tab_inputs"
   end
 
   test "tab endpoint renders a single tab body inside its matching Turbo Frame" do

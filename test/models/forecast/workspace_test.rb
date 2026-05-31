@@ -11,8 +11,8 @@ class Forecast::WorkspaceTest < ActiveSupport::TestCase
 
   test "empty family with no planning data and no runs is onboarding" do
     @family.forecast_run_groups.delete_all
-    @family.forecast_scenarios.delete_all
     @family.forecast_events.delete_all
+    @family.forecast_scenarios.delete_all
     @family.forecast_goals.delete_all
 
     workspace = Forecast::Workspace.new(family: @family)

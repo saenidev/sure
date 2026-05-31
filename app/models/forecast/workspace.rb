@@ -35,39 +35,15 @@ module Forecast
       @family = family
     end
 
-    # The newest run group regardless of status, eager-loading its runs and the
-    # runs' monthly projection rows in one batched query. Both the Overview
-    # (baseline run's months) and the Comparison tab (every run's months) read
-    # from this single preload, so the workspace never N+1s over runs x months.
+    # The newest run group regardless of status, eager-loading only its runs and
+    # goal evaluations. Month/projection rows are intentionally preloaded lazily
+    # by the chart/timeline accessors that need them; the inputs/review routes
+    # should not pay to load persisted projection output.
     def latest_group
       return @latest_group if defined?(@latest_group)
 
-      # Preload each run's months together with their category/debt projections
-      # so the Overview (baseline run's months) AND the Timeline tab (which the
-      # tab component also renders server-side, reading those same months plus
-      # their per-month projection lanes) share ONE batched load. This keeps the
-      # forecast_months / forecast_category_projections / forecast_debt_projections
-      # query counts at one each regardless of which tab is active (no N+1 over
-      # runs x 36 months x projections).
-      # Nest the projections' own belongs_to associations (category/parent_category
-      # for the budget lane's labels, account for the debt lane's labels) so the
-      # Timeline lanes never N+1 over their per-month projection rows. Without
-      # this, TimelineReadModel#category_label / #debt_label issue one categories
-      # / accounts query per projection row on every forecast page load (DS::Tabs
-      # renders the Timeline panel server-side regardless of the active tab).
-      #
-      # Also eager-load each run's `forecast_goal_evaluations` so the
-      # GoalTradeoffExplorer (which reads one evaluation set per run x goal) never
-      # N+1s over runs x goals when the Tradeoff surface lands. Adding it to the
-      # SAME preload keeps the evaluation load at one query for the whole group.
       @latest_group = family.forecast_run_groups
-        .includes(forecast_runs: [
-          { forecast_months: [
-            { forecast_category_projections: [ :category, :parent_category ] },
-            { forecast_debt_projections: :account }
-          ] },
-          :forecast_goal_evaluations
-        ])
+        .includes(forecast_runs: :forecast_goal_evaluations)
         .order(created_at: :desc)
         .first
     end
@@ -139,6 +115,7 @@ module Forecast
       return @monthly_rows if defined?(@monthly_rows)
       return @monthly_rows = [] unless baseline_run
 
+      preload_months_for(comparison_runs.presence || [ baseline_run ])
       # Sort the eager-loaded association in Ruby; calling `.order` on a loaded
       # association would issue a second forecast_months query (N+1).
       @monthly_rows = baseline_run.forecast_months.to_a.sort_by(&:period_start_on)
@@ -322,16 +299,16 @@ module Forecast
     # --- Comparison (scenario-stack) accessors --------------------------------
 
     # The runs of the latest group (regardless of group status), ordered stably
-    # with baseline first then by stack key, with their months eager-loaded so
-    # the comparison table/chart never N+1 over runs x 36 months. Unlike
+    # with baseline first then by stack key. Month rows are preloaded by the
+    # comparison builders that need them so inputs-only routes stay light. Unlike
     # `baseline_run`, this surfaces runs even for a partially-failed group so the
     # comparison can show which stack failed alongside the ones that succeeded.
     def comparison_runs
       return @comparison_runs if defined?(@comparison_runs)
       return @comparison_runs = [] if latest_group.nil?
 
-      # Reuse the runs (and their months) already eager-loaded by `latest_group`
-      # and sort in Ruby — no extra forecast_runs / forecast_months query.
+      # Reuse the runs already eager-loaded by `latest_group` and sort in Ruby,
+      # avoiding an extra forecast_runs query.
       @comparison_runs = latest_group.forecast_runs.to_a
         .sort_by { |run| [ run.scenario_stack_key == BASELINE_STACK_KEY ? 0 : 1, run.scenario_stack_key.to_s ] }
     end
@@ -343,6 +320,7 @@ module Forecast
       return @comparison_series_builder if defined?(@comparison_series_builder)
       return @comparison_series_builder = nil if comparison_runs.empty?
 
+      preload_months_for(comparison_runs)
       @comparison_series_builder = Forecast::ComparisonSeriesBuilder.new(runs: comparison_runs)
     end
 
@@ -378,15 +356,15 @@ module Forecast
     # --- Distribution bands & goal tradeoffs (read-only surfaces) -------------
 
     # Read-only builder that derives deterministic scenario bands (low/mid/high
-    # per metric per common month) from the latest group's runs. Reuses the
-    # months already eager-loaded by `latest_group` (no extra query) and excludes
-    # failed stacks. Returns nil when there is no run group to band yet, so the
-    # view can fall back to the band empty state instead of constructing a builder
-    # over nothing.
+    # per metric per common month) from the latest group's runs. Preloads the
+    # month rows it needs in one batch and excludes failed stacks. Returns nil
+    # when there is no run group to band yet, so the view can fall back to the
+    # band empty state instead of constructing a builder over nothing.
     def distribution_band_builder
       return @distribution_band_builder if defined?(@distribution_band_builder)
       return @distribution_band_builder = nil if comparison_runs.empty?
 
+      preload_months_for(comparison_runs)
       @distribution_band_builder = Forecast::DistributionBandBuilder.new(runs: comparison_runs)
     end
 
@@ -606,9 +584,10 @@ module Forecast
       return @timeline_read_model if defined?(@timeline_read_model)
       return @timeline_read_model = nil unless timeline_run
 
-      # Reuse the workspace's already-loaded daily/monthly rows (the months carry
-      # their category/debt projections from `latest_group`'s preload) so the
-      # Timeline tab adds no per-day/per-month/per-projection query.
+      preload_timeline_projection_associations
+      # Reuse the workspace's already-loaded daily/monthly rows plus the timeline
+      # projection preload, so the Timeline tab adds no per-day/per-month or
+      # per-projection queries.
       @timeline_read_model = Forecast::TimelineReadModel.new(
         timeline_run,
         days: daily_rows,
@@ -754,6 +733,36 @@ module Forecast
 
       def group_has_completed_run?
         latest_group.forecast_runs.any? { |run| run.status == "completed" }
+      end
+
+      def preload_months_for(runs)
+        runs = Array(runs).compact
+        return if runs.empty?
+
+        unloaded_runs = runs.reject { |run| run.forecast_months.loaded? }
+        return if unloaded_runs.empty?
+
+        ActiveRecord::Associations::Preloader.new(
+          records: unloaded_runs,
+          associations: :forecast_months
+        ).call
+      end
+
+      def preload_timeline_projection_associations
+        return if @timeline_projection_associations_preloaded
+
+        months = monthly_rows
+        if months.any?
+          ActiveRecord::Associations::Preloader.new(
+            records: months,
+            associations: [
+              { forecast_category_projections: [ :category, :parent_category ] },
+              { forecast_debt_projections: :account }
+            ]
+          ).call
+        end
+
+        @timeline_projection_associations_preloaded = true
       end
   end
 end
