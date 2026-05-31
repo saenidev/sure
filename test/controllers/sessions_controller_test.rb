@@ -33,6 +33,14 @@ class SessionsControllerTest < ActionDispatch::IntegrationTest
     })
   end
 
+  test "login page avoids cold-loading application-only javascript modules" do
+    get new_session_url
+
+    assert_response :success
+    refute_includes response.body, 'rel="modulepreload" href="/assets/controllers/'
+    refute_includes response.body, 'rel="modulepreload" href="/assets/d3'
+  end
+
   test "login page" do
     get new_session_url
     assert_response :success

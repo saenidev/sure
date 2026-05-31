@@ -79,6 +79,8 @@ services:
       - traefik.http.routers.${DOKPLOY_APP_NAME:-sure}-websecure.rule=Host(`${APP_DOMAIN:?APP_DOMAIN is required}`)
       - traefik.http.routers.${DOKPLOY_APP_NAME:-sure}-websecure.entrypoints=websecure
       - traefik.http.routers.${DOKPLOY_APP_NAME:-sure}-websecure.service=${DOKPLOY_APP_NAME:-sure}-websecure-svc
+      - traefik.http.routers.${DOKPLOY_APP_NAME:-sure}-websecure.middlewares=${DOKPLOY_APP_NAME:-sure}-compress@docker
+      - traefik.http.middlewares.${DOKPLOY_APP_NAME:-sure}-compress.compress=true
       - traefik.http.routers.${DOKPLOY_APP_NAME:-sure}-websecure.tls.certresolver=letsencrypt
       - traefik.http.services.${DOKPLOY_APP_NAME:-sure}-websecure-svc.loadbalancer.server.port=3000
     networks:
