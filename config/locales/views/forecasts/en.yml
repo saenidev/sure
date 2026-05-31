@@ -870,6 +870,10 @@ en:
         inherited: "Inherited"
         override: "Forecast override"
         actions: "Actions"
+      new:
+        title: "New budget override"
+      edit:
+        title: "Edit budget override"
       types:
         expected_income: "Expected income"
         uncategorized_spending: "Uncategorized spending"
@@ -1074,7 +1078,7 @@ en:
       show:
         title: "Forecast review"
         description: "Review the deterministic facts and risk flags for this forecast, send them to Hermes, and approve or reject the result."
-        back: "Back to forecast"
+        back: "Back to Forecast history"
       statuses:
         draft: "Draft"
         awaiting_approval: "Awaiting approval"

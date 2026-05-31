@@ -29,36 +29,66 @@
        data-resolution="daily"
        class="<%= "hidden" unless resolution == "daily" %>"
        data-testid="timeline-cash-daily">
-    <% if model.daily_entries.any? %>
-      <div class="overflow-x-auto rounded-lg border border-primary">
-        <table class="w-full text-sm">
-          <caption class="sr-only"><%= t("forecasts.timeline.cash_lane.daily_caption") %></caption>
-          <thead>
-            <tr class="border-b border-primary text-secondary text-left">
-              <th scope="col" class="px-3 py-2 font-medium"><%= t("forecasts.timeline.cash_lane.date") %></th>
-              <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.cash_lane.cash") %></th>
-              <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.cash_lane.runway") %></th>
-              <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.drilldown.column") %></th>
-            </tr>
-          </thead>
-          <tbody class="text-primary">
-            <% model.daily_entries.each do |entry| %>
-              <tr class="border-b border-primary last:border-0 align-top">
-                <th scope="row" class="px-3 py-2 font-medium text-secondary text-left whitespace-nowrap"><%= l(entry.date, format: :long) %></th>
-                <td class="px-3 py-2 text-right tabular-nums"><%= format_money(entry.cash_balance) %></td>
-                <td class="px-3 py-2 text-right tabular-nums">
-                  <%= entry.cash_runway_days.present? ? t("forecasts.timeline.cash_lane.runway_days", count: entry.cash_runway_days) : t("forecasts.timeline.cash_lane.runway_unknown") %>
-                </td>
-                <td class="px-3 py-2 text-right">
-                  <%= render "forecast/timeline/drilldown",
-                        model: model,
-                        source_breakdown: entry.source_breakdown,
-                        period_label: l(entry.date, format: :long) %>
-                </td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
+    <% daily_entries = model.daily_entries %>
+    <% if daily_entries.any? %>
+      <div class="space-y-2">
+        <% daily_entries.each_slice(7).with_index do |entries, week_index| %>
+          <%
+            first_entry = entries.first
+            last_entry = entries.last
+            minimum_runway_days = entries.filter_map(&:cash_runway_days).min
+          %>
+          <details class="rounded-lg border border-primary" <%= "open" if week_index.zero? %> data-testid="timeline-cash-week">
+            <summary class="flex cursor-pointer flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+              <span class="text-primary text-sm font-medium">
+                <%= l(first_entry.date, format: :long) %> - <%= l(last_entry.date, format: :long) %>
+              </span>
+              <span class="flex flex-wrap items-center gap-x-3 gap-y-1 text-secondary text-xs">
+                <span>
+                  <%= t("forecasts.timeline.cash_lane.cash") %>
+                  <span class="tabular-nums"><%= format_money(first_entry.cash_balance) %> -> <%= format_money(last_entry.cash_balance) %></span>
+                </span>
+                <span>
+                  <%= t("forecasts.timeline.cash_lane.runway") %>
+                  <span class="tabular-nums">
+                    <%= minimum_runway_days.present? ? t("forecasts.timeline.cash_lane.runway_days", count: minimum_runway_days) : t("forecasts.timeline.cash_lane.runway_unknown") %>
+                  </span>
+                </span>
+                <%= icon "chevron-down", size: "sm" %>
+              </span>
+            </summary>
+            <div class="border-t border-primary overflow-x-auto">
+              <table class="w-full text-sm">
+                <caption class="sr-only"><%= t("forecasts.timeline.cash_lane.daily_caption") %></caption>
+                <thead>
+                  <tr class="border-b border-primary text-secondary text-left">
+                    <th scope="col" class="px-3 py-2 font-medium"><%= t("forecasts.timeline.cash_lane.date") %></th>
+                    <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.cash_lane.cash") %></th>
+                    <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.cash_lane.runway") %></th>
+                    <th scope="col" class="px-3 py-2 font-medium text-right"><%= t("forecasts.timeline.drilldown.column") %></th>
+                  </tr>
+                </thead>
+                <tbody class="text-primary">
+                  <% entries.each do |entry| %>
+                    <tr class="border-b border-primary last:border-0 align-top">
+                      <th scope="row" class="px-3 py-2 font-medium text-secondary text-left whitespace-nowrap"><%= l(entry.date, format: :long) %></th>
+                      <td class="px-3 py-2 text-right tabular-nums"><%= format_money(entry.cash_balance) %></td>
+                      <td class="px-3 py-2 text-right tabular-nums">
+                        <%= entry.cash_runway_days.present? ? t("forecasts.timeline.cash_lane.runway_days", count: entry.cash_runway_days) : t("forecasts.timeline.cash_lane.runway_unknown") %>
+                      </td>
+                      <td class="px-3 py-2 text-right">
+                        <%= render "forecast/timeline/drilldown",
+                              model: model,
+                              source_breakdown: entry.source_breakdown,
+                              period_label: l(entry.date, format: :long) %>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          </details>
+        <% end %>
       </div>
     <% else %>
       <p class="text-secondary text-sm"><%= t("forecasts.timeline.cash_lane.daily_empty") %></p>

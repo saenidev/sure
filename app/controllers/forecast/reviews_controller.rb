@@ -15,6 +15,7 @@ module Forecast
   class ReviewsController < BaseController
     before_action :set_run_group
     before_action :set_review, except: :show
+    before_action :set_review_breadcrumbs
 
     # GET /forecast/reviews/:id
     # Renders the review surface: deterministic facts + risk flags + any stored
@@ -114,6 +115,15 @@ module Forecast
 
       def set_review
         @review = @run_group.forecast_review || build_review_for(@run_group)
+      end
+
+      def set_review_breadcrumbs
+        @breadcrumbs = [
+          [ t("breadcrumbs.home"), root_path ],
+          [ t("forecasts.show.title"), forecast_path ],
+          [ t("forecasts.show.tabs.history"), forecast_path(tab: "history") ],
+          [ @run_group.name.presence || t("forecast.reviews.show.title"), nil ]
+        ]
       end
 
       # Build (and persist) a draft review for a group that has none. Source is

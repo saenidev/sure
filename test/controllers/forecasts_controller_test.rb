@@ -715,7 +715,10 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-testid=timeline-debt-lane]"
     assert_select "[data-testid=timeline-goals-lane]"
     assert_select "[data-testid=timeline-scenario-lane]"
-    # The daily pane carries the 90 daily rows.
+    # The daily pane groups the 0-90 day horizon by week so the user does not
+    # have to scan one long uninterrupted table.
+    assert_select "[data-testid=timeline-cash-week]", count: 13
+    assert_select "[data-testid=timeline-cash-week][open]", count: 1
     assert_select "[data-testid=timeline-cash-daily] tbody tr", count: 90
   end
 
