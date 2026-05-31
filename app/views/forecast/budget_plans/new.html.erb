@@ -1,0 +1,149 @@
+<% content_for :title, t("forecasts.budget_plans.new.title") %>
+
+<div class="max-w-3xl space-y-6 pb-6 lg:pb-12">
+  <header class="space-y-1">
+    <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.budget_plans.new.title") %></h1>
+    <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.new.description") %></p>
+  </header>
+
+  <% if @errors.present? %>
+    <div class="rounded-lg border border-destructive bg-destructive/10 p-4">
+      <p class="text-primary text-sm font-medium"><%= t("forecasts.budget_plans.form.errors") %></p>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-secondary">
+        <% @errors.each do |message| %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <%= form_with url: forecast_budget_plans_path, scope: :forecast_budget_plan, class: "space-y-6" do |f| %>
+    <section class="space-y-4 rounded-xl border border-primary bg-container p-4">
+      <div class="space-y-1">
+        <h2 class="text-primary text-base font-medium"><%= t("forecasts.budget_plans.form.scenario_heading") %></h2>
+        <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.form.scenario_description") %></p>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <%= f.label :name, t("forecasts.budget_plans.form.name_label"), class: "form-field__label" %>
+          <%= f.text_field :name, value: @defaults[:name], required: true, autofocus: true, class: "form-field__input", placeholder: t("forecasts.budget_plans.form.name_placeholder") %>
+        </div>
+
+        <div>
+          <%= f.label :description, t("forecasts.budget_plans.form.description_label"), class: "form-field__label" %>
+          <%= f.text_area :description, value: @defaults[:description], rows: 4, class: "form-field__input", placeholder: t("forecasts.budget_plans.form.description_placeholder") %>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <%= f.label :status, t("forecasts.budget_plans.form.status_label"), class: "form-field__label" %>
+            <%= f.select :status,
+                         ForecastScenario::STATUSES.map { |status| [ t("forecasts.scenarios.statuses.#{status}"), status ] },
+                         { selected: @defaults[:status] },
+                         class: "form-field__input" %>
+          </div>
+          <div>
+            <%= f.label :starts_on, t("forecasts.budget_plans.form.starts_on_label"), class: "form-field__label" %>
+            <%= f.date_field :starts_on, value: @defaults[:starts_on], class: "form-field__input" %>
+          </div>
+          <div>
+            <%= f.label :ends_on, t("forecasts.budget_plans.form.ends_on_label"), class: "form-field__label" %>
+            <%= f.date_field :ends_on, value: @defaults[:ends_on], class: "form-field__input" %>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-4 rounded-xl border border-primary bg-container p-4">
+      <div class="space-y-1">
+        <h2 class="text-primary text-base font-medium"><%= t("forecasts.budget_plans.form.timeline_heading") %></h2>
+        <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.form.timeline_description") %></p>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div>
+          <%= f.label :base_period_start_on, t("forecasts.budget_plans.form.base_period_label"), class: "form-field__label" %>
+          <%= f.date_field :base_period_start_on, value: @defaults[:base_period_start_on], class: "form-field__input" %>
+        </div>
+        <div>
+          <%= f.label :horizon_start_on, t("forecasts.budget_plans.form.horizon_start_label"), class: "form-field__label" %>
+          <%= f.date_field :horizon_start_on, value: @defaults[:horizon_start_on], class: "form-field__input" %>
+        </div>
+        <div>
+          <%= f.label :horizon_end_on, t("forecasts.budget_plans.form.horizon_end_label"), class: "form-field__label" %>
+          <%= f.date_field :horizon_end_on, value: @defaults[:horizon_end_on], class: "form-field__input" %>
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-4 rounded-xl border border-primary bg-container p-4">
+      <div class="space-y-1">
+        <h2 class="text-primary text-base font-medium"><%= t("forecasts.budget_plans.form.activation_heading") %></h2>
+        <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.form.activation_description") %></p>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <%= f.label :activation_trigger, t("forecasts.budget_plans.form.activation_trigger_label"), class: "form-field__label" %>
+          <%= f.text_field :activation_trigger, value: @defaults[:activation_trigger], class: "form-field__input" %>
+        </div>
+        <div>
+          <%= f.label :activation_conditions, t("forecasts.budget_plans.form.activation_conditions_label"), class: "form-field__label" %>
+          <%= f.text_area :activation_conditions, value: @defaults[:activation_conditions], rows: 3, class: "form-field__input" %>
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-4 rounded-xl border border-primary bg-container p-4">
+      <div class="space-y-1">
+        <h2 class="text-primary text-base font-medium"><%= t("forecasts.budget_plans.form.dependencies_heading") %></h2>
+        <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.form.dependencies_description") %></p>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label class="form-field__label" for="forecast_budget_plan_depends_on_scenario_ids"><%= t("forecasts.budget_plans.form.depends_on_scenarios_label") %></label>
+          <%= select_tag "forecast_budget_plan[depends_on_scenario_ids][]",
+                         options_from_collection_for_select(@scenario_dependency_options, :id, :name, @defaults[:depends_on_scenario_ids]),
+                         multiple: true,
+                         id: "forecast_budget_plan_depends_on_scenario_ids",
+                         class: "form-field__input min-h-24" %>
+        </div>
+        <div>
+          <label class="form-field__label" for="forecast_budget_plan_depends_on_goal_ids"><%= t("forecasts.budget_plans.form.depends_on_goals_label") %></label>
+          <%= select_tag "forecast_budget_plan[depends_on_goal_ids][]",
+                         options_from_collection_for_select(@goal_dependency_options, :id, :name, @defaults[:depends_on_goal_ids]),
+                         multiple: true,
+                         id: "forecast_budget_plan_depends_on_goal_ids",
+                         class: "form-field__input min-h-24" %>
+        </div>
+        <div>
+          <label class="form-field__label" for="forecast_budget_plan_depended_on_by_scenario_ids"><%= t("forecasts.budget_plans.form.depended_on_by_scenarios_label") %></label>
+          <%= select_tag "forecast_budget_plan[depended_on_by_scenario_ids][]",
+                         options_from_collection_for_select(@scenario_dependency_options, :id, :name, @defaults[:depended_on_by_scenario_ids]),
+                         multiple: true,
+                         id: "forecast_budget_plan_depended_on_by_scenario_ids",
+                         class: "form-field__input min-h-24" %>
+        </div>
+        <div>
+          <label class="form-field__label" for="forecast_budget_plan_depended_on_by_goal_ids"><%= t("forecasts.budget_plans.form.depended_on_by_goals_label") %></label>
+          <%= select_tag "forecast_budget_plan[depended_on_by_goal_ids][]",
+                         options_from_collection_for_select(@goal_dependency_options, :id, :name, @defaults[:depended_on_by_goal_ids]),
+                         multiple: true,
+                         id: "forecast_budget_plan_depended_on_by_goal_ids",
+                         class: "form-field__input min-h-24" %>
+        </div>
+      </div>
+    </section>
+
+    <div class="flex items-center justify-end gap-2">
+      <%= render DS::Link.new(
+        text: t("forecasts.budget_plans.form.cancel"),
+        href: forecast_budget_plans_path,
+        variant: "outline"
+      ) %>
+      <%= f.submit t("forecasts.budget_plans.form.create"), class: "btn btn--primary" %>
+    </div>
+  <% end %>
+</div>

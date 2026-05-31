@@ -42,6 +42,8 @@ module Forecast
         when "forecast/events" then t("forecasts.events.index.title")
         when "forecast/goals" then t("forecasts.goals.index.title")
         when "forecast/account_liquidity_settings" then t("forecasts.liquidity_settings.index.title")
+        when "forecast/budget_plans" then t("forecasts.budget_plans.index.title")
+        when "forecast/budget_templates" then t("forecasts.budget_templates.index.title")
         when "forecast/budget_overrides" then t("forecasts.budget_overrides.index.title")
         when "forecast/event_links" then t("forecasts.reconciliation.index.title")
         when "forecast/templates" then t("forecasts.templates.index.title")
@@ -55,6 +57,8 @@ module Forecast
         when "forecast/events" then forecast_events_path
         when "forecast/goals" then forecast_goals_path
         when "forecast/account_liquidity_settings" then forecast_account_liquidity_settings_path
+        when "forecast/budget_plans" then forecast_budget_plans_path
+        when "forecast/budget_templates" then forecast_budget_plans_path
         when "forecast/budget_overrides" then forecast_budget_overrides_path
         when "forecast/event_links" then forecast_event_links_path
         when "forecast/templates" then forecast_templates_path
@@ -76,6 +80,7 @@ module Forecast
         when "forecast/events" then t("forecasts.events.new.title")
         when "forecast/goals" then t("forecasts.goals.new.title")
         when "forecast/account_liquidity_settings" then t("forecasts.liquidity_settings.new.title")
+        when "forecast/budget_plans" then t("forecasts.budget_plans.new.title")
         when "forecast/budget_overrides" then t("forecasts.budget_overrides.new.title")
         else forecast_collection_breadcrumb_label
         end
@@ -87,6 +92,7 @@ module Forecast
         when "forecast/events" then t("forecasts.events.edit.title")
         when "forecast/goals" then t("forecasts.goals.edit.title")
         when "forecast/account_liquidity_settings" then t("forecasts.liquidity_settings.edit.title")
+        when "forecast/budget_plans" then t("forecasts.budget_plans.edit.title")
         when "forecast/budget_overrides" then t("forecasts.budget_overrides.edit.title")
         else forecast_collection_breadcrumb_label
         end

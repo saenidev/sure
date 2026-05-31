@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_05_27_121000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_01_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -957,6 +957,71 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_121000) do
     t.index ["family_id", "period_start_on", "status"], name: "idx_budget_overrides_period_status"
     t.index ["family_id"], name: "index_forecast_budget_overrides_on_family_id"
     t.index ["forecast_scenario_id"], name: "index_forecast_budget_overrides_on_forecast_scenario_id"
+  end
+
+  create_table "forecast_budget_plan_amounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "forecast_budget_plan_id", null: false
+    t.uuid "category_id"
+    t.date "period_start_on", null: false
+    t.string "amount_type", null: false
+    t.decimal "amount", precision: 19, scale: 4, null: false
+    t.string "currency", null: false
+    t.text "note"
+    t.jsonb "source_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "forecast_budget_plan_id, period_start_on, amount_type, COALESCE(category_id, '00000000-0000-0000-0000-000000000000'::uuid)", name: "idx_forecast_budget_plan_amounts_unique_key", unique: true
+    t.index ["category_id"], name: "index_forecast_budget_plan_amounts_on_category_id"
+    t.index ["family_id", "period_start_on"], name: "idx_forecast_budget_plan_amounts_family_period"
+    t.index ["family_id"], name: "index_forecast_budget_plan_amounts_on_family_id"
+    t.index ["forecast_budget_plan_id"], name: "index_forecast_budget_plan_amounts_on_forecast_budget_plan_id"
+  end
+
+  create_table "forecast_budget_plans", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "forecast_scenario_id", null: false
+    t.date "base_period_start_on", null: false
+    t.date "horizon_start_on", null: false
+    t.date "horizon_end_on", null: false
+    t.string "currency", null: false
+    t.jsonb "activation_metadata", default: {}, null: false
+    t.jsonb "dependency_metadata", default: {}, null: false
+    t.jsonb "source_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "horizon_start_on", "horizon_end_on"], name: "idx_forecast_budget_plans_family_horizon"
+    t.index ["family_id"], name: "index_forecast_budget_plans_on_family_id"
+    t.index ["forecast_scenario_id"], name: "index_forecast_budget_plans_on_forecast_scenario_id", unique: true
+  end
+
+  create_table "forecast_budget_template_amounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "forecast_budget_template_id", null: false
+    t.uuid "category_id"
+    t.string "amount_type", null: false
+    t.decimal "amount", precision: 19, scale: 4, null: false
+    t.string "currency", null: false
+    t.text "note"
+    t.jsonb "source_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "forecast_budget_template_id, amount_type, COALESCE(category_id, '00000000-0000-0000-0000-000000000000'::uuid)", name: "idx_forecast_budget_template_amounts_unique_key", unique: true
+    t.index ["category_id"], name: "index_forecast_budget_template_amounts_on_category_id"
+    t.index ["family_id"], name: "index_forecast_budget_template_amounts_on_family_id"
+    t.index ["forecast_budget_template_id"], name: "idx_on_forecast_budget_template_id_b0da74e833"
+  end
+
+  create_table "forecast_budget_templates", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.string "name", null: false
+    t.text "description"
+    t.string "currency", null: false
+    t.jsonb "source_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "name"], name: "idx_forecast_budget_templates_family_name"
+    t.index ["family_id"], name: "index_forecast_budget_templates_on_family_id"
   end
 
   create_table "forecast_category_projections", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -2436,6 +2501,15 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_27_121000) do
   add_foreign_key "forecast_budget_overrides", "categories", on_delete: :cascade
   add_foreign_key "forecast_budget_overrides", "families"
   add_foreign_key "forecast_budget_overrides", "forecast_scenarios", on_delete: :cascade
+  add_foreign_key "forecast_budget_plan_amounts", "categories", on_delete: :cascade
+  add_foreign_key "forecast_budget_plan_amounts", "families"
+  add_foreign_key "forecast_budget_plan_amounts", "forecast_budget_plans", on_delete: :cascade
+  add_foreign_key "forecast_budget_plans", "families"
+  add_foreign_key "forecast_budget_plans", "forecast_scenarios", on_delete: :cascade
+  add_foreign_key "forecast_budget_template_amounts", "categories", on_delete: :cascade
+  add_foreign_key "forecast_budget_template_amounts", "families"
+  add_foreign_key "forecast_budget_template_amounts", "forecast_budget_templates", on_delete: :cascade
+  add_foreign_key "forecast_budget_templates", "families"
   add_foreign_key "forecast_category_projections", "categories", column: "parent_category_id", on_delete: :nullify
   add_foreign_key "forecast_category_projections", "categories", on_delete: :nullify
   add_foreign_key "forecast_category_projections", "forecast_months", on_delete: :cascade

@@ -160,6 +160,112 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
     assert_empty result.first.fetch(:categories).select { |candidate| candidate.fetch(:category_id) == category.id }
   end
 
+  test "scenario-backed forecast budget plan carries one base month forward" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    family.budgets.destroy_all
+    category = categories(:food_and_drink)
+    base_month = family.custom_month_start_for(Date.current.next_month)
+    later_month = base_month + 2.months
+    scenario = family.forecast_scenarios.create!(
+      name: "Lean summer",
+      status: "active",
+      starts_on: base_month,
+      ends_on: family.custom_month_end_for(later_month)
+    )
+    plan = family.forecast_budget_plans.create!(
+      forecast_scenario: scenario,
+      base_period_start_on: base_month,
+      horizon_start_on: base_month,
+      horizon_end_on: family.custom_month_end_for(later_month),
+      currency: family.currency
+    )
+    plan.forecast_budget_plan_amounts.create!(
+      family: family,
+      amount_type: "expected_income",
+      period_start_on: base_month,
+      amount: 7_500,
+      currency: family.currency
+    )
+    plan.forecast_budget_plan_amounts.create!(
+      family: family,
+      amount_type: "category_spending",
+      category: category,
+      period_start_on: base_month,
+      amount: 650,
+      currency: family.currency
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 2, start_date: later_month, end_date: family.custom_month_end_for(later_month), precision: "monthly")
+
+    result = Forecast::BudgetInputBuilder.new(
+      family: family,
+      start_on: Date.current,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      scenario_ids: [ scenario.id ],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call
+
+    row = result.first.fetch(:categories).find { |candidate| candidate.fetch(:category_id) == category.id }
+    assert_equal 7_500.to_d, result.first.fetch(:expected_income)
+    assert_equal "forecast_budget_override", row.fetch(:source)
+    assert_equal 650.to_d, row.fetch(:budgeted_spending)
+    assert_equal plan.id, row.fetch(:source_snapshot).fetch("forecast_budget_override").fetch("forecast_budget_plan_id")
+  end
+
+  test "scenario-backed forecast budget plan change points replace the carried amount" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    family.budgets.destroy_all
+    category = categories(:food_and_drink)
+    base_month = family.custom_month_start_for(Date.current.next_month)
+    change_month = base_month + 1.month
+    scenario = family.forecast_scenarios.create!(
+      name: "Raises prices",
+      status: "active",
+      starts_on: base_month,
+      ends_on: family.custom_month_end_for(change_month + 1.month)
+    )
+    plan = family.forecast_budget_plans.create!(
+      forecast_scenario: scenario,
+      base_period_start_on: base_month,
+      horizon_start_on: base_month,
+      horizon_end_on: family.custom_month_end_for(change_month + 1.month),
+      currency: family.currency
+    )
+    plan.forecast_budget_plan_amounts.create!(
+      family: family,
+      amount_type: "category_spending",
+      category: category,
+      period_start_on: base_month,
+      amount: 650,
+      currency: family.currency
+    )
+    plan.forecast_budget_plan_amounts.create!(
+      family: family,
+      amount_type: "category_spending",
+      category: category,
+      period_start_on: change_month,
+      amount: 925,
+      currency: family.currency
+    )
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 1, start_date: change_month, end_date: family.custom_month_end_for(change_month), precision: "monthly")
+
+    result = Forecast::BudgetInputBuilder.new(
+      family: family,
+      start_on: Date.current,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      scenario_ids: [ scenario.id ],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call
+
+    row = result.first.fetch(:categories).find { |candidate| candidate.fetch(:category_id) == category.id }
+    assert_equal 925.to_d, row.fetch(:budgeted_spending)
+  end
+
   test "posted liability payments are not treated as budget income" do
     family = families(:dylan_family)
     user = users(:family_admin)

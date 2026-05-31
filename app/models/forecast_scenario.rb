@@ -8,6 +8,7 @@ class ForecastScenario < ApplicationRecord
 
   has_many :forecast_events, dependent: :destroy
   has_many :forecast_budget_overrides, dependent: :destroy
+  has_one :forecast_budget_plan, dependent: :destroy
   has_many :forecast_goals, dependent: :destroy
   has_many :forecast_account_liquidity_settings, dependent: :destroy
 
@@ -81,6 +82,7 @@ class ForecastScenario < ApplicationRecord
 
       copy_forecast_events_into(copy, family)
       copy_forecast_budget_overrides_into(copy, family)
+      copy_forecast_budget_plan_into(copy, family)
       copy_forecast_goals_into(copy, family)
       copy_forecast_account_liquidity_settings_into(copy, family)
 
@@ -127,6 +129,10 @@ class ForecastScenario < ApplicationRecord
           source_metadata: override.source_metadata
         )
       end
+    end
+
+    def copy_forecast_budget_plan_into(copy, family)
+      forecast_budget_plan&.copy_into!(scenario: copy, family: family)
     end
 
     def copy_forecast_goals_into(copy, family)

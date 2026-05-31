@@ -322,6 +322,17 @@ Rails.application.routes.draw do
 
     resources :goals
     resources :account_liquidity_settings
+    resources :budget_plans do
+      member do
+        post :duplicate
+        post :create_template
+      end
+    end
+    resources :budget_templates, only: %i[index destroy] do
+      member do
+        post :apply
+      end
+    end
     resources :budget_overrides
     resources :event_links, only: %i[index create update destroy]
 

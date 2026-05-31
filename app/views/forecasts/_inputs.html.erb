@@ -16,7 +16,7 @@
       <%= render DS::Link.new(
         text: t("forecasts.inputs.actions.budget"),
         icon: "wallet-cards",
-        href: forecast_budget_overrides_path,
+        href: forecast_budget_plans_path,
         variant: "outline",
         size: :sm
       ) %>
@@ -52,7 +52,7 @@
     <div class="rounded-xl border border-primary bg-container p-4">
       <dt class="text-secondary text-xs"><%= t("forecasts.inputs.summary.budget.label") %></dt>
       <dd class="mt-1 text-primary text-xl font-semibold tabular-nums">
-        <%= t("forecasts.inputs.summary.budget.value", count: workspace.active_budget_overrides_count) %>
+        <%= t("forecasts.inputs.summary.budget.value", count: workspace.active_budget_plans_count) %>
       </dd>
     </div>
     <div class="rounded-xl border border-primary bg-container p-4">

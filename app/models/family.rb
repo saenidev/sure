@@ -52,6 +52,10 @@ class Family < ApplicationRecord
   has_many :forecast_budget_overrides, dependent: :destroy
   has_many :forecast_goals, dependent: :destroy
   has_many :forecast_account_liquidity_settings, dependent: :destroy
+  has_many :forecast_budget_plans, dependent: :destroy
+  has_many :forecast_budget_plan_amounts, dependent: :destroy
+  has_many :forecast_budget_templates, dependent: :destroy
+  has_many :forecast_budget_template_amounts, dependent: :destroy
 
   has_many :forecast_run_groups, dependent: :delete_all
   has_many :forecast_runs

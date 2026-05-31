@@ -1,5 +1,21 @@
 module Forecast
   class BudgetInputBuilder
+    PlanAmountOverride = Data.define(
+      :id,
+      :forecast_budget_plan_id,
+      :forecast_scenario_id,
+      :period_start_on,
+      :override_type,
+      :category_id,
+      :category,
+      :amount,
+      :currency,
+      :note,
+      :source_metadata,
+      :updated_at,
+      :forecast_scenario
+    )
+
     def initialize(family:, user:, periods:, money_converter:, scenario_ids:, included_account_scope:, start_on:)
       @family = family
       @user = user
@@ -253,12 +269,47 @@ module Forecast
 
       def budget_overrides_for(period)
         scenario_order = scenario_ids.each_with_index.to_h
-        family.forecast_budget_overrides
+        legacy_overrides = family.forecast_budget_overrides
           .where(status: "active", period_start_on: period.start_date, forecast_scenario_id: [ nil, *scenario_ids ])
           .includes(:category, :forecast_scenario)
           .to_a
           .select { |override| override_active_for_period?(override, period) }
-          .sort_by { |override| [ override.forecast_scenario_id ? scenario_order.fetch(override.forecast_scenario_id, 0) + 1 : 0, override.updated_at || Time.at(0), override.override_type, override.category_id.to_s, override.id ] }
+
+        (legacy_overrides + forecast_budget_plan_overrides_for(period))
+          .sort_by { |override| [ override.forecast_scenario_id ? scenario_order.fetch(override.forecast_scenario_id, 0) + 1 : 0, override.updated_at || Time.at(0), override.override_type, override.category_id.to_s, override.id.to_s ] }
+      end
+
+      def forecast_budget_plan_overrides_for(period)
+        return [] if scenario_ids.blank?
+
+        active_forecast_budget_plans.filter_map do |plan|
+          next unless plan.active_for_period?(period)
+
+          plan.effective_amounts_for(period.start_date).values.map do |amount|
+            PlanAmountOverride.new(
+              id: amount.id,
+              forecast_budget_plan_id: plan.id,
+              forecast_scenario_id: plan.forecast_scenario_id,
+              period_start_on: amount.period_start_on,
+              override_type: amount.amount_type,
+              category_id: amount.category_id,
+              category: amount.category,
+              amount: amount.amount,
+              currency: amount.currency,
+              note: amount.note,
+              source_metadata: amount.source_metadata,
+              updated_at: amount.updated_at,
+              forecast_scenario: plan.forecast_scenario
+            )
+          end
+        end.flatten
+      end
+
+      def active_forecast_budget_plans
+        @active_forecast_budget_plans ||= family.forecast_budget_plans
+          .where(forecast_scenario_id: scenario_ids)
+          .includes(:forecast_scenario, forecast_budget_plan_amounts: :category)
+          .to_a
       end
 
       def override_active_for_period?(override, period)
@@ -277,15 +328,17 @@ module Forecast
       end
 
       def converted_override_amount(override)
+        source_prefix = override.respond_to?(:forecast_budget_plan_id) && override.forecast_budget_plan_id.present? ? "forecast_budget_plan_amount" : "forecast_budget_override"
+
         money_converter.convert(
           amount: override.amount,
           currency: override.currency,
-          source: "forecast_budget_override:#{override.id}:amount"
+          source: "#{source_prefix}:#{override.id}:amount"
         )
       end
 
       def override_snapshot(override, converted)
-        {
+        snapshot = {
           "id" => override.id,
           "forecast_scenario_id" => override.forecast_scenario_id,
           "period_start_on" => override.period_start_on.iso8601,
@@ -295,6 +348,8 @@ module Forecast
           "source_metadata" => override.source_metadata,
           "money" => money_converter.snapshot_for(converted)
         }
+        snapshot["forecast_budget_plan_id"] = override.forecast_budget_plan_id if override.respond_to?(:forecast_budget_plan_id) && override.forecast_budget_plan_id.present?
+        snapshot
       end
 
       def actual_income_for(period)

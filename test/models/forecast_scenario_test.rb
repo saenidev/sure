@@ -149,6 +149,45 @@ class ForecastScenarioTest < ActiveSupport::TestCase
     assert_equal "active", copy.forecast_budget_overrides.first.status
   end
 
+  test "duplicate deep-copies a scenario-backed forecast budget plan" do
+    period_start = Date.current.beginning_of_month.next_month
+    category = categories(:food_and_drink)
+    source = @family.forecast_scenarios.create!(
+      name: "Forecast budget scenario",
+      status: "active",
+      starts_on: period_start,
+      ends_on: period_start + 6.months
+    )
+    plan = @family.forecast_budget_plans.create!(
+      forecast_scenario: source,
+      base_period_start_on: period_start,
+      horizon_start_on: period_start,
+      horizon_end_on: period_start + 6.months,
+      currency: @family.currency,
+      activation_metadata: { "conditions" => "Use if rent increases" },
+      dependency_metadata: { "depends_on" => { "forecast_scenario_ids" => [] } }
+    )
+    plan.forecast_budget_plan_amounts.create!(
+      family: @family,
+      amount_type: "category_spending",
+      category: category,
+      period_start_on: period_start,
+      amount: 1_100,
+      currency: @family.currency
+    )
+
+    copy = source.duplicate_for_family!(family: @family, user: @user)
+
+    copied_plan = copy.forecast_budget_plan
+    assert_not_nil copied_plan
+    assert_equal "disabled", copy.status
+    assert_equal plan.base_period_start_on, copied_plan.base_period_start_on
+    assert_equal plan.activation_metadata, copied_plan.activation_metadata
+    assert_equal 1, copied_plan.forecast_budget_plan_amounts.count
+    assert_equal 1_100.to_d, copied_plan.forecast_budget_plan_amounts.first.amount
+    assert_equal category.id, copied_plan.forecast_budget_plan_amounts.first.category_id
+  end
+
   test "activating a duplicated scenario projects its children (event runnable, goal active)" do
     source = @family.forecast_scenarios.create!(name: "Activatable", status: "active")
     source.forecast_events.create!(

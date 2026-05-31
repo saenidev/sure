@@ -221,7 +221,7 @@ module Forecast
       return @scenario_groups if defined?(@scenario_groups)
 
       scenarios = family.forecast_scenarios
-        .includes(:forecast_events, :forecast_budget_overrides, :forecast_goals, :forecast_account_liquidity_settings)
+        .includes(:forecast_events, :forecast_budget_overrides, :forecast_budget_plan, :forecast_goals, :forecast_account_liquidity_settings)
         .ordered
         .to_a
 
@@ -254,6 +254,10 @@ module Forecast
 
     def active_budget_overrides_count
       @active_budget_overrides_count ||= family.forecast_budget_overrides.where(status: "active").count
+    end
+
+    def active_budget_plans_count
+      @active_budget_plans_count ||= family.forecast_budget_plans.joins(:forecast_scenario).where(forecast_scenarios: { status: "active" }).count
     end
 
     def liquidity_settings_count

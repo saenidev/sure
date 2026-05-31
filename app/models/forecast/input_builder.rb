@@ -245,6 +245,8 @@ module Forecast
           "entries_max_updated_at" => family.entries.where(account_id: included_ids).maximum(:updated_at)&.iso8601,
           "budgets_max_updated_at" => Budget.where(family: family).maximum(:updated_at)&.iso8601,
           "forecast_budget_overrides_max_updated_at" => family.forecast_budget_overrides.maximum(:updated_at)&.iso8601,
+          "forecast_budget_plans_max_updated_at" => family.forecast_budget_plans.maximum(:updated_at)&.iso8601,
+          "forecast_budget_plan_amounts_max_updated_at" => family.forecast_budget_plan_amounts.maximum(:updated_at)&.iso8601,
           "recurring_transactions_max_updated_at" => scoped_recurring_transactions.maximum(:updated_at)&.iso8601,
           "forecast_scenarios_max_updated_at" => family.forecast_scenarios.maximum(:updated_at)&.iso8601,
           "forecast_events_max_updated_at" => scoped_forecast_events.maximum(:updated_at)&.iso8601,

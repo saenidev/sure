@@ -88,7 +88,7 @@ en:
             one: "%{count}"
             other: "%{count}"
         budget:
-          label: "Budget overrides"
+          label: "Budget plans"
           value:
             one: "%{count}"
             other: "%{count}"
@@ -902,6 +902,93 @@ en:
         error: "We could not update that match."
       destroy:
         success: "Match removed."
+    budget_plans:
+      defaults:
+        name: "Forecast budget"
+      index:
+        title: "Forecast budgets"
+        description: "Build scenario-backed forecast budgets once, project them forward, and save reusable templates."
+        new: "New forecast budget"
+        plans_heading: "Budget scenarios"
+        plan_count:
+          one: "%{count} plan"
+          other: "%{count} plans"
+        timeline: "%{start_date} to %{end_date} · %{count} change points"
+        edit: "Edit budget"
+        duplicate: "Copy"
+        empty_title: "No forecast budgets yet"
+        empty_body: "Create a scenario-backed budget, define the first month, and adjust only the months that need different values."
+        legacy_overrides: "Open legacy monthly overrides"
+      new:
+        title: "New forecast budget"
+        description: "Create a scenario for this budget, set the activation notes, then add one month of values in the builder."
+      edit:
+        title: "Edit forecast budget"
+        description: "Change plan details and save a full month of budget values. Those values carry forward until another month changes them."
+        copy: "Copy"
+        save_template: "Save template"
+      form:
+        errors: "We could not save this forecast budget."
+        scenario_heading: "Scenario"
+        scenario_description: "Each forecast budget is its own scenario, so it can be activated, compared, copied, or archived independently."
+        name_label: "Name"
+        name_placeholder: "Move to Seattle budget"
+        description_label: "Description"
+        description_placeholder: "What this budget assumes and why it exists."
+        status_label: "Status"
+        starts_on_label: "Scenario starts"
+        ends_on_label: "Scenario ends"
+        timeline_heading: "Timeline"
+        timeline_description: "Defaults to the start of next month through the end of the forecast horizon."
+        base_period_label: "Base month"
+        horizon_start_label: "Budget starts"
+        horizon_end_label: "Budget ends"
+        activation_heading: "Activation"
+        activation_description: "Notes are stored with the plan; enforcement remains the scenario status and date window in this version."
+        activation_trigger_label: "Activation trigger"
+        activation_conditions_label: "Activation conditions"
+        dependencies_heading: "Dependencies"
+        dependencies_description: "Record which goals or scenarios this budget depends on, and what depends on this budget."
+        depends_on_scenarios_label: "Depends on scenarios"
+        depends_on_goals_label: "Depends on goals"
+        depended_on_by_scenarios_label: "Scenarios depending on this"
+        depended_on_by_goals_label: "Goals depending on this"
+        cancel: "Cancel"
+        create: "Create budget"
+        update: "Save budget"
+      editor:
+        heading: "Monthly budget values"
+        description: "Set one month once; later months inherit it until you save a different value for that row."
+        period_nav_label: "Choose budget month"
+        caption: "Inherited budget values and editable forecast budget values for the selected month."
+        row_label: "Income / category"
+        inherited: "Inherited"
+        forecast: "Forecast"
+        slider: "Adjust"
+        status: "Projection"
+        no_inherited: "No inherited value"
+        changed_here: "Changed this month"
+        projected_forward: "Projected forward"
+        inherited_status: "Inherited"
+      template:
+        default_name: "%{name} template"
+      types:
+        expected_income: "Expected income"
+        uncategorized_spending: "Uncategorized spending"
+        category_spending: "Category spending"
+    budget_templates:
+      index:
+        title: "Budget templates"
+        template_count:
+          one: "%{count} template"
+          other: "%{count} templates"
+        amount_count:
+          one: "%{count} saved row"
+          other: "%{count} saved rows"
+        apply: "Use template"
+        delete: "Delete"
+        empty_title: "No budget templates"
+        empty_body: "Save a forecast budget as a template to reuse its starting values."
     budget_overrides:
       index:
         title: "Forecast budget"
@@ -1099,6 +1186,25 @@ en:
         success: "Liquidity override updated."
       destroy:
         success: "Liquidity override removed."
+    budget_plans:
+      create:
+        success: "Forecast budget created."
+      update:
+        success: "Forecast budget updated."
+      destroy:
+        success: "Forecast budget removed."
+      duplicate:
+        success: "Forecast budget copied. The copy is disabled until you turn it on."
+        error: "We could not copy this forecast budget: %{message}"
+      create_template:
+        success: "Budget template \"%{name}\" saved."
+        error: "We could not save that budget template: %{message}"
+    budget_templates:
+      apply:
+        success: "Applied \"%{name}\" as a disabled forecast budget scenario."
+        error: "We could not apply that budget template: %{message}"
+      destroy:
+        success: "Budget template deleted."
     budget_overrides:
       create:
         success: "Forecast budget override saved."

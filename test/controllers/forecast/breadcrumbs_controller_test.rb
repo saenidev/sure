@@ -10,6 +10,8 @@ class Forecast::BreadcrumbsControllerTest < ActionDispatch::IntegrationTest
 
     @family.forecast_events.delete_all
     @family.forecast_goals.delete_all
+    @family.forecast_budget_plans.delete_all if @family.respond_to?(:forecast_budget_plans)
+    @family.forecast_budget_templates.delete_all if @family.respond_to?(:forecast_budget_templates)
     @family.forecast_budget_overrides.delete_all
     @family.forecast_account_liquidity_settings.delete_all
     @family.forecast_run_groups.delete_all
@@ -44,6 +46,13 @@ class Forecast::BreadcrumbsControllerTest < ActionDispatch::IntegrationTest
       currency: @family.currency,
       status: "active"
     )
+    @budget_plan = @family.forecast_budget_plans.create!(
+      forecast_scenario: @scenario,
+      base_period_start_on: Date.current.beginning_of_month,
+      horizon_start_on: Date.current.beginning_of_month,
+      horizon_end_on: Date.current.end_of_month + 6.months,
+      currency: @family.currency
+    )
     sign_in @user
   end
 
@@ -63,6 +72,7 @@ class Forecast::BreadcrumbsControllerTest < ActionDispatch::IntegrationTest
       forecast_events_path => "Events",
       forecast_goals_path => "Goals",
       forecast_account_liquidity_settings_path => "Account liquidity",
+      forecast_budget_plans_path => "Forecast budgets",
       forecast_budget_overrides_path => "Forecast budget",
       forecast_event_links_path => "Reconciliation",
       forecast_templates_path => "Scenario templates",
@@ -89,6 +99,8 @@ class Forecast::BreadcrumbsControllerTest < ActionDispatch::IntegrationTest
       edit_forecast_goal_path(@goal) => [ "Goals", forecast_goals_path, "Edit goal" ],
       new_forecast_account_liquidity_setting_path(account_id: @account.id) => [ "Account liquidity", forecast_account_liquidity_settings_path, "Override liquidity" ],
       edit_forecast_account_liquidity_setting_path(@liquidity_setting) => [ "Account liquidity", forecast_account_liquidity_settings_path, "Edit liquidity override" ],
+      new_forecast_budget_plan_path => [ "Forecast budgets", forecast_budget_plans_path, "New forecast budget" ],
+      edit_forecast_budget_plan_path(@budget_plan) => [ "Forecast budgets", forecast_budget_plans_path, "Edit forecast budget" ],
       new_forecast_budget_override_path(override_type: "expected_income") => [ "Forecast budget", forecast_budget_overrides_path, "New budget override" ],
       edit_forecast_budget_override_path(@budget_override) => [ "Forecast budget", forecast_budget_overrides_path, "Edit budget override" ]
     }.each do |path, (collection_label, collection_path, current_label)|
