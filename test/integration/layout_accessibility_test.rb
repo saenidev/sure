@@ -15,6 +15,13 @@ class LayoutAccessibilityTest < ActionDispatch::IntegrationTest
     assert_select "main#main"
   end
 
+  test "application layout disables Turbo hover prefetch" do
+    get root_path
+    assert_response :ok
+
+    assert_select "meta[name='turbo-prefetch'][content='false']"
+  end
+
   test "settings layout renders skip-link pointing at #main and a <main> with id=\"main\"" do
     get settings_profile_path
     assert_response :ok

@@ -7,6 +7,17 @@ class FamilyTest < ActiveSupport::TestCase
     @syncable = families(:dylan_family)
   end
 
+  test "memoizes analytical statement objects per user on the family instance" do
+    family = families(:dylan_family)
+    admin = users(:family_admin)
+    member = users(:family_member)
+
+    assert_same family.balance_sheet(user: admin), family.balance_sheet(user: admin)
+    assert_same family.income_statement(user: admin), family.income_statement(user: admin)
+    assert_same family.investment_statement(user: admin), family.investment_statement(user: admin)
+    refute_same family.balance_sheet(user: admin), family.balance_sheet(user: member)
+  end
+
   test "investment_contributions_category creates category when missing" do
     family = families(:dylan_family)
     family.categories.where(name: Category.investment_contributions_name).destroy_all

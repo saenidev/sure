@@ -55,6 +55,10 @@ services:
       # concurrency, so this only affects request serving, not background jobs.
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       RAILS_MAX_THREADS: ${RAILS_MAX_THREADS:-5}
+      # Dokploy deploys should run migrations explicitly when needed; skipping
+      # db:prepare here keeps replacement web containers from spending startup
+      # time on database prep before Puma can accept traffic.
+      RUN_DB_PREPARE_ON_BOOT: ${RUN_DB_PREPARE_ON_BOOT:-false}
     depends_on:
       db:
         condition: service_healthy
@@ -64,10 +68,10 @@ services:
       - "3000"
     healthcheck:
       test: [ "CMD-SHELL", "curl -fsS http://localhost:3000/up || exit 1" ]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network

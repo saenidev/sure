@@ -203,11 +203,11 @@ class Family < ApplicationRecord
   end
 
   def balance_sheet(user: Current.user)
-    BalanceSheet.new(self, user: user)
+    memoized_statement(:balance_sheet, user) { BalanceSheet.new(self, user: user) }
   end
 
   def income_statement(user: Current.user)
-    IncomeStatement.new(self, user: user)
+    memoized_statement(:income_statement, user) { IncomeStatement.new(self, user: user) }
   end
 
   # Returns the Investment Contributions category for this family, creating it if it doesn't exist.
@@ -278,7 +278,7 @@ class Family < ApplicationRecord
   end
 
   def investment_statement(user: Current.user)
-    InvestmentStatement.new(self, user: user)
+    memoized_statement(:investment_statement, user) { InvestmentStatement.new(self, user: user) }
   end
 
   def eu?
@@ -359,6 +359,11 @@ class Family < ApplicationRecord
   end
 
   private
+    def memoized_statement(name, user)
+      @memoized_statements ||= {}
+      @memoized_statements[[ name, user&.id || :anonymous ]] ||= yield
+    end
+
     def normalize_enabled_currencies!
       if enabled_currencies.blank?
         self.enabled_currencies = nil

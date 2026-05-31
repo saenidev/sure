@@ -14,6 +14,10 @@ module ApplicationHelper
     form_with(**options, &block)
   end
 
+  def render_component(component, &block)
+    render component, &block
+  end
+
   # Locale-aware ordinal label for integers.
   # English falls through to Ruby's ordinalize ("1st"); Catalan returns "1r"/"2n"/...
   def localized_ordinal(number)

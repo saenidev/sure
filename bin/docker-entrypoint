@@ -1,7 +1,9 @@
 #!/bin/bash -e
 
-# If running the rails server then create or migrate existing database
-if [ "${1}" == "./bin/rails" ] && [ "${2}" == "server" ]; then
+# If running the rails server then create or migrate existing database.
+# Set RUN_DB_PREPARE_ON_BOOT=false when migrations are handled by the deploy
+# pipeline so web containers can become ready without a database prep step.
+if [ "${1}" == "./bin/rails" ] && [ "${2}" == "server" ] && [ "${RUN_DB_PREPARE_ON_BOOT:-true}" != "false" ]; then
   ./bin/rails db:prepare
 fi
 

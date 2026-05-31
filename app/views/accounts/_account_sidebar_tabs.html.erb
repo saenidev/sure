@@ -21,7 +21,7 @@
     </details>
   <% end %>
 
-  <%= render DS::Tabs.new(active_tab: active_tab, session_key: "account_sidebar_tab", testid: "account-sidebar-tabs") do |tabs| %>
+  <%= render_component DS::Tabs.new(active_tab: active_tab, session_key: "account_sidebar_tab", testid: "account-sidebar-tabs") do |tabs| %>
     <% tabs.with_nav do |nav| %>
       <% nav.with_btn(id: "all", label: t("accounts.sidebar.tabs.all")) %>
       <% nav.with_btn(id: "asset", label: t("accounts.sidebar.tabs.assets")) %>
@@ -30,7 +30,7 @@
 
     <% tabs.with_panel(tab_id: "asset") do %>
       <div class="space-y-2">
-        <%= render DS::Link.new(
+        <%= render_component DS::Link.new(
           text: t("accounts.sidebar.new_asset"),
           variant: "ghost",
           href: new_account_path(step: "method_select", classification: "asset"),
@@ -50,7 +50,7 @@
 
     <% tabs.with_panel(tab_id: "liability") do %>
       <div class="space-y-2">
-        <%= render DS::Link.new(
+        <%= render_component DS::Link.new(
             text: t("accounts.sidebar.new_debt"),
             variant: "ghost",
             href: new_account_path(step: "method_select", classification: "liability"),
@@ -70,7 +70,7 @@
 
     <% tabs.with_panel(tab_id: "all") do %>
       <div class="space-y-2">
-        <%= render DS::Link.new(
+        <%= render_component DS::Link.new(
             text: t("accounts.sidebar.new_account"),
             variant: "ghost",
             full_width: true,
