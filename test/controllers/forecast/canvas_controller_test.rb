@@ -18,6 +18,8 @@ class Forecast::CanvasControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-forecast-canvas-chart-target='chart']"
     assert_select "[data-forecast-canvas-chart-target='inspector']"
     assert_select "button[data-action*='forecast-canvas-chart#selectMetric']", minimum: 4
+    assert_select "template[data-forecast-canvas-chart-target='draftTemplate']"
+    assert_select "form[data-forecast-canvas-chart-target='draftForm']"
   end
 
   test "breadcrumbs are nested under forecast" do

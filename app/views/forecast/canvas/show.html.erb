@@ -82,6 +82,8 @@
       </div>
 
       <aside class="flex min-h-full flex-col gap-4 p-4" data-forecast-canvas-chart-target="inspector">
+        <div data-forecast-canvas-chart-target="draftPanel"></div>
+
         <section class="space-y-3" aria-labelledby="forecast-canvas-selection-heading">
           <div class="space-y-1">
             <h3 id="forecast-canvas-selection-heading" class="text-primary text-sm font-medium">
@@ -114,5 +116,103 @@
         </section>
       </aside>
     </div>
+
+    <template data-forecast-canvas-chart-target="draftTemplate">
+      <section class="space-y-3 border-b border-primary pb-4" aria-labelledby="forecast-canvas-draft-heading">
+        <div class="space-y-1">
+          <h3 id="forecast-canvas-draft-heading" class="text-primary text-sm font-medium">
+            <%= t("forecasts.canvas.drafts.heading") %>
+          </h3>
+          <p class="text-secondary text-xs" data-forecast-canvas-chart-draft-date></p>
+        </div>
+
+        <form class="space-y-3"
+              data-forecast-canvas-chart-target="draftForm"
+              data-action="submit->forecast-canvas-chart#saveDraft">
+          <input type="hidden" name="forecast_event[starts_on]" data-forecast-canvas-chart-draft-starts-on>
+          <input type="hidden" name="forecast_event[status]" value="planned">
+          <input type="hidden" name="forecast_event[probability_weight]" value="1.0">
+
+          <div class="space-y-1">
+            <label class="text-primary text-sm font-medium" for="canvas-draft-name">
+              <%= t("forecasts.canvas.drafts.name") %>
+            </label>
+            <input id="canvas-draft-name"
+                   class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                   name="forecast_event[name]"
+                   type="text"
+                   required>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="space-y-1">
+              <label class="text-primary text-sm font-medium" for="canvas-draft-effect">
+                <%= t("forecasts.canvas.drafts.effect") %>
+              </label>
+              <select id="canvas-draft-effect"
+                      class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                      name="forecast_event[effect_type]">
+                <% @canvas_payload.dig(:draft_options, :effect_types).each do |effect_type| %>
+                  <option value="<%= effect_type %>">
+                    <%= t("forecasts.events.effect_types.#{effect_type}", default: effect_type.humanize) %>
+                  </option>
+                <% end %>
+              </select>
+            </div>
+
+            <div class="space-y-1">
+              <label class="text-primary text-sm font-medium" for="canvas-draft-scenario">
+                <%= t("forecasts.canvas.drafts.scenario") %>
+              </label>
+              <select id="canvas-draft-scenario"
+                      class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                      name="forecast_event[forecast_scenario_id]">
+                <option value=""><%= t("forecasts.canvas.drafts.global") %></option>
+                <% @canvas_payload.dig(:draft_options, :scenario_targets).each do |scenario| %>
+                  <option value="<%= scenario.fetch(:id) %>"><%= scenario.fetch(:label) %></option>
+                <% end %>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="space-y-1">
+              <label class="text-primary text-sm font-medium" for="canvas-draft-amount">
+                <%= t("forecasts.canvas.drafts.amount") %>
+              </label>
+              <input id="canvas-draft-amount"
+                     class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                     name="forecast_event[amount]"
+                     type="number"
+                     step="0.01">
+            </div>
+
+            <div class="space-y-1">
+              <label class="text-primary text-sm font-medium" for="canvas-draft-currency">
+                <%= t("forecasts.canvas.drafts.currency") %>
+              </label>
+              <select id="canvas-draft-currency"
+                      class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                      name="forecast_event[currency]">
+                <% @canvas_payload.dig(:draft_options, :currencies).each do |currency| %>
+                  <option value="<%= currency %>"><%= currency %></option>
+                <% end %>
+              </select>
+            </div>
+          </div>
+
+          <div class="hidden rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-destructive text-xs"
+               data-forecast-canvas-chart-draft-errors></div>
+
+          <div class="flex justify-end">
+            <%= render DS::Button.new(
+              text: t("forecasts.canvas.drafts.save"),
+              icon: "plus",
+              type: "submit"
+            ) %>
+          </div>
+        </form>
+      </section>
+    </template>
   </section>
 </div>

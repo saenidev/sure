@@ -8,6 +8,8 @@ const formatShortDate = d3.timeFormat("%b %-d, %Y");
 export default class extends Controller {
   static targets = [
     "chart",
+    "draftPanel",
+    "draftTemplate",
     "eventList",
     "inspector",
     "legend",
@@ -67,6 +69,45 @@ export default class extends Controller {
     }
 
     this.#renderChart();
+  }
+
+  async saveDraft(event) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const url = this.payload.draft_options?.create_event_url;
+    if (!url) return;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "X-CSRF-Token":
+          document.querySelector("meta[name='csrf-token']")?.content || "",
+      },
+      body: new FormData(form),
+    });
+    const body = await response.json();
+
+    if (!response.ok) {
+      this.#renderDraftErrors(form, body.errors || {});
+      return;
+    }
+
+    const savedEvent = {
+      ...body.event,
+      dateObject: parseDate(body.event.date),
+    };
+    this.localEvents = this.localEvents.filter((candidate) => {
+      return candidate.kind !== "draft";
+    });
+    this.payload.events.push(savedEvent);
+    this.payload.stale = true;
+    this.#renderSource();
+    this.#renderEvents();
+    this.#updateEvents();
+    this.#selectEvent(savedEvent);
+    this.draftPanelTarget.replaceChildren();
   }
 
   #normalizePayload(payload) {
@@ -551,6 +592,35 @@ export default class extends Controller {
     this.#renderEvents();
     this.#updateEvents();
     this.#selectEvent(marker);
+    this.#renderDraftForm(marker);
+  }
+
+  #renderDraftForm(marker) {
+    if (!this.hasDraftPanelTarget || !this.hasDraftTemplateTarget) return;
+
+    const fragment = this.draftTemplateTarget.content.cloneNode(true);
+    const startsOn = fragment.querySelector(
+      "[data-forecast-canvas-chart-draft-starts-on]",
+    );
+    const dateLabel = fragment.querySelector(
+      "[data-forecast-canvas-chart-draft-date]",
+    );
+    startsOn.value = marker.date;
+    dateLabel.textContent = formatShortDate(marker.dateObject);
+    this.draftPanelTarget.replaceChildren(fragment);
+  }
+
+  #renderDraftErrors(form, errors) {
+    const target = form.querySelector(
+      "[data-forecast-canvas-chart-draft-errors]",
+    );
+    if (!target) return;
+
+    const messages = Object.entries(errors).flatMap(([field, fieldErrors]) => {
+      return fieldErrors.map((message) => `${field} ${message}`);
+    });
+    target.textContent = messages.join(" ");
+    target.classList.toggle("hidden", messages.length === 0);
   }
 
   #formatAxisValue(value) {
