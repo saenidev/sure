@@ -63,7 +63,7 @@
           highlight_items << {
             icon: "wallet",
             label: t("forecasts.comparison.highlights.end_cash"),
-            plan: best_cash_stack.label,
+            scenario: best_cash_stack.label,
             value: format_money(best_cash_stack.end_cash)
           }
         end
@@ -72,7 +72,7 @@
           highlight_items << {
             icon: "trending-up",
             label: t("forecasts.comparison.highlights.net_worth"),
-            plan: best_net_worth_stack.label,
+            scenario: best_net_worth_stack.label,
             value: format_money(best_net_worth_stack.end_net_worth)
           }
         end
@@ -81,7 +81,7 @@
           highlight_items << {
             icon: "badge-dollar-sign",
             label: t("forecasts.comparison.highlights.debt"),
-            plan: lowest_debt_stack.label,
+            scenario: lowest_debt_stack.label,
             value: format_money(lowest_debt_stack.end_debt)
           }
         end
@@ -90,7 +90,7 @@
         highlight_items << {
           icon: "shield-check",
           label: t("forecasts.comparison.highlights.risk"),
-          plan: fewest_risks_stack.label,
+          scenario: fewest_risks_stack.label,
           value: t("forecasts.comparison.highlights.risk_count", count: fewest_risks_stack.risk_flag_types.size)
         }
       end
@@ -105,7 +105,7 @@
               <span><%= item[:label] %></span>
             </dt>
             <dd class="mt-2 text-primary text-lg font-semibold tabular-nums"><%= item[:value] %></dd>
-            <dd class="mt-1 text-secondary text-xs truncate"><%= item[:plan] %></dd>
+            <dd class="mt-1 text-secondary text-xs truncate"><%= item[:scenario] %></dd>
           </div>
         <% end %>
       </dl>
