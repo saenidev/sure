@@ -38,6 +38,16 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", forecast_path
   end
 
+  test "renders an isolated forecast canvas preview" do
+    get "/forecast/canvas"
+
+    assert_response :success
+    assert_select "h1", text: /Forecast canvas/i
+    assert_select "[data-controller='forecast-canvas-preview']"
+    assert_select "[data-forecast-canvas-preview-payload-value]"
+    assert_select "a[href=?]", forecast_path, text: /Back to forecast/i
+  end
+
   test "renders onboarding empty state when there is no planning data and no run" do
     get forecast_url
 

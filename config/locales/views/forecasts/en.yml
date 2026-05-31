@@ -103,6 +103,50 @@ en:
     history:
       heading: "Forecast history"
       description: "Review past manual and automated runs, including anything flagged for human review."
+    canvas:
+      title: "Forecast canvas"
+      description: "A temporary timeline-first prototype for evaluating the stock-chart style forecast interaction."
+      back: "Back to forecast"
+      chart_heading: "Timeline canvas"
+      loading: "Loading forecast canvas…"
+      metric_label: "Choose forecast metric"
+      range_label: "Choose forecast range"
+      source:
+        latest_run: "Using the latest completed forecast run."
+        demo: "Using demo data because this family has no completed projection data yet."
+      generated: "Generated %{datetime}"
+      metrics:
+        net_worth: "Net worth"
+        cash_balance: "Cash"
+        debt_balance: "Debt"
+        cash_runway_days: "Runway"
+      ranges:
+        90d: "90D"
+        1y: "1Y"
+        3y: "3Y"
+        all: "All"
+      selection:
+        heading: "Selection"
+        empty: "Select a point"
+        series: "Series"
+        draft: "Draft marker"
+      prototype_label: "Prototype"
+      lines_heading: "Scenarios"
+      events_heading: "Events"
+      event_empty: "No dated events in this range."
+      derived_series:
+        upside: "Prototype upside"
+        downside: "Prototype downside"
+      demo_series:
+        country_move: "Country move"
+        market_drawdown: "Market drawdown"
+      demo_events:
+        move: "Relocation"
+        drawdown: "Market drawdown"
+        raise: "Income raise"
+      days:
+        one: "%{count} day"
+        other: "%{count} days"
     empty_state:
       onboarding:
         title: "Forecast your financial future"

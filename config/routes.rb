@@ -286,6 +286,8 @@ Rails.application.routes.draw do
     delete :destroy_all, on: :collection
   end
 
+  get "forecast/canvas", to: "forecasts#canvas", as: :forecast_canvas_preview
+
   resource :forecast, only: :show
 
   # Lazy-loaded body for a single workspace tab (ForecastsController#tab). Only

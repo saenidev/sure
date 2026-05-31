@@ -1,0 +1,110 @@
+<% content_for :title, t("forecasts.canvas.title") %>
+
+<div class="space-y-4 pb-6 lg:pb-12">
+  <header class="flex flex-wrap items-start justify-between gap-3">
+    <div class="space-y-1">
+      <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.canvas.title") %></h1>
+      <p class="text-secondary text-sm"><%= t("forecasts.canvas.description") %></p>
+    </div>
+
+    <%= render DS::Link.new(
+      text: t("forecasts.canvas.back"),
+      icon: "arrow-left",
+      href: forecast_path,
+      variant: "outline"
+    ) %>
+  </header>
+
+  <section class="overflow-hidden rounded-lg border border-primary bg-container"
+           data-controller="forecast-canvas-preview"
+           data-forecast-canvas-preview-payload-value="<%= @canvas_payload.to_json %>"
+           aria-labelledby="forecast-canvas-heading">
+    <div class="border-b border-primary p-3 sm:p-4">
+      <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div class="space-y-1">
+          <h2 id="forecast-canvas-heading" class="text-primary text-base font-medium">
+            <%= t("forecasts.canvas.chart_heading") %>
+          </h2>
+          <p class="text-secondary text-xs" data-forecast-canvas-preview-target="sourceLabel">
+            <%= t("forecasts.canvas.loading") %>
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="inline-flex rounded-lg border border-primary p-0.5" role="group"
+               aria-label="<%= t("forecasts.canvas.metric_label") %>">
+            <% @canvas_payload.fetch(:metrics).each_with_index do |metric, index| %>
+              <button type="button"
+                      class="rounded-md px-3 py-1 text-sm font-medium text-secondary aria-pressed:bg-surface-inset aria-pressed:text-primary"
+                      aria-pressed="<%= index.zero? %>"
+                      data-forecast-canvas-preview-target="metricButton"
+                      data-metric="<%= metric.fetch(:key) %>"
+                      data-action="forecast-canvas-preview#selectMetric">
+                <%= metric.fetch(:label) %>
+              </button>
+            <% end %>
+          </div>
+
+          <div class="inline-flex rounded-lg border border-primary p-0.5" role="group"
+               aria-label="<%= t("forecasts.canvas.range_label") %>">
+            <% [
+                 [ "90d", t("forecasts.canvas.ranges.90d"), 3 ],
+                 [ "1y", t("forecasts.canvas.ranges.1y"), 12 ],
+                 [ "3y", t("forecasts.canvas.ranges.3y"), 36 ],
+                 [ "all", t("forecasts.canvas.ranges.all"), nil ]
+               ].each_with_index do |(range_key, label, months), index| %>
+              <button type="button"
+                      class="rounded-md px-3 py-1 text-sm font-medium text-secondary aria-pressed:bg-surface-inset aria-pressed:text-primary"
+                      aria-pressed="<%= index == 2 %>"
+                      data-forecast-canvas-preview-target="rangeButton"
+                      data-range="<%= range_key %>"
+                      data-months="<%= months %>"
+                      data-action="forecast-canvas-preview#selectRange">
+                <%= label %>
+              </button>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid min-h-[38rem] lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div class="relative border-b border-primary p-3 lg:border-b-0 lg:border-r sm:p-5">
+        <div class="h-[34rem] min-h-96 privacy-sensitive" data-forecast-canvas-preview-target="chart"></div>
+      </div>
+
+      <aside class="flex min-h-full flex-col gap-4 p-4">
+        <section class="space-y-3" aria-labelledby="forecast-canvas-selection-heading">
+          <div class="space-y-1">
+            <h3 id="forecast-canvas-selection-heading" class="text-primary text-sm font-medium">
+              <%= t("forecasts.canvas.selection.heading") %>
+            </h3>
+            <p class="text-secondary text-xs" data-forecast-canvas-preview-target="selectedDate">
+              <%= t("forecasts.canvas.selection.empty") %>
+            </p>
+          </div>
+
+          <div class="space-y-1">
+            <p class="text-secondary text-xs"><%= t("forecasts.canvas.selection.series") %></p>
+            <p class="text-primary text-lg font-semibold tabular-nums" data-forecast-canvas-preview-target="selectedValue">--</p>
+            <p class="text-secondary text-xs" data-forecast-canvas-preview-target="selectedSeries">--</p>
+          </div>
+        </section>
+
+        <section class="space-y-3 border-t border-primary pt-4" aria-labelledby="forecast-canvas-lines-heading">
+          <h3 id="forecast-canvas-lines-heading" class="text-primary text-sm font-medium">
+            <%= t("forecasts.canvas.lines_heading") %>
+          </h3>
+          <div class="space-y-2" data-forecast-canvas-preview-target="legend"></div>
+        </section>
+
+        <section class="space-y-3 border-t border-primary pt-4" aria-labelledby="forecast-canvas-events-heading">
+          <h3 id="forecast-canvas-events-heading" class="text-primary text-sm font-medium">
+            <%= t("forecasts.canvas.events_heading") %>
+          </h3>
+          <div class="space-y-2" data-forecast-canvas-preview-target="eventList"></div>
+        </section>
+      </aside>
+    </div>
+  </section>
+</div>
