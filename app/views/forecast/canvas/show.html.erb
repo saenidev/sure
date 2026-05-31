@@ -101,6 +101,8 @@
           </div>
         </section>
 
+        <section class="space-y-3 border-t border-primary pt-4" aria-live="polite" data-forecast-canvas-chart-target="detailPanel"></section>
+
         <section class="space-y-3 border-t border-primary pt-4" aria-labelledby="forecast-canvas-lines-heading">
           <h3 id="forecast-canvas-lines-heading" class="text-primary text-sm font-medium">
             <%= t("forecasts.canvas.lines_heading") %>
@@ -169,7 +171,9 @@
                       name="forecast_event[forecast_scenario_id]">
                 <option value=""><%= t("forecasts.canvas.drafts.global") %></option>
                 <% @canvas_payload.dig(:draft_options, :scenario_targets).each do |scenario| %>
-                  <option value="<%= scenario.fetch(:id) %>"><%= scenario.fetch(:label) %></option>
+                  <option value="<%= scenario.fetch(:id) %>">
+                    <%= scenario.fetch(:label) %> (<%= scenario.fetch(:status_label) %>)
+                  </option>
                 <% end %>
               </select>
             </div>

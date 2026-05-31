@@ -8,6 +8,7 @@ const formatShortDate = d3.timeFormat("%b %-d, %Y");
 export default class extends Controller {
   static targets = [
     "chart",
+    "detailPanel",
     "draftPanel",
     "draftTemplate",
     "eventList",
@@ -38,6 +39,7 @@ export default class extends Controller {
     this.#renderSource();
     this.#renderLegend();
     this.#renderEvents();
+    this.#renderEmptyDetails();
     this.#syncControls();
     this.#renderChart();
   }
@@ -110,6 +112,35 @@ export default class extends Controller {
     this.draftPanelTarget.replaceChildren();
   }
 
+  async forkScenario(event) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const url = this.payload.draft_options?.fork_url;
+    if (!url) return;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "X-CSRF-Token":
+          document.querySelector("meta[name='csrf-token']")?.content || "",
+      },
+      body: new FormData(form),
+    });
+    const body = await response.json();
+
+    if (!response.ok) {
+      this.#renderFormErrors(form, body.errors || {});
+      return;
+    }
+
+    this.payload.stale = true;
+    this.#appendScenarioTarget(body.scenario);
+    this.#renderSource();
+    this.#renderForkSuccess(body.scenario, body.message);
+  }
+
   #normalizePayload(payload) {
     return {
       ...payload,
@@ -161,9 +192,12 @@ export default class extends Controller {
     this.legendTarget.replaceChildren();
 
     this.payload.series.forEach((series) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center justify-between gap-2";
+
       const label = document.createElement("label");
       label.className =
-        "flex items-center justify-between gap-3 text-sm text-primary";
+        "flex min-w-0 flex-1 items-center gap-3 text-sm text-primary";
 
       const left = document.createElement("span");
       left.className = "flex min-w-0 items-center gap-2";
@@ -185,15 +219,28 @@ export default class extends Controller {
 
       left.append(checkbox, swatch, name);
       label.append(left);
+      row.append(label);
 
       if (series.prototype || series.preview) {
         const badge = document.createElement("span");
         badge.className = "text-secondary text-xs";
         badge.textContent = this.payload.labels?.prototype || "Preview";
-        label.append(badge);
+        row.append(badge);
       }
 
-      this.legendTarget.append(label);
+      const inspect = document.createElement("button");
+      inspect.type = "button";
+      inspect.className =
+        "shrink-0 rounded-md px-2 py-1 text-secondary text-xs hover:bg-surface-inset hover:text-primary";
+      inspect.textContent =
+        this.payload.labels?.inspector?.inspect || "Inspect";
+      inspect.addEventListener("click", () => this.#selectStack(series));
+
+      if (!(series.prototype || series.preview)) {
+        row.append(inspect);
+      }
+
+      this.legendTarget.append(row);
     });
   }
 
@@ -569,12 +616,466 @@ export default class extends Controller {
     this.selectedValueTarget.textContent =
       point.formatted || this.#formatValue(point.value);
     this.selectedSeriesTarget.textContent = series.label;
+    this.#renderPointDetails(series, point);
   }
 
   #selectEvent(event) {
     this.selectedDateTarget.textContent = formatShortDate(event.dateObject);
     this.selectedValueTarget.textContent = event.label;
     this.selectedSeriesTarget.textContent = event.scenario || event.kind || "";
+    this.#renderEventDetails(event);
+  }
+
+  #selectStack(series) {
+    const stack = this.payload.stacks?.find((candidate) => {
+      return (
+        candidate.id === series.id ||
+        candidate.stack_key === series.stack_key ||
+        candidate.stack_key === series.id
+      );
+    }) || {
+      id: series.id,
+      label: series.label,
+      stack_key: series.stack_key,
+      scenario_ids: series.scenario_ids || [],
+      source_scenario_ids: series.scenario_ids || [],
+      scenario_names: [],
+      feasibility_status: series.feasibility_status,
+      end_values: {},
+      low_points: {},
+      goal_status_counts: {},
+      risk_flags: [],
+    };
+
+    this.selectedDateTarget.textContent =
+      this.payload.labels?.inspector?.stack_heading || "Scenario stack";
+    this.selectedValueTarget.textContent = stack.label;
+    this.selectedSeriesTarget.textContent =
+      stack.feasibility_status || series.feasibility_status || "";
+    this.#renderStackDetails(stack, series);
+  }
+
+  #renderEmptyDetails() {
+    if (!this.hasDetailPanelTarget) return;
+
+    this.detailPanelTarget.replaceChildren();
+  }
+
+  #renderPointDetails(series, point) {
+    if (!this.hasDetailPanelTarget) return;
+
+    const labels = this.payload.labels?.inspector || {};
+    const fragment = document.createDocumentFragment();
+
+    fragment.append(
+      this.#detailsHeading(labels.metrics_heading || "Metric values"),
+    );
+
+    const delta = document.createElement("div");
+    delta.className = "rounded-md bg-surface px-3 py-2 text-sm text-primary";
+    delta.append(
+      this.#mutedText(labels.delta_label || "Vs baseline"),
+      this.#strongText(point.formatted_delta || labels.no_delta || "Baseline"),
+    );
+    fragment.append(delta);
+
+    const metrics = document.createElement("dl");
+    metrics.className = "grid grid-cols-2 gap-2";
+    this.payload.metrics.forEach((metric) => {
+      const matchingPoint = (series.metrics[metric.key] || []).find(
+        (candidate) => candidate.date === point.date,
+      );
+      if (!matchingPoint) return;
+
+      metrics.append(
+        this.#metricBlock(
+          metric.label,
+          matchingPoint.formatted || this.#formatValue(matchingPoint.value),
+        ),
+      );
+    });
+    fragment.append(metrics);
+
+    const stack = this.payload.stacks?.find((candidate) => {
+      return (
+        candidate.id === series.id || candidate.stack_key === series.stack_key
+      );
+    });
+    if (stack) {
+      const inspect = document.createElement("button");
+      inspect.type = "button";
+      inspect.className =
+        "w-full rounded-md border border-primary px-3 py-2 text-left text-primary text-sm hover:bg-surface-inset";
+      inspect.textContent = `${labels.inspect || "Inspect"} ${stack.label}`;
+      inspect.addEventListener("click", () => this.#selectStack(series));
+      fragment.append(inspect);
+    }
+
+    this.detailPanelTarget.replaceChildren(fragment);
+  }
+
+  #renderEventDetails(event) {
+    if (!this.hasDetailPanelTarget) return;
+
+    const labels = this.payload.labels?.inspector || {};
+    const fragment = document.createDocumentFragment();
+    fragment.append(
+      this.#detailsHeading(labels.event_heading || "Event details"),
+    );
+
+    const rows = [
+      [labels.status || "Status", event.status_label || event.status],
+      [labels.effect || "Effect", event.effect_label || event.effect_type],
+      [labels.amount || "Amount", event.formatted_amount],
+      [labels.scenario || "Scenario", event.scenario],
+    ].filter(([, value]) => value);
+
+    const list = document.createElement("dl");
+    list.className = "space-y-2";
+    rows.forEach(([label, value]) =>
+      list.append(this.#detailRow(label, value)),
+    );
+    fragment.append(list);
+
+    if (event.edit_url) {
+      const link = document.createElement("a");
+      link.href = event.edit_url;
+      link.className =
+        "inline-flex items-center justify-center rounded-md border border-primary px-3 py-2 text-primary text-sm hover:bg-surface-inset";
+      link.textContent = labels.edit_event || "Edit event";
+      fragment.append(link);
+    }
+
+    this.detailPanelTarget.replaceChildren(fragment);
+  }
+
+  #renderStackDetails(stack, series) {
+    if (!this.hasDetailPanelTarget) return;
+
+    const labels = this.payload.labels?.inspector || {};
+    const fragment = document.createDocumentFragment();
+    fragment.append(
+      this.#detailsHeading(labels.stack_heading || "Scenario stack"),
+    );
+
+    const overview = document.createElement("dl");
+    overview.className = "space-y-2";
+    overview.append(
+      this.#detailRow(
+        labels.feasibility || "Feasibility",
+        stack.feasibility_status || "unknown",
+      ),
+    );
+    if (stack.scenario_names?.length > 0) {
+      overview.append(
+        this.#detailRow(
+          labels.scenario || "Scenario",
+          stack.scenario_names.join(" + "),
+        ),
+      );
+    }
+    fragment.append(overview);
+
+    fragment.append(
+      this.#summaryGroup(
+        labels.end_heading || "End of horizon",
+        stack.end_values,
+      ),
+      this.#summaryGroup(
+        labels.low_heading || "Lowest point",
+        stack.low_points,
+      ),
+      this.#goalGroup(
+        labels.goals_heading || "Goal results",
+        stack.goal_status_counts,
+      ),
+      this.#riskGroup(labels.risks_heading || "Risk flags", stack.risk_flags),
+      this.#forkFormForStack(stack, series),
+    );
+
+    this.detailPanelTarget.replaceChildren(fragment);
+  }
+
+  #detailsHeading(text) {
+    const heading = document.createElement("h3");
+    heading.className = "text-primary text-sm font-medium";
+    heading.textContent = text;
+    return heading;
+  }
+
+  #mutedText(text) {
+    const element = document.createElement("span");
+    element.className = "block text-secondary text-xs";
+    element.textContent = text;
+    return element;
+  }
+
+  #strongText(text) {
+    const element = document.createElement("span");
+    element.className = "block text-primary text-sm font-medium tabular-nums";
+    element.textContent = text;
+    return element;
+  }
+
+  #metricBlock(label, value) {
+    const block = document.createElement("div");
+    block.className = "rounded-md bg-surface px-3 py-2";
+
+    const term = document.createElement("dt");
+    term.className = "text-secondary text-xs";
+    term.textContent = label;
+
+    const description = document.createElement("dd");
+    description.className =
+      "mt-1 text-primary text-sm font-medium tabular-nums";
+    description.textContent = value;
+
+    block.append(term, description);
+    return block;
+  }
+
+  #detailRow(label, value) {
+    const row = document.createElement("div");
+    row.className = "flex items-start justify-between gap-3 text-sm";
+
+    const term = document.createElement("dt");
+    term.className = "text-secondary";
+    term.textContent = label;
+
+    const description = document.createElement("dd");
+    description.className = "text-right text-primary";
+    description.textContent = value;
+
+    row.append(term, description);
+    return row;
+  }
+
+  #summaryGroup(label, values = {}) {
+    const group = document.createElement("section");
+    group.className = "space-y-2";
+    group.append(this.#detailsHeading(label));
+
+    const entries = Object.entries(values || {}).filter(([, value]) => value);
+    if (entries.length === 0) {
+      group.append(this.#emptyText());
+      return group;
+    }
+
+    const grid = document.createElement("dl");
+    grid.className = "grid grid-cols-2 gap-2";
+    entries.forEach(([key, value]) => {
+      grid.append(
+        this.#metricBlock(this.#metricLabel(key), value.formatted || value),
+      );
+    });
+    group.append(grid);
+    return group;
+  }
+
+  #goalGroup(label, counts = {}) {
+    const group = document.createElement("section");
+    group.className = "space-y-2";
+    group.append(this.#detailsHeading(label));
+
+    const entries = Object.entries(counts || {}).filter(
+      ([, count]) => count > 0,
+    );
+    if (entries.length === 0) {
+      group.append(this.#emptyText());
+      return group;
+    }
+
+    const list = document.createElement("div");
+    list.className = "flex flex-wrap gap-2";
+    entries.forEach(([status, count]) => {
+      const pill = document.createElement("span");
+      pill.className = "rounded-md bg-surface px-2 py-1 text-secondary text-xs";
+      pill.textContent = `${this.#humanize(status)} ${count}`;
+      list.append(pill);
+    });
+    group.append(list);
+    return group;
+  }
+
+  #riskGroup(label, risks = []) {
+    const group = document.createElement("section");
+    group.className = "space-y-2";
+    group.append(this.#detailsHeading(label));
+
+    if (!risks || risks.length === 0) {
+      group.append(this.#emptyText());
+      return group;
+    }
+
+    const list = document.createElement("div");
+    list.className = "flex flex-wrap gap-2";
+    risks.forEach((risk) => {
+      const pill = document.createElement("span");
+      pill.className =
+        "rounded-md bg-warning/10 px-2 py-1 text-warning text-xs";
+      pill.textContent = this.#humanize(risk);
+      list.append(pill);
+    });
+    group.append(list);
+    return group;
+  }
+
+  #forkFormForStack(stack, series) {
+    const labels = this.payload.labels?.forks || {};
+    const form = document.createElement("form");
+    form.className = "space-y-3 border-t border-primary pt-4";
+    form.addEventListener("submit", (event) => this.forkScenario(event));
+
+    const sourceIds = stack.source_scenario_ids || stack.scenario_ids || [];
+    if (sourceIds.length === 1) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "source_scenario_id";
+      input.value = sourceIds[0];
+      form.append(input);
+    } else if (sourceIds.length > 1) {
+      sourceIds.forEach((sourceId) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "source_scenario_ids[]";
+        input.value = sourceId;
+        form.append(input);
+      });
+    } else {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "source";
+      input.value = "baseline";
+      form.append(input);
+    }
+
+    form.append(
+      this.#detailsHeading(labels.heading || "Fork scenario"),
+      this.#readonlyField(
+        labels.source || "Source",
+        sourceIds.length > 0
+          ? stack.label
+          : labels.baseline || series.label || "Baseline",
+      ),
+    );
+
+    const field = document.createElement("label");
+    field.className = "block space-y-1";
+
+    const label = document.createElement("span");
+    label.className = "text-primary text-sm font-medium";
+    label.textContent = labels.name || "Name";
+
+    const input = document.createElement("input");
+    input.className =
+      "w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm";
+    input.name = "name";
+    input.required = true;
+    input.value = `${labels.default_name || "Canvas scenario"} - ${stack.label}`;
+
+    field.append(label, input);
+    form.append(field);
+
+    if (sourceIds.length > 0) {
+      const note = document.createElement("p");
+      note.className = "text-secondary text-xs";
+      note.textContent = labels.disabled_note || "";
+      form.append(note);
+    }
+
+    const errors = document.createElement("div");
+    errors.className =
+      "hidden rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-destructive text-xs";
+    errors.dataset.forecastCanvasFormErrors = "true";
+    form.append(errors);
+
+    const actions = document.createElement("div");
+    actions.className = "flex justify-end";
+
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.className =
+      "inline-flex items-center justify-center rounded-md button-bg-primary px-3 py-2 text-inverse text-sm font-medium hover:button-bg-primary-hover";
+    submit.textContent = labels.save || "Create fork";
+
+    actions.append(submit);
+    form.append(actions);
+    return form;
+  }
+
+  #readonlyField(label, value) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "rounded-md bg-surface px-3 py-2";
+    wrapper.append(this.#mutedText(label), this.#strongText(value));
+    return wrapper;
+  }
+
+  #emptyText() {
+    const text = document.createElement("p");
+    text.className = "text-secondary text-sm";
+    text.textContent = this.payload.labels?.inspector?.none || "None";
+    return text;
+  }
+
+  #metricLabel(key) {
+    return (
+      this.payload.metrics.find((metric) => metric.key === key)?.label ||
+      this.#humanize(key)
+    );
+  }
+
+  #humanize(value) {
+    return String(value || "")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
+  }
+
+  #appendScenarioTarget(scenario) {
+    if (!scenario?.id || !this.payload.draft_options) return;
+
+    const targets = this.payload.draft_options.scenario_targets || [];
+    if (targets.some((target) => target.id === scenario.id)) return;
+
+    targets.push(scenario);
+    this.payload.draft_options.scenario_targets = targets;
+  }
+
+  #renderForkSuccess(scenario, message) {
+    if (!this.hasDetailPanelTarget) return;
+
+    const labels = this.payload.labels?.forks || {};
+    const fragment = document.createDocumentFragment();
+    fragment.append(this.#detailsHeading(labels.heading || "Fork scenario"));
+
+    const notice = document.createElement("div");
+    notice.className = "rounded-md border border-primary bg-surface px-3 py-2";
+    notice.append(
+      this.#strongText(scenario.name),
+      this.#mutedText(message || labels.created || "Scenario created."),
+    );
+    fragment.append(notice);
+
+    if (scenario.edit_url) {
+      const link = document.createElement("a");
+      link.href = scenario.edit_url;
+      link.className =
+        "inline-flex items-center justify-center rounded-md border border-primary px-3 py-2 text-primary text-sm hover:bg-surface-inset";
+      link.textContent = labels.edit_scenario || "Edit scenario";
+      fragment.append(link);
+    }
+
+    this.detailPanelTarget.replaceChildren(fragment);
+  }
+
+  #renderFormErrors(form, errors) {
+    const target = form.querySelector("[data-forecast-canvas-form-errors]");
+    if (!target) return;
+
+    const messages = Object.entries(errors).flatMap(([field, fieldErrors]) => {
+      return fieldErrors.map((message) => `${field} ${message}`);
+    });
+    target.textContent = messages.join(" ");
+    target.classList.toggle("hidden", messages.length === 0);
   }
 
   #addDraftMarker(event) {
@@ -607,7 +1108,30 @@ export default class extends Controller {
     );
     startsOn.value = marker.date;
     dateLabel.textContent = formatShortDate(marker.dateObject);
+    this.#syncScenarioSelect(fragment);
     this.draftPanelTarget.replaceChildren(fragment);
+  }
+
+  #syncScenarioSelect(fragment) {
+    const select = fragment.querySelector(
+      "[name='forecast_event[forecast_scenario_id]']",
+    );
+    if (!select) return;
+
+    const globalOption = select
+      .querySelector("option[value='']")
+      ?.cloneNode(true);
+    select.replaceChildren();
+    if (globalOption) select.append(globalOption);
+
+    (this.payload.draft_options?.scenario_targets || []).forEach((scenario) => {
+      const option = document.createElement("option");
+      option.value = scenario.id;
+      option.textContent = scenario.status_label
+        ? `${scenario.label || scenario.name} (${scenario.status_label})`
+        : scenario.label || scenario.name;
+      select.append(option);
+    });
   }
 
   #renderDraftErrors(form, errors) {

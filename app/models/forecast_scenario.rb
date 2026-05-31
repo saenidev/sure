@@ -80,14 +80,18 @@ class ForecastScenario < ApplicationRecord
         created_by_user: user
       )
 
-      copy_forecast_events_into(copy, family)
-      copy_forecast_budget_overrides_into(copy, family)
-      copy_forecast_budget_plan_into(copy, family)
-      copy_forecast_goals_into(copy, family)
-      copy_forecast_account_liquidity_settings_into(copy, family)
+      copy_planning_children_into!(copy, family: family)
 
       copy
     end
+  end
+
+  def copy_planning_children_into!(copy, family:)
+    copy_forecast_events_into(copy, family)
+    copy_forecast_budget_overrides_into(copy, family)
+    copy_forecast_budget_plan_into(copy, family)
+    copy_forecast_goals_into(copy, family)
+    copy_forecast_account_liquidity_settings_into(copy, family)
   end
 
   private

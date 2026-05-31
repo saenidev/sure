@@ -38,9 +38,12 @@ module Forecast
         scenario: event.forecast_scenario&.name,
         effect_type: event.effect_type,
         status: event.status,
+        status_label: I18n.t("forecasts.events.statuses.#{event.status}", default: event.status.to_s.humanize),
         amount: event.amount&.to_f,
         formatted_amount: formatted_event_amount(event),
-        color: event.forecast_scenario&.color.presence || event_color(event)
+        effect_label: I18n.t("forecasts.events.effect_types.#{event.effect_type}", default: event.effect_type.to_s.humanize),
+        color: event.forecast_scenario&.color.presence || event_color(event),
+        edit_url: route_helpers.edit_forecast_event_path(event)
       }
     end
 
@@ -240,11 +243,17 @@ module Forecast
         runs.map do |run|
           months = months_for(run)
           last = months.last
+          scenarios = scenario_snapshots_for(run)
+          scenario_ids = scenarios.filter_map { |scenario| scenario["id"] || scenario[:id] }
+          scenario_names = scenarios.filter_map { |scenario| scenario["name"] || scenario[:name] }
           {
             id: run.scenario_stack_key.presence || "run_#{run.id}",
             label: stack_label(run),
             stack_key: run.scenario_stack_key,
-            scenario_ids: scenario_ids_for(run),
+            scenario_ids: scenario_ids,
+            source_scenario_id: scenario_ids.one? ? scenario_ids.first : nil,
+            source_scenario_ids: scenario_ids,
+            scenario_names: scenario_names,
             feasibility_status: run.feasibility_status,
             end_values: last ? {
               net_worth: money_payload(last.net_worth),
@@ -259,6 +268,7 @@ module Forecast
               liquid_balance: money_payload(months.map(&:liquid_balance).min),
               cash_runway_days: days_payload(months.filter_map(&:cash_runway_days).min)
             },
+            goal_status_counts: goal_status_counts(run),
             risk_flags: Array(run.risk_flags).map { |flag| flag.is_a?(Hash) ? flag["type"] : flag }.compact_blank.uniq
           }
         end
@@ -270,13 +280,16 @@ module Forecast
           currencies: [ workspace.currency ],
           create_event_url: route_helpers.forecast_canvas_drafts_path,
           fork_url: route_helpers.forecast_canvas_forks_path,
-          scenario_targets: family.forecast_scenarios.active.ordered.map do |scenario|
+          scenario_targets: family.forecast_scenarios.ordered.map do |scenario|
             {
               id: scenario.id,
               label: scenario.name,
+              status: scenario.status,
+              status_label: I18n.t("forecasts.scenarios.statuses.#{scenario.status}", default: scenario.status.humanize),
               starts_on: scenario.starts_on&.iso8601,
               ends_on: scenario.ends_on&.iso8601,
-              color: scenario.color
+              color: scenario.color,
+              edit_url: route_helpers.edit_forecast_scenario_path(scenario)
             }
           end
         }
@@ -284,13 +297,50 @@ module Forecast
 
       def labels
         {
+          source: {
+            latest_run: I18n.t("forecasts.canvas.source.latest_run", default: "Using the latest completed forecast run."),
+            preview: I18n.t("forecasts.canvas.source.preview", default: "Using preview data.")
+          },
           event_empty: I18n.t("forecasts.canvas.event_empty", default: "No dated events in this range."),
           line_empty: I18n.t("forecasts.canvas.line_empty", default: "Turn on at least one scenario."),
           metric_empty: I18n.t("forecasts.canvas.metric_empty", default: "No projection points for this metric."),
           selection_empty: I18n.t("forecasts.canvas.selection.empty", default: "Select a point"),
           draft: I18n.t("forecasts.canvas.selection.draft", default: "Draft marker"),
           preview: I18n.t("forecasts.canvas.preview_notice", default: "Preview data is shown because no completed projection exists yet."),
-          stale: I18n.t("forecasts.canvas.stale_notice", default: "Inputs changed after this forecast was generated.")
+          stale: I18n.t("forecasts.canvas.stale_notice", default: "Inputs changed after this forecast was generated."),
+          prototype: I18n.t("forecasts.canvas.prototype_label", default: "Preview"),
+          inspector: {
+            delta_label: I18n.t("forecasts.canvas.inspector.delta_label", default: "Vs baseline"),
+            no_delta: I18n.t("forecasts.canvas.inspector.no_delta", default: "Baseline series"),
+            metrics_heading: I18n.t("forecasts.canvas.inspector.metrics_heading", default: "Metric values"),
+            stack_heading: I18n.t("forecasts.canvas.inspector.stack_heading", default: "Scenario stack"),
+            end_heading: I18n.t("forecasts.canvas.inspector.end_heading", default: "End of horizon"),
+            low_heading: I18n.t("forecasts.canvas.inspector.low_heading", default: "Lowest point"),
+            goals_heading: I18n.t("forecasts.canvas.inspector.goals_heading", default: "Goal results"),
+            risks_heading: I18n.t("forecasts.canvas.inspector.risks_heading", default: "Risk flags"),
+            feasibility: I18n.t("forecasts.canvas.inspector.feasibility", default: "Feasibility"),
+            inspect: I18n.t("forecasts.canvas.inspector.inspect", default: "Inspect"),
+            none: I18n.t("forecasts.canvas.inspector.none", default: "None"),
+            event_heading: I18n.t("forecasts.canvas.inspector.event_heading", default: "Event details"),
+            edit_event: I18n.t("forecasts.canvas.inspector.edit_event", default: "Edit event"),
+            amount: I18n.t("forecasts.canvas.inspector.amount", default: "Amount"),
+            effect: I18n.t("forecasts.canvas.inspector.effect", default: "Effect"),
+            scenario: I18n.t("forecasts.canvas.inspector.scenario", default: "Scenario"),
+            status: I18n.t("forecasts.canvas.inspector.status", default: "Status")
+          },
+          forks: {
+            heading: I18n.t("forecasts.canvas.forks.heading", default: "Fork scenario"),
+            name: I18n.t("forecasts.canvas.forks.name", default: "Name"),
+            source: I18n.t("forecasts.canvas.forks.source", default: "Source"),
+            baseline: I18n.t("forecasts.canvas.forks.baseline", default: "Baseline"),
+            selected_stack: I18n.t("forecasts.canvas.forks.selected_stack", default: "Selected stack"),
+            save: I18n.t("forecasts.canvas.forks.save", default: "Create fork"),
+            created: I18n.t("forecasts.canvas.forks.created", default: "Scenario created. Regenerate the forecast to update projections."),
+            default_name: I18n.t("forecasts.canvas.forks.default_name", default: "Canvas scenario"),
+            default_stack_name: I18n.t("forecasts.canvas.forks.default_stack_name", default: "Canvas stack fork"),
+            disabled_note: I18n.t("forecasts.canvas.forks.disabled_note", default: "Forks copied from existing scenarios start disabled so they do not double-count until activated."),
+            edit_scenario: I18n.t("forecasts.canvas.forks.edit_scenario", default: "Edit scenario")
+          }
         }
       end
 
@@ -305,14 +355,28 @@ module Forecast
       def stack_label(run)
         return I18n.t("forecasts.comparison.baseline_label") if run.scenario_stack_key == Forecast::Workspace::BASELINE_STACK_KEY
 
-        scenarios = run.scenario_stack_snapshot.is_a?(Hash) ? Array(run.scenario_stack_snapshot["scenarios"]) : []
-        names = scenarios.map { |scenario| scenario["name"] }.compact_blank
+        names = scenario_snapshots_for(run).filter_map { |scenario| scenario["name"] || scenario[:name] }
         names.any? ? names.join(" + ") : run.scenario_stack_key.to_s.humanize
       end
 
       def scenario_ids_for(run)
-        scenarios = run.scenario_stack_snapshot.is_a?(Hash) ? Array(run.scenario_stack_snapshot["scenarios"]) : []
-        scenarios.filter_map { |scenario| scenario["id"] || scenario[:id] }
+        scenario_snapshots_for(run).filter_map { |scenario| scenario["id"] || scenario[:id] }
+      end
+
+      def scenario_snapshots_for(run)
+        run.scenario_stack_snapshot.is_a?(Hash) ? Array(run.scenario_stack_snapshot["scenarios"]) : []
+      end
+
+      def goal_status_counts(run)
+        evaluations = if run.forecast_goal_evaluations.loaded?
+          run.forecast_goal_evaluations.to_a
+        else
+          run.forecast_goal_evaluations.to_a
+        end
+
+        ForecastGoalEvaluation::STATUSES.to_h do |status|
+          [ status, evaluations.count { |evaluation| evaluation.status == status } ]
+        end
       end
 
       def stale?

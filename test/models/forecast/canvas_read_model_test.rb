@@ -128,4 +128,66 @@ class Forecast::CanvasReadModelTest < ActiveSupport::TestCase
     assert_equal 2_000, move.dig(:metrics, "net_worth").first.fetch(:delta_from_baseline)
     assert_equal "$2,000.00", move.dig(:metrics, "net_worth").first.fetch(:formatted_delta)
   end
+
+  test "includes stack inspector metadata and all scenario draft targets" do
+    active = @family.forecast_scenarios.create!(name: "Move", status: "active", approval_status: "manual")
+    disabled = @family.forecast_scenarios.create!(name: "Pause", status: "disabled", approval_status: "manual")
+    group = @family.forecast_run_groups.create!(
+      user: @user,
+      name: "Manual run",
+      run_type: "manual",
+      currency: @family.currency,
+      horizon_start_on: Date.current,
+      horizon_end_on: Date.current + 36.months,
+      daily_until_on: Date.current + 89.days
+    )
+    run = group.forecast_runs.create!(
+      family: @family,
+      user: @user,
+      scenario_stack_key: "move",
+      scenario_stack_snapshot: {
+        "key" => "move",
+        "scenarios" => [
+          { "id" => active.id, "name" => active.name },
+          { "id" => disabled.id, "name" => disabled.name }
+        ]
+      },
+      status: "running",
+      feasibility_status: "warn",
+      currency: @family.currency,
+      risk_flags: [ { "type" => "negative_cash" } ],
+      input_snapshot: forecast_valid_input_snapshot(@family)
+    )
+    period_start = Date.current
+    run.forecast_months.create!(
+      period_start_on: period_start,
+      period_end_on: period_start.end_of_month,
+      precision: "monthly",
+      scenario_stack_key: "move",
+      currency: @family.currency,
+      cash_balance: -100,
+      liquid_balance: 500,
+      portfolio_value: 1000,
+      debt_balance: 200,
+      net_worth: 1300,
+      risk_flags: []
+    )
+    run.forecast_goal_evaluations.create!(
+      goal_key: "forecast_goal:test",
+      scenario_stack_key: "move",
+      status: "pass",
+      goal_snapshot: { "name" => "Emergency fund" }
+    )
+    run.update!(status: "completed", finished_at: Time.current)
+    group.update!(status: "completed", finished_at: Time.current)
+
+    payload = Forecast::CanvasReadModel.new(Forecast::Workspace.new(family: @family)).payload
+    stack = payload.fetch(:stacks).find { |candidate| candidate.fetch(:id) == "move" }
+
+    assert_equal [ active.id, disabled.id ].map(&:to_s), stack.fetch(:source_scenario_ids).map(&:to_s)
+    assert_equal "warn", stack.fetch(:feasibility_status)
+    assert_equal 1, stack.fetch(:goal_status_counts).fetch("pass")
+    assert_includes stack.fetch(:risk_flags), "negative_cash"
+    assert_includes payload.dig(:draft_options, :scenario_targets).map { |scenario| scenario.fetch(:id) }, disabled.id
+  end
 end

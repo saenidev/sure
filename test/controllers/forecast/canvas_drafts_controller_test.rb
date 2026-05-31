@@ -111,4 +111,43 @@ class Forecast::CanvasDraftsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "active", scenario.status
     assert_nil scenario.parent_scenario_id
   end
+
+  test "fork combines selected stack scenarios into a disabled scenario copy" do
+    second = @family.forecast_scenarios.create!(name: "Sabbatical", status: "active", approval_status: "manual")
+    second.forecast_events.create!(
+      family: @family,
+      name: "Travel",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 200,
+      currency: @family.currency,
+      starts_on: Date.current,
+      status: "planned"
+    )
+    @scenario.forecast_events.create!(
+      family: @family,
+      name: "Rent increase",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 300,
+      currency: @family.currency,
+      starts_on: Date.current,
+      status: "planned"
+    )
+
+    assert_difference "@family.forecast_scenarios.count", 1 do
+      post forecast_canvas_forks_path(format: :json), params: {
+        source_scenario_ids: [ @scenario.id, second.id ],
+        name: "Stack fork"
+      }
+    end
+
+    assert_response :created
+    copy = @family.forecast_scenarios.order(:created_at).last
+    assert_equal "Stack fork", copy.name
+    assert_equal "disabled", copy.status
+    assert_equal 2, copy.forecast_events.count
+    assert_equal [ @scenario.id, second.id ].map(&:to_s).sort,
+      copy.source_metadata.dig("canvas_fork", "source_scenario_ids").map(&:to_s).sort
+  end
 end

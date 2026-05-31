@@ -17,6 +17,7 @@ class Forecast::CanvasControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", forecast_path, text: /Back to forecast/i
     assert_select "[data-forecast-canvas-chart-target='chart']"
     assert_select "[data-forecast-canvas-chart-target='inspector']"
+    assert_select "[data-forecast-canvas-chart-target='detailPanel']"
     assert_select "button[data-action*='forecast-canvas-chart#selectMetric']", minimum: 4
     assert_select "template[data-forecast-canvas-chart-target='draftTemplate']"
     assert_select "form[data-forecast-canvas-chart-target='draftForm']"
