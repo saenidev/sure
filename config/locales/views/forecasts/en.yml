@@ -986,6 +986,7 @@ en:
           one: "%{count} saved row"
           other: "%{count} saved rows"
         apply: "Use template"
+        copy: "Copy"
         delete: "Delete"
         empty_title: "No budget templates"
         empty_body: "Save a forecast budget as a template to reuse its starting values."
@@ -1203,6 +1204,9 @@ en:
       apply:
         success: "Applied \"%{name}\" as a disabled forecast budget scenario."
         error: "We could not apply that budget template: %{message}"
+      duplicate:
+        success: "Budget template \"%{name}\" copied."
+        error: "We could not copy that budget template: %{message}"
       destroy:
         success: "Budget template deleted."
     budget_overrides:

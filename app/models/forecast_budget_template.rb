@@ -5,6 +5,31 @@ class ForecastBudgetTemplate < ApplicationRecord
   validates :name, :currency, presence: true
   validate :family_present
 
+  def duplicate_for_family!(family:, name: nil)
+    family.forecast_budget_templates.transaction do
+      copy = family.forecast_budget_templates.create!(
+        name: name.presence || "#{self.name} (copy)",
+        description: description,
+        currency: currency,
+        source_metadata: source_metadata
+      )
+
+      forecast_budget_template_amounts.find_each do |amount|
+        copy.forecast_budget_template_amounts.create!(
+          family: family,
+          category: amount.category,
+          amount_type: amount.amount_type,
+          amount: amount.amount,
+          currency: amount.currency,
+          note: amount.note,
+          source_metadata: amount.source_metadata
+        )
+      end
+
+      copy
+    end
+  end
+
   def apply_to_family!(family:, user:)
     horizon = ForecastBudgetPlan.default_horizon_for(family)
     family.forecast_budget_plans.transaction do

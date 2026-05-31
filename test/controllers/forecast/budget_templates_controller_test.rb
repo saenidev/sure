@@ -33,6 +33,26 @@ class Forecast::BudgetTemplatesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 6_200.to_d, plan.effective_amounts_for(plan.base_period_start_on).fetch([ "expected_income", nil ]).amount
   end
 
+  test "duplicate copies a forecast budget template and its amount rows" do
+    @template.forecast_budget_template_amounts.create!(
+      family: @family,
+      amount_type: "expected_income",
+      amount: 6_200,
+      currency: @family.currency
+    )
+
+    assert_difference "@family.forecast_budget_templates.count", 1 do
+      post duplicate_forecast_budget_template_path(@template)
+    end
+
+    copy = @family.forecast_budget_templates.order(:created_at).last
+    assert_redirected_to forecast_budget_plans_path
+    assert_equal "Lean template (copy)", copy.name
+    assert_equal @template.description, copy.description
+    assert_equal 1, copy.forecast_budget_template_amounts.count
+    assert_equal 6_200.to_d, copy.forecast_budget_template_amounts.first.amount
+  end
+
   test "destroy removes a current-family template" do
     assert_difference "@family.forecast_budget_templates.count", -1 do
       delete forecast_budget_template_path(@template)

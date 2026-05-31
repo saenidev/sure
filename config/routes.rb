@@ -331,6 +331,7 @@ Rails.application.routes.draw do
     resources :budget_templates, only: %i[index destroy] do
       member do
         post :apply
+        post :duplicate
       end
     end
     resources :budget_overrides

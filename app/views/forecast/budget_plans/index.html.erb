@@ -103,6 +103,14 @@
                   size: :sm
                 ) %>
                 <%= render DS::Button.new(
+                  text: t("forecasts.budget_templates.index.copy"),
+                  icon: "copy",
+                  href: duplicate_forecast_budget_template_path(template),
+                  method: :post,
+                  variant: "ghost",
+                  size: :sm
+                ) %>
+                <%= render DS::Button.new(
                   text: t("forecasts.budget_templates.index.delete"),
                   icon: "trash-2",
                   href: forecast_budget_template_path(template),
