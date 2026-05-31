@@ -134,13 +134,8 @@ class Assistant::Function::GetHoldings < Assistant::Function
         accounts = accounts.where(name: params["accounts"])
       end
 
-      holdings = Holding.where(account: accounts)
-        .where(
-          id: Holding.where(account: accounts)
-            .select("DISTINCT ON (account_id, security_id) id")
-            .where.not(qty: 0)
-            .order(:account_id, :security_id, date: :desc)
-        )
+      holding_ids = accounts.flat_map { |account| account.current_holdings.pluck(:id) }
+      holdings = Holding.where(id: holding_ids)
 
       if params["securities"].present?
         security_ids = family.securities.where(ticker: params["securities"]).pluck(:id)
@@ -159,9 +154,6 @@ class Assistant::Function::GetHoldings < Assistant::Function
     end
 
     def family_security_tickers
-      @family_security_tickers ||= Security
-        .where(id: Holding.where(account_id: investment_accounts.select(:id)).select(:security_id))
-        .distinct
-        .pluck(:ticker)
+      @family_security_tickers ||= build_holdings_query({}).joins(:security).distinct.pluck("securities.ticker")
     end
 end

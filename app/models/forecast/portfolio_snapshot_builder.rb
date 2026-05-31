@@ -36,21 +36,9 @@ module Forecast
       end
 
       def current_holdings
-        investment_accounts.includes(:holdings).flat_map { |account| current_holdings_for_account(account) }
-      end
-
-      def current_holdings_for_account(account)
-        scope =
-          if (provider_snapshot_date = account.latest_provider_holdings_snapshot_date)
-            account.holdings.where.not(account_provider_id: nil).where(date: provider_snapshot_date)
-          else
-            account.holdings
-              .where(currency: account.currency)
-              .select("DISTINCT ON (security_id) holdings.*")
-              .order(:security_id, date: :desc, id: :desc)
-          end
-
-        scope.where.not(qty: 0).includes(:security, :account).to_a.sort_by { |holding| [ holding.account_id, holding.security_id.to_s, holding.date || Date.new(0), holding.id ] }
+        investment_accounts.flat_map do |account|
+          account.current_holdings.includes(:security, :account).to_a
+        end.sort_by { |holding| [ holding.account_id, holding.security_id.to_s, holding.date || Date.new(0), holding.id ] }
       end
 
       def converted_account(account)

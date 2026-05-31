@@ -383,6 +383,63 @@ class AccountTest < ActiveSupport::TestCase
     assert_equal %w[CHF EUR], account.current_holdings.pluck(:currency).sort
   end
 
+  test "current_holdings does not resurrect an older position after latest zero quantity snapshot" do
+    account = @family.accounts.create!(
+      owner: @admin,
+      name: "Manual Brokerage",
+      balance: 1000,
+      cash_balance: 100,
+      currency: "USD",
+      accountable: Investment.new
+    )
+    security = Security.create!(ticker: "AAPL", name: "Apple")
+
+    account.holdings.create!(
+      security: security,
+      date: 2.days.ago.to_date,
+      qty: 5,
+      price: 100,
+      amount: 500,
+      currency: "USD"
+    )
+    account.holdings.create!(
+      security: security,
+      date: Date.current,
+      qty: 0,
+      price: 100,
+      amount: 0,
+      currency: "USD"
+    )
+
+    assert_empty account.current_holdings
+  end
+
+  test "current_holdings returns empty for all cash linked investment account with stale provider holdings" do
+    account = @family.accounts.create!(
+      owner: @admin,
+      name: "Linked All Cash Brokerage",
+      balance: 1000,
+      cash_balance: 1000,
+      currency: "USD",
+      accountable: Investment.new
+    )
+    plaid_account = plaid_accounts(:one)
+    account_provider = AccountProvider.create!(account: account, provider: plaid_account)
+    security = Security.create!(ticker: "MSFT", name: "Microsoft")
+
+    account.holdings.create!(
+      security: security,
+      date: 1.week.ago.to_date,
+      qty: 3,
+      price: 200,
+      amount: 600,
+      currency: "USD",
+      account_provider: account_provider
+    )
+
+    assert_empty account.current_holdings
+  end
+
   test "manual debt account helper is true only for unlinked liabilities" do
     loan_account = accounts(:loan)
 

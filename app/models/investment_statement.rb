@@ -69,17 +69,10 @@ class InvestmentStatement
   def current_holdings
     return Holding.none unless investment_accounts.any?
 
-    # Get the latest holding for each security per account
-    Holding
-      .where(account_id: investment_account_ids)
-      .where.not(qty: 0)
-      .where(
-        id: Holding
-          .where(account_id: investment_account_ids)
-          .select("DISTINCT ON (holdings.account_id, holdings.security_id) holdings.id")
-          .order(Arel.sql("holdings.account_id, holdings.security_id, holdings.date DESC"))
-      )
-      .includes(:security, :account)
+    holding_ids = investment_accounts.flat_map { |account| account.current_holdings.pluck(:id) }
+    return Holding.none if holding_ids.empty?
+
+    Holding.where(id: holding_ids).includes(:security, :account)
   end
 
   # Top holdings by family-currency value

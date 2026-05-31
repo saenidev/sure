@@ -391,6 +391,8 @@ class Account < ApplicationRecord
   end
 
   def current_holdings
+    return holdings.none if all_cash_portfolio?
+
     if (provider_snapshot_date = latest_provider_holdings_snapshot_date)
       holdings
         .where.not(account_provider_id: nil)
@@ -412,6 +414,11 @@ class Account < ApplicationRecord
 
   def latest_provider_holdings_snapshot_date
     holdings.where.not(account_provider_id: nil).maximum(:date)
+  end
+
+  def all_cash_portfolio?
+    %w[Investment Crypto].include?(accountable_type) &&
+      balance.to_d == cash_balance.to_d
   end
 
   def start_date

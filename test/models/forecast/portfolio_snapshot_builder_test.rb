@@ -59,4 +59,41 @@ class Forecast::PortfolioSnapshotBuilderTest < ActiveSupport::TestCase
 
     assert_equal run_date, result.fetch(:market_data_quality).fetch(:as_of)
   end
+
+  test "omits stale provider holdings when linked investment account is all cash" do
+    family = families(:empty)
+    user = users(:empty)
+    account = family.accounts.create!(
+      owner: user,
+      name: "All Cash Brokerage",
+      balance: 1000,
+      cash_balance: 1000,
+      currency: "USD",
+      accountable: Investment.new
+    )
+    plaid_account = plaid_accounts(:one)
+    account_provider = AccountProvider.create!(account: account, provider: plaid_account)
+    security = Security.create!(ticker: "AAPL", name: "Apple")
+
+    account.holdings.create!(
+      security: security,
+      date: 1.week.ago.to_date,
+      qty: 4,
+      price: 100,
+      amount: 400,
+      currency: "USD",
+      account_provider: account_provider
+    )
+
+    result = Forecast::PortfolioSnapshotBuilder.new(
+      family: family,
+      user: user,
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      run_date: Date.current
+    ).call
+
+    assert_equal 1000.to_d, result.fetch(:portfolio_value)
+    assert_equal 1000.to_d, result.fetch(:cash_balance)
+    assert_empty result.fetch(:holdings)
+  end
 end
