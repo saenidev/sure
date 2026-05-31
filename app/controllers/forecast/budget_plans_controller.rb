@@ -119,6 +119,7 @@ module Forecast
 
       def load_builder_context
         @rows = amount_rows
+        @budget_plan_summary = budget_plan_summary(@rows)
         load_dependency_options
       end
 
@@ -288,8 +289,28 @@ module Forecast
           exact_amount: exact,
           effective_amount: effective,
           value: value,
-          slider_max: slider_max
+          input_value: input_value_for(value),
+          slider_max: input_value_for(slider_max)
         }
+      end
+
+      def budget_plan_summary(rows)
+        income = rows.select { |row| row.fetch(:amount_type) == "expected_income" }.sum { |row| row.fetch(:value).to_d }
+        spending = rows.reject { |row| row.fetch(:amount_type) == "expected_income" }.sum { |row| row.fetch(:value).to_d }
+
+        {
+          income: income,
+          spending: spending,
+          net: income - spending,
+          changed_count: rows.count { |row| row.fetch(:exact_amount).present? },
+          projected_count: rows.count { |row| row.fetch(:exact_amount).blank? && row.fetch(:effective_amount).present? },
+          inherited_count: rows.count { |row| row.fetch(:exact_amount).blank? && row.fetch(:effective_amount).blank? }
+        }
+      end
+
+      def input_value_for(value)
+        decimal = value.to_d
+        decimal == decimal.to_i ? decimal.to_i : decimal
       end
 
       def inherited_values

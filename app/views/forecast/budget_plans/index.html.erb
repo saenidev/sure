@@ -1,51 +1,104 @@
 <% content_for :title, t("forecasts.budget_plans.index.title") %>
 
-<div class="space-y-6 pb-6 lg:pb-12">
-  <header class="flex flex-wrap items-center justify-between gap-3">
-    <div class="space-y-1">
-      <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.budget_plans.index.title") %></h1>
-      <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.index.description") %></p>
+<div class="pb-6 lg:pb-12">
+  <header class="mb-6 flex flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
+    <div class="max-w-3xl space-y-2">
+      <p class="text-secondary text-xs font-medium uppercase tracking-wide"><%= t("forecasts.budget_plans.index.eyebrow") %></p>
+      <div class="space-y-1">
+        <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.budget_plans.index.title") %></h1>
+        <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.index.description") %></p>
+      </div>
     </div>
 
-    <%= render DS::Link.new(
-      text: t("forecasts.budget_plans.index.new"),
-      icon: "plus",
-      href: new_forecast_budget_plan_path
-    ) %>
+    <div class="flex flex-wrap items-center gap-2">
+      <%= render DS::Link.new(
+        text: t("forecasts.budget_plans.index.legacy_overrides"),
+        icon: "table-2",
+        href: forecast_budget_overrides_path,
+        variant: "outline",
+        size: :sm
+      ) %>
+      <%= render DS::Link.new(
+        text: t("forecasts.budget_plans.index.new"),
+        icon: "plus",
+        href: new_forecast_budget_plan_path
+      ) %>
+    </div>
   </header>
 
-  <section class="space-y-3" aria-labelledby="forecast-budget-plans-heading">
-    <div class="flex items-center justify-between gap-3">
-      <h2 id="forecast-budget-plans-heading" class="text-primary text-base font-medium"><%= t("forecasts.budget_plans.index.plans_heading") %></h2>
+  <section class="mb-6 grid gap-3 2xl:grid-cols-3" aria-label="<%= t("forecasts.budget_plans.index.summary_label") %>">
+    <div class="rounded-lg border border-primary bg-container p-4">
+      <p class="text-secondary text-xs"><%= t("forecasts.budget_plans.index.plan_count_label") %></p>
+      <p class="mt-1 text-primary text-2xl font-semibold tabular-nums"><%= @plans.size %></p>
+    </div>
+    <div class="rounded-lg border border-primary bg-container p-4">
+      <p class="text-secondary text-xs"><%= t("forecasts.budget_plans.index.template_count_label") %></p>
+      <p class="mt-1 text-primary text-2xl font-semibold tabular-nums"><%= @templates.size %></p>
+    </div>
+    <div class="rounded-lg border border-primary bg-container p-4">
+      <p class="text-secondary text-xs"><%= t("forecasts.budget_plans.index.next_step_label") %></p>
+      <p class="mt-1 text-primary text-sm font-medium"><%= t("forecasts.budget_plans.index.next_step") %></p>
+    </div>
+  </section>
+
+  <section class="mb-8 space-y-3" aria-labelledby="forecast-budget-plans-heading">
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 id="forecast-budget-plans-heading" class="text-primary text-base font-medium"><%= t("forecasts.budget_plans.index.plans_heading") %></h2>
+        <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.index.plans_description") %></p>
+      </div>
       <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.index.plan_count", count: @plans.size) %></p>
     </div>
 
     <% if @plans.any? %>
-      <div class="divide-y divide-primary rounded-xl border border-primary bg-container overflow-hidden">
+      <div class="divide-y divide-primary overflow-hidden rounded-xl border border-primary bg-container" aria-label="<%= t("forecasts.budget_plans.index.plans_caption") %>">
         <% @plans.each do |plan| %>
-          <article class="p-4" data-testid="forecast-budget-plan">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="min-w-0 space-y-2">
+          <% scenario = plan.forecast_scenario %>
+          <% activation = plan.activation_metadata || {} %>
+          <article class="p-4 hover:bg-surface-hover" data-testid="forecast-budget-plan">
+            <div class="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
+              <div class="min-w-0 space-y-3">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-primary text-sm font-medium"><%= plan.forecast_scenario.name %></h3>
+                  <h3 class="text-primary text-base font-medium"><%= scenario.name %></h3>
                   <%= render DS::Pill.new(
-                    label: t("forecasts.scenarios.statuses.#{plan.forecast_scenario.status}"),
-                    tone: plan.forecast_scenario.active? ? :indigo : :gray,
+                    label: t("forecasts.scenarios.statuses.#{scenario.status}"),
+                    tone: scenario.active? ? :indigo : :gray,
                     show_dot: false
                   ) %>
                 </div>
-                <% if plan.forecast_scenario.description.present? %>
-                  <p class="text-secondary text-sm line-clamp-2"><%= plan.forecast_scenario.description %></p>
+                <% if scenario.description.present? %>
+                  <p class="text-secondary text-sm leading-5 line-clamp-2"><%= scenario.description %></p>
                 <% end %>
-                <p class="text-secondary text-xs">
-                  <%= t("forecasts.budget_plans.index.timeline",
-                        start_date: l(plan.horizon_start_on, format: :long),
-                        end_date: l(plan.horizon_end_on, format: :long),
-                        count: plan.forecast_budget_plan_amounts.size) %>
-                </p>
+                <dl class="grid gap-3 text-sm 2xl:grid-cols-3">
+                  <div>
+                    <dt class="text-secondary text-xs"><%= t("forecasts.budget_plans.index.scenario_window_column") %></dt>
+                    <dd class="mt-1 text-primary tabular-nums">
+                      <% if scenario.starts_on.present? && scenario.ends_on.present? %>
+                        <%= t("forecasts.budget_plans.index.date_range",
+                              start_date: l(scenario.starts_on, format: :long),
+                              end_date: l(scenario.ends_on, format: :long)) %>
+                      <% else %>
+                        <%= t("forecasts.budget_plans.index.no_window") %>
+                      <% end %>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="text-secondary text-xs"><%= t("forecasts.budget_plans.index.budget_window_column") %></dt>
+                    <dd class="mt-1 text-primary tabular-nums">
+                      <%= t("forecasts.budget_plans.index.date_range",
+                            start_date: l(plan.horizon_start_on, format: :long),
+                            end_date: l(plan.horizon_end_on, format: :long)) %>
+                    </dd>
+                    <dd class="mt-1 text-secondary text-xs"><%= t("forecasts.budget_plans.index.change_points", count: plan.forecast_budget_plan_amounts.size) %></dd>
+                  </div>
+                  <div>
+                    <dt class="text-secondary text-xs"><%= t("forecasts.budget_plans.index.activation_column") %></dt>
+                    <dd class="mt-1 text-primary"><%= activation["trigger"].presence || activation["conditions"].presence || t("forecasts.budget_plans.index.no_activation") %></dd>
+                  </div>
+                </dl>
               </div>
 
-              <div class="flex flex-wrap items-center gap-2">
+              <div class="flex shrink-0 flex-wrap items-center gap-2">
                 <%= render DS::Link.new(
                   text: t("forecasts.budget_plans.index.edit"),
                   icon: "sliders-horizontal",
@@ -67,34 +120,35 @@
         <% end %>
       </div>
     <% else %>
-      <div class="rounded-xl border border-primary bg-container p-5">
+      <div class="rounded-xl border border-primary bg-container p-6">
         <p class="text-primary text-sm font-medium"><%= t("forecasts.budget_plans.index.empty_title") %></p>
-        <p class="mt-1 text-secondary text-sm"><%= t("forecasts.budget_plans.index.empty_body") %></p>
+        <p class="mt-1 max-w-2xl text-secondary text-sm"><%= t("forecasts.budget_plans.index.empty_body") %></p>
       </div>
     <% end %>
   </section>
 
   <section class="space-y-3" aria-labelledby="forecast-budget-templates-heading">
-    <div class="flex items-center justify-between gap-3">
-      <h2 id="forecast-budget-templates-heading" class="text-primary text-base font-medium"><%= t("forecasts.budget_templates.index.title") %></h2>
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 id="forecast-budget-templates-heading" class="text-primary text-base font-medium"><%= t("forecasts.budget_templates.index.title") %></h2>
+        <p class="text-secondary text-sm"><%= t("forecasts.budget_templates.index.description") %></p>
+      </div>
       <p class="text-secondary text-sm"><%= t("forecasts.budget_templates.index.template_count", count: @templates.size) %></p>
     </div>
 
     <% if @templates.any? %>
-      <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <div class="divide-y divide-primary overflow-hidden rounded-xl border border-primary bg-container" aria-label="<%= t("forecasts.budget_templates.index.caption") %>">
         <% @templates.each do |template| %>
-          <article class="rounded-xl border border-primary bg-container p-4" data-testid="forecast-budget-template">
-            <div class="flex items-start justify-between gap-3">
+          <article class="p-4 hover:bg-surface-hover" data-testid="forecast-budget-template">
+            <div class="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
               <div class="min-w-0">
-                <h3 class="text-primary text-sm font-medium"><%= template.name %></h3>
+                <h3 class="text-primary text-base font-medium"><%= template.name %></h3>
                 <% if template.description.present? %>
-                  <p class="mt-1 text-secondary text-sm line-clamp-2"><%= template.description %></p>
+                  <p class="mt-1 text-secondary text-sm leading-5 line-clamp-2"><%= template.description %></p>
                 <% end %>
-                <p class="mt-2 text-secondary text-xs">
-                  <%= t("forecasts.budget_templates.index.amount_count", count: template.forecast_budget_template_amounts.size) %>
-                </p>
+                <p class="mt-2 text-secondary text-xs"><%= t("forecasts.budget_templates.index.amount_count", count: template.forecast_budget_template_amounts.size) %></p>
               </div>
-              <div class="flex shrink-0 items-center gap-2">
+              <div class="flex shrink-0 flex-wrap items-center gap-2">
                 <%= render DS::Button.new(
                   text: t("forecasts.budget_templates.index.apply"),
                   icon: "file-plus-2",
@@ -124,20 +178,10 @@
         <% end %>
       </div>
     <% else %>
-      <div class="rounded-xl border border-primary bg-container p-5">
+      <div class="rounded-xl border border-primary bg-container p-6">
         <p class="text-primary text-sm font-medium"><%= t("forecasts.budget_templates.index.empty_title") %></p>
-        <p class="mt-1 text-secondary text-sm"><%= t("forecasts.budget_templates.index.empty_body") %></p>
+        <p class="mt-1 max-w-2xl text-secondary text-sm"><%= t("forecasts.budget_templates.index.empty_body") %></p>
       </div>
     <% end %>
   </section>
-
-  <div class="border-t border-primary pt-4">
-    <%= render DS::Link.new(
-      text: t("forecasts.budget_plans.index.legacy_overrides"),
-      icon: "table-2",
-      href: forecast_budget_overrides_path,
-      variant: "outline",
-      size: :sm
-    ) %>
-  </div>
 </div>
