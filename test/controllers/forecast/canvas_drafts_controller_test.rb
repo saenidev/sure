@@ -33,6 +33,90 @@ class Forecast::CanvasDraftsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "additive", event.behavior
   end
 
+  test "create persists recurring categorized event details" do
+    assert_difference "@family.forecast_events.count", 1 do
+      post forecast_canvas_drafts_path(format: :json), params: {
+        forecast_event: {
+          name: "School tuition",
+          effect_type: "expense",
+          amount: "1200",
+          currency: @family.currency,
+          starts_on: Date.current.to_s,
+          ends_on: (Date.current + 1.year).to_s,
+          recurring: "1",
+          recurrence_rule: {
+            frequency: "monthly",
+            interval: "2",
+            day_of_month: "15"
+          },
+          category_id: categories(:food_and_drink).id,
+          status: "accepted",
+          probability_weight: "0.7",
+          description: "Private school scenario"
+        }
+      }
+    end
+
+    assert_response :created
+    event = @family.forecast_events.order(:created_at).last
+    assert_equal categories(:food_and_drink).id, event.category_id
+    assert_equal({ "frequency" => "monthly", "interval" => 2, "day_of_month" => 15 }, event.recurrence_rule)
+    assert_equal Date.current + 1.year, event.ends_on
+    assert_equal BigDecimal("0.7"), event.probability_weight
+    assert_equal "Private school scenario", event.description
+    assert_equal "accepted", event.status
+  end
+
+  test "create persists transfer account fields" do
+    assert_difference "@family.forecast_events.count", 1 do
+      post forecast_canvas_drafts_path(format: :json), params: {
+        forecast_event: {
+          name: "Move cash",
+          effect_type: "transfer",
+          amount: "250",
+          currency: @family.currency,
+          starts_on: Date.current.to_s,
+          status: "planned",
+          account_id: accounts(:depository).id,
+          destination_account_id: accounts(:investment).id
+        }
+      }
+    end
+
+    assert_response :created
+    event = @family.forecast_events.order(:created_at).last
+    assert_equal accounts(:depository).id, event.account_id
+    assert_equal accounts(:investment).id, event.destination_account_id
+  end
+
+  test "create can target a new canvas scenario" do
+    assert_difference "@family.forecast_scenarios.count", 1 do
+      assert_difference "@family.forecast_events.count", 1 do
+        post forecast_canvas_drafts_path(format: :json), params: {
+          forecast_event: {
+            name: "Relocation cost",
+            effect_type: "expense",
+            amount: "5000",
+            currency: @family.currency,
+            starts_on: Date.current.to_s,
+            status: "planned",
+            scenario_target: "__new__",
+            new_scenario_name: "Canvas move"
+          }
+        }
+      end
+    end
+
+    assert_response :created
+    scenario = @family.forecast_scenarios.order(:created_at).last
+    event = @family.forecast_events.order(:created_at).last
+    assert_equal "Canvas move", scenario.name
+    assert_equal "active", scenario.status
+    assert_equal "manual", scenario.approval_status
+    assert_equal scenario.id, event.forecast_scenario_id
+    assert_equal scenario.id, JSON.parse(response.body).dig("scenario", "id")
+  end
+
   test "create rejects invalid draft without persisting" do
     assert_no_difference "@family.forecast_events.count" do
       post forecast_canvas_drafts_path(format: :json), params: {

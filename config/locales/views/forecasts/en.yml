@@ -145,6 +145,8 @@ en:
         effect: "Effect"
         scenario: "Scenario"
         global: "Global"
+        new_scenario: "New scenario"
+        new_scenario_name: "Scenario name"
         amount: "Amount"
         currency: "Currency"
         save: "Save event"

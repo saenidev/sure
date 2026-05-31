@@ -8,6 +8,7 @@ module Forecast
       "var(--color-cyan-600)",
       "var(--color-indigo-600)"
     ].freeze
+    NEW_SCENARIO_VALUE = "__new__".freeze
 
     METRICS = [
       [ "net_worth", :money ],
@@ -277,9 +278,15 @@ module Forecast
       def draft_options
         {
           effect_types: ForecastEvent::EFFECT_TYPES,
+          amount_effect_types: ForecastEvent::AMOUNT_EFFECT_TYPES,
+          category_effect_types: %w[income expense],
+          transfer_effect_types: %w[transfer],
+          statuses: ForecastEvent::STATUSES,
+          recurrence_frequencies: %w[weekly monthly],
           currencies: [ workspace.currency ],
           create_event_url: route_helpers.forecast_canvas_drafts_path,
           fork_url: route_helpers.forecast_canvas_forks_path,
+          new_scenario_value: NEW_SCENARIO_VALUE,
           scenario_targets: family.forecast_scenarios.ordered.map do |scenario|
             {
               id: scenario.id,
@@ -290,6 +297,20 @@ module Forecast
               ends_on: scenario.ends_on&.iso8601,
               color: scenario.color,
               edit_url: route_helpers.edit_forecast_scenario_path(scenario)
+            }
+          end,
+          accounts: family.accounts.visible.alphabetically.map do |account|
+            {
+              id: account.id,
+              label: account.name,
+              currency: account.currency
+            }
+          end,
+          categories: family.categories.alphabetically.map do |category|
+            {
+              id: category.id,
+              label: category.name,
+              color: category.color
             }
           end
         }

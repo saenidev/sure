@@ -1,15 +1,25 @@
 module Forecast
   class CanvasDraftsController < BaseController
     def create
-      @event = @family.forecast_events.new(event_params)
-      @event.behavior = "additive"
-      @event.status = "planned" if @event.status.blank?
-      @event.currency = @family.currency if @event.currency.blank?
-      @event.probability_weight = 1.0 if @event.probability_weight.blank?
+      attributes = event_params
+      @scenario = nil
+      @event = nil
 
-      if @event.save
+      ForecastEvent.transaction do
+        @scenario = resolve_scenario_target!(attributes)
+        @event = @family.forecast_events.new(attributes)
+        @event.behavior = "additive"
+        @event.status = "planned" if @event.status.blank?
+        @event.currency = @family.currency if @event.currency.blank?
+        @event.probability_weight = 1.0 if @event.probability_weight.blank?
+
+        raise ActiveRecord::Rollback unless @event.save
+      end
+
+      if @event&.persisted?
         render json: {
           event: Forecast::CanvasReadModel.new(Forecast::Workspace.new(family: @family)).event_marker(@event),
+          scenario: @scenario ? scenario_payload(@scenario) : nil,
           stale: true,
           message: I18n.t("forecasts.canvas.drafts.created", default: "Event saved. Regenerate the forecast to update projections.")
         }, status: :created
@@ -50,20 +60,26 @@ module Forecast
           :name, :description, :effect_type, :amount, :currency,
           :starts_on, :ends_on, :status, :probability_weight,
           :forecast_scenario_id, :account_id, :destination_account_id, :category_id,
+          :scenario_target, :new_scenario_name,
           :recurring, recurrence_rule: %i[frequency interval day_of_month],
           source_metadata: %i[destination_amount destination_currency]
         )
 
-        scope_association_ids(permitted)
+        normalize_scenario_target(permitted)
+        scope_event_association_ids(permitted)
         normalize_recurrence(permitted)
         normalize_source_metadata(permitted)
         permitted
       end
 
-      def scope_association_ids(permitted)
-        if permitted[:forecast_scenario_id].present?
-          permitted[:forecast_scenario_id] = @family.forecast_scenarios.find(permitted[:forecast_scenario_id]).id
-        end
+      def normalize_scenario_target(permitted)
+        target = permitted.delete(:scenario_target)
+        new_name = permitted.delete(:new_scenario_name)
+        permitted[:scenario_target] = target if target.present?
+        permitted[:new_scenario_name] = new_name if new_name.present?
+      end
+
+      def scope_event_association_ids(permitted)
         if permitted[:account_id].present?
           permitted[:account_id] = @family.accounts.find(permitted[:account_id]).id
         end
@@ -73,6 +89,35 @@ module Forecast
         if permitted[:category_id].present?
           permitted[:category_id] = @family.categories.find(permitted[:category_id]).id
         end
+      end
+
+      def resolve_scenario_target!(attributes)
+        target = attributes.delete(:scenario_target)
+        new_name = attributes.delete(:new_scenario_name)
+
+        if target == Forecast::CanvasReadModel::NEW_SCENARIO_VALUE
+          scenario = @family.forecast_scenarios.create!(
+            name: new_name.presence || I18n.t("forecasts.canvas.forks.default_name", default: "Canvas scenario"),
+            status: "active",
+            approval_status: "manual",
+            starts_on: attributes[:starts_on].presence,
+            created_by_user: Current.user
+          )
+          attributes[:forecast_scenario_id] = scenario.id
+          return scenario
+        end
+
+        if target.present?
+          scenario = @family.forecast_scenarios.find(target)
+          attributes[:forecast_scenario_id] = scenario.id
+          return scenario
+        end
+
+        return unless attributes[:forecast_scenario_id].present?
+
+        scenario = @family.forecast_scenarios.find(attributes[:forecast_scenario_id])
+        attributes[:forecast_scenario_id] = scenario.id
+        scenario
       end
 
       def normalize_recurrence(permitted)

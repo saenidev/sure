@@ -100,6 +100,7 @@ export default class extends Controller {
       ...body.event,
       dateObject: parseDate(body.event.date),
     };
+    this.#appendScenarioTarget(body.scenario);
     this.localEvents = this.localEvents.filter((candidate) => {
       return candidate.kind !== "draft";
     });
@@ -139,6 +140,10 @@ export default class extends Controller {
     this.#appendScenarioTarget(body.scenario);
     this.#renderSource();
     this.#renderForkSuccess(body.scenario, body.message);
+  }
+
+  refreshDraftScenarioTarget(event) {
+    this.#refreshDraftScenarioTarget(event.currentTarget.closest("form"));
   }
 
   #normalizePayload(payload) {
@@ -1109,17 +1114,21 @@ export default class extends Controller {
     startsOn.value = marker.date;
     dateLabel.textContent = formatShortDate(marker.dateObject);
     this.#syncScenarioSelect(fragment);
+    this.#refreshDraftScenarioTarget(fragment);
     this.draftPanelTarget.replaceChildren(fragment);
   }
 
   #syncScenarioSelect(fragment) {
     const select = fragment.querySelector(
-      "[name='forecast_event[forecast_scenario_id]']",
+      "[name='forecast_event[scenario_target]']",
     );
     if (!select) return;
 
     const globalOption = select
       .querySelector("option[value='']")
+      ?.cloneNode(true);
+    const newScenarioOption = select
+      .querySelector("[data-forecast-canvas-new-scenario-option]")
       ?.cloneNode(true);
     select.replaceChildren();
     if (globalOption) select.append(globalOption);
@@ -1131,6 +1140,29 @@ export default class extends Controller {
         ? `${scenario.label || scenario.name} (${scenario.status_label})`
         : scenario.label || scenario.name;
       select.append(option);
+    });
+
+    if (newScenarioOption) select.append(newScenarioOption);
+  }
+
+  #refreshDraftScenarioTarget(container) {
+    if (!container) return;
+
+    const select = container.querySelector(
+      "[name='forecast_event[scenario_target]']",
+    );
+    const field = container.querySelector(
+      "[data-forecast-canvas-new-scenario-field]",
+    );
+    if (!select || !field) return;
+
+    const visible =
+      select.value ===
+      (this.payload.draft_options?.new_scenario_value || "__new__");
+    field.classList.toggle("hidden", !visible);
+    field.querySelectorAll("input, select, textarea").forEach((input) => {
+      input.disabled = !visible;
+      input.required = visible;
     });
   }
 

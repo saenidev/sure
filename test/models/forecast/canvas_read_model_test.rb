@@ -190,4 +190,18 @@ class Forecast::CanvasReadModelTest < ActiveSupport::TestCase
     assert_includes stack.fetch(:risk_flags), "negative_cash"
     assert_includes payload.dig(:draft_options, :scenario_targets).map { |scenario| scenario.fetch(:id) }, disabled.id
   end
+
+  test "includes standard event authoring options for canvas drafts" do
+    payload = Forecast::CanvasReadModel.new(Forecast::Workspace.new(family: @family)).payload
+    options = payload.fetch(:draft_options)
+
+    assert_includes options.fetch(:accounts).map { |account| account.fetch(:id) }, accounts(:depository).id
+    assert_includes options.fetch(:categories).map { |category| category.fetch(:id) }, categories(:food_and_drink).id
+    assert_equal ForecastEvent::STATUSES, options.fetch(:statuses)
+    assert_equal ForecastEvent::AMOUNT_EFFECT_TYPES, options.fetch(:amount_effect_types)
+    assert_equal %w[income expense], options.fetch(:category_effect_types)
+    assert_equal [ "transfer" ], options.fetch(:transfer_effect_types)
+    assert_equal %w[weekly monthly], options.fetch(:recurrence_frequencies)
+    assert_equal "__new__", options.fetch(:new_scenario_value)
+  end
 end

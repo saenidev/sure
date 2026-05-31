@@ -21,6 +21,18 @@ class Forecast::CanvasControllerTest < ActionDispatch::IntegrationTest
     assert_select "button[data-action*='forecast-canvas-chart#selectMetric']", minimum: 4
     assert_select "template[data-forecast-canvas-chart-target='draftTemplate']"
     assert_select "form[data-forecast-canvas-chart-target='draftForm']"
+    assert_select "form[data-controller~='forecast-event-form']"
+    assert_select "select[name='forecast_event[scenario_target]']"
+    assert_select "input[name='forecast_event[new_scenario_name]']"
+    assert_select "select[name='forecast_event[category_id]']"
+    assert_select "select[name='forecast_event[account_id]']"
+    assert_select "select[name='forecast_event[destination_account_id]']"
+    assert_select "input[name='forecast_event[recurring]']"
+    assert_select "select[name='forecast_event[recurrence_rule][frequency]']"
+    assert_select "input[name='forecast_event[recurrence_rule][interval]']"
+    assert_select "input[name='forecast_event[ends_on]']"
+    assert_select "input[name='forecast_event[probability_weight]']"
+    assert_select "textarea[name='forecast_event[description]']"
   end
 
   test "breadcrumbs are nested under forecast" do

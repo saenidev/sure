@@ -119,6 +119,11 @@
       </aside>
     </div>
 
+    <% draft_options = @canvas_payload.fetch(:draft_options) %>
+    <% amount_effect_types = draft_options.fetch(:amount_effect_types).join(" ") %>
+    <% category_effect_types = draft_options.fetch(:category_effect_types).join(" ") %>
+    <% transfer_effect_types = draft_options.fetch(:transfer_effect_types).join(" ") %>
+
     <template data-forecast-canvas-chart-target="draftTemplate">
       <section class="space-y-3 border-b border-primary pb-4" aria-labelledby="forecast-canvas-draft-heading">
         <div class="space-y-1">
@@ -129,12 +134,9 @@
         </div>
 
         <form class="space-y-3"
+              data-controller="forecast-event-form"
               data-forecast-canvas-chart-target="draftForm"
               data-action="submit->forecast-canvas-chart#saveDraft">
-          <input type="hidden" name="forecast_event[starts_on]" data-forecast-canvas-chart-draft-starts-on>
-          <input type="hidden" name="forecast_event[status]" value="planned">
-          <input type="hidden" name="forecast_event[probability_weight]" value="1.0">
-
           <div class="space-y-1">
             <label class="text-primary text-sm font-medium" for="canvas-draft-name">
               <%= t("forecasts.canvas.drafts.name") %>
@@ -153,8 +155,10 @@
               </label>
               <select id="canvas-draft-effect"
                       class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
-                      name="forecast_event[effect_type]">
-                <% @canvas_payload.dig(:draft_options, :effect_types).each do |effect_type| %>
+                      name="forecast_event[effect_type]"
+                      data-forecast-event-form-target="effectType"
+                      data-action="change->forecast-event-form#refreshEffectType">
+                <% draft_options.fetch(:effect_types).each do |effect_type| %>
                   <option value="<%= effect_type %>">
                     <%= t("forecasts.events.effect_types.#{effect_type}", default: effect_type.humanize) %>
                   </option>
@@ -168,18 +172,49 @@
               </label>
               <select id="canvas-draft-scenario"
                       class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
-                      name="forecast_event[forecast_scenario_id]">
-                <option value=""><%= t("forecasts.canvas.drafts.global") %></option>
-                <% @canvas_payload.dig(:draft_options, :scenario_targets).each do |scenario| %>
+                      name="forecast_event[scenario_target]"
+                      data-action="change->forecast-canvas-chart#refreshDraftScenarioTarget">
+                <option value="" data-forecast-canvas-static-scenario-option><%= t("forecasts.canvas.drafts.global") %></option>
+                <% draft_options.fetch(:scenario_targets).each do |scenario| %>
                   <option value="<%= scenario.fetch(:id) %>">
                     <%= scenario.fetch(:label) %> (<%= scenario.fetch(:status_label) %>)
                   </option>
                 <% end %>
+                <option value="<%= draft_options.fetch(:new_scenario_value) %>" data-forecast-canvas-new-scenario-option>
+                  <%= t("forecasts.canvas.drafts.new_scenario") %>
+                </option>
               </select>
             </div>
           </div>
 
+          <div class="hidden space-y-1" data-forecast-canvas-new-scenario-field>
+            <label class="text-primary text-sm font-medium" for="canvas-draft-new-scenario-name">
+              <%= t("forecasts.canvas.drafts.new_scenario_name") %>
+            </label>
+            <input id="canvas-draft-new-scenario-name"
+                   class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                   name="forecast_event[new_scenario_name]"
+                   type="text"
+                   disabled>
+          </div>
+
           <div class="grid gap-3 sm:grid-cols-2">
+            <div class="space-y-1">
+              <label class="text-primary text-sm font-medium" for="canvas-draft-starts-on">
+                <%= t("forecasts.events.form.starts_on_label") %>
+              </label>
+              <input id="canvas-draft-starts-on"
+                     class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                     name="forecast_event[starts_on]"
+                     type="date"
+                     required
+                     data-forecast-canvas-chart-draft-starts-on>
+            </div>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2"
+               data-forecast-event-form-target="field"
+               data-forecast-event-form-fields="<%= amount_effect_types %>">
             <div class="space-y-1">
               <label class="text-primary text-sm font-medium" for="canvas-draft-amount">
                 <%= t("forecasts.canvas.drafts.amount") %>
@@ -188,6 +223,7 @@
                      class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
                      name="forecast_event[amount]"
                      type="number"
+                     min="0"
                      step="0.01">
             </div>
 
@@ -198,11 +234,196 @@
               <select id="canvas-draft-currency"
                       class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
                       name="forecast_event[currency]">
-                <% @canvas_payload.dig(:draft_options, :currencies).each do |currency| %>
+                <% draft_options.fetch(:currencies).each do |currency| %>
                   <option value="<%= currency %>"><%= currency %></option>
                 <% end %>
               </select>
             </div>
+          </div>
+
+          <div class="space-y-1"
+               data-forecast-event-form-target="field"
+               data-forecast-event-form-fields="<%= category_effect_types %>">
+            <label class="text-primary text-sm font-medium" for="canvas-draft-category">
+              <%= t("forecasts.events.form.category_label") %>
+            </label>
+            <select id="canvas-draft-category"
+                    class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                    name="forecast_event[category_id]">
+              <option value=""><%= t("forecasts.events.form.none") %></option>
+              <% draft_options.fetch(:categories).each do |category| %>
+                <option value="<%= category.fetch(:id) %>"><%= category.fetch(:label) %></option>
+              <% end %>
+            </select>
+          </div>
+
+          <div class="space-y-2"
+               data-forecast-event-form-target="field"
+               data-forecast-event-form-fields="<%= transfer_effect_types %>">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="space-y-1">
+                <label class="text-primary text-sm font-medium" for="canvas-draft-account">
+                  <%= t("forecasts.events.form.account_label") %>
+                </label>
+                <select id="canvas-draft-account"
+                        class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                        name="forecast_event[account_id]">
+                  <option value=""><%= t("forecasts.events.form.none") %></option>
+                  <% draft_options.fetch(:accounts).each do |account| %>
+                    <option value="<%= account.fetch(:id) %>"><%= account.fetch(:label) %></option>
+                  <% end %>
+                </select>
+              </div>
+
+              <div class="space-y-1">
+                <label class="text-primary text-sm font-medium" for="canvas-draft-destination-account">
+                  <%= t("forecasts.events.form.destination_account_label") %>
+                </label>
+                <select id="canvas-draft-destination-account"
+                        class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                        name="forecast_event[destination_account_id]">
+                  <option value=""><%= t("forecasts.events.form.none") %></option>
+                  <% draft_options.fetch(:accounts).each do |account| %>
+                    <option value="<%= account.fetch(:id) %>"><%= account.fetch(:label) %></option>
+                  <% end %>
+                </select>
+              </div>
+            </div>
+
+            <fieldset class="space-y-2 rounded-md border border-primary p-3">
+              <legend class="px-1 text-secondary text-xs"><%= t("forecasts.events.form.cross_currency_legend") %></legend>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="space-y-1">
+                  <label class="text-primary text-sm font-medium" for="canvas-draft-destination-amount">
+                    <%= t("forecasts.events.form.destination_amount_label") %>
+                  </label>
+                  <input id="canvas-draft-destination-amount"
+                         class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                         name="forecast_event[source_metadata][destination_amount]"
+                         type="number"
+                         min="0"
+                         step="0.01">
+                </div>
+
+                <div class="space-y-1">
+                  <label class="text-primary text-sm font-medium" for="canvas-draft-destination-currency">
+                    <%= t("forecasts.events.form.destination_currency_label") %>
+                  </label>
+                  <input id="canvas-draft-destination-currency"
+                         class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                         name="forecast_event[source_metadata][destination_currency]"
+                         type="text"
+                         value="<%= @canvas_payload.fetch(:currency) %>">
+                </div>
+              </div>
+            </fieldset>
+          </div>
+
+          <div class="space-y-2">
+            <label class="flex items-center gap-2 text-primary text-sm">
+              <input class="rounded border-primary"
+                     name="forecast_event[recurring]"
+                     type="checkbox"
+                     value="1"
+                     data-forecast-event-form-target="recurringToggle"
+                     data-action="change->forecast-event-form#refreshRecurrence">
+              <%= t("forecasts.events.form.recurring_label") %>
+            </label>
+
+            <div class="space-y-2" data-forecast-event-form-target="recurrence">
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="space-y-1">
+                  <label class="text-primary text-sm font-medium" for="canvas-draft-frequency">
+                    <%= t("forecasts.events.form.frequency_label") %>
+                  </label>
+                  <select id="canvas-draft-frequency"
+                          class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                          name="forecast_event[recurrence_rule][frequency]"
+                          data-forecast-event-form-target="frequency"
+                          data-action="change->forecast-event-form#refreshFrequency">
+                    <% draft_options.fetch(:recurrence_frequencies).each do |frequency| %>
+                      <option value="<%= frequency %>"><%= t("forecasts.events.frequencies.#{frequency}") %></option>
+                    <% end %>
+                  </select>
+                </div>
+
+                <div class="space-y-1">
+                  <label class="text-primary text-sm font-medium" for="canvas-draft-interval">
+                    <%= t("forecasts.events.form.interval_label") %>
+                  </label>
+                  <input id="canvas-draft-interval"
+                         class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                         name="forecast_event[recurrence_rule][interval]"
+                         type="number"
+                         min="1"
+                         max="60"
+                         step="1"
+                         value="1">
+                </div>
+              </div>
+
+              <div data-forecast-event-form-target="monthlyField" class="space-y-1">
+                <label class="text-primary text-sm font-medium" for="canvas-draft-day-of-month">
+                  <%= t("forecasts.events.form.day_of_month_label") %>
+                </label>
+                <input id="canvas-draft-day-of-month"
+                       class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                       name="forecast_event[recurrence_rule][day_of_month]"
+                       type="number"
+                       min="1"
+                       max="31"
+                       step="1">
+              </div>
+
+              <div data-forecast-event-form-target="endsOn" class="space-y-1">
+                <label class="text-primary text-sm font-medium" for="canvas-draft-ends-on">
+                  <%= t("forecasts.events.form.ends_on_label") %>
+                </label>
+                <input id="canvas-draft-ends-on"
+                       class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                       name="forecast_event[ends_on]"
+                       type="date">
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="space-y-1">
+              <label class="text-primary text-sm font-medium" for="canvas-draft-probability">
+                <%= t("forecasts.events.form.probability_weight_label") %>
+              </label>
+              <input id="canvas-draft-probability"
+                     class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                     name="forecast_event[probability_weight]"
+                     type="number"
+                     min="0"
+                     max="1"
+                     step="0.05"
+                     value="1.0">
+            </div>
+
+            <div class="space-y-1">
+              <label class="text-primary text-sm font-medium" for="canvas-draft-status">
+                <%= t("forecasts.events.form.status_label") %>
+              </label>
+              <select id="canvas-draft-status"
+                      class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                      name="forecast_event[status]">
+                <% draft_options.fetch(:statuses).each do |status| %>
+                  <option value="<%= status %>"><%= t("forecasts.events.statuses.#{status}") %></option>
+                <% end %>
+              </select>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-primary text-sm font-medium" for="canvas-draft-description">
+              <%= t("forecasts.events.form.description_label") %>
+            </label>
+            <textarea id="canvas-draft-description"
+                      class="w-full rounded-md border border-primary bg-container px-3 py-2 text-primary text-sm"
+                      name="forecast_event[description]"
+                      rows="2"></textarea>
           </div>
 
           <div class="hidden rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-destructive text-xs"
