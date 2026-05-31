@@ -105,7 +105,8 @@ en:
       description: "Review past manual and automated runs, including anything flagged for human review."
     canvas:
       title: "Forecast canvas"
-      description: "A temporary timeline-first prototype for evaluating the stock-chart style forecast interaction."
+      open: "Advanced canvas"
+      description: "Advanced timeline workspace for comparing scenarios and editing forecast assumptions."
       back: "Back to forecast"
       chart_heading: "Timeline canvas"
       loading: "Loading forecast canvas…"

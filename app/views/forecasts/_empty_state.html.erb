@@ -34,6 +34,13 @@
           href: forecast_scenarios_path
         ) %>
       <% end %>
+
+      <%= render DS::Link.new(
+        text: t("forecasts.canvas.open"),
+        variant: "outline",
+        icon: "chart-line",
+        href: forecast_canvas_path
+      ) %>
     </div>
   </div>
 </section>

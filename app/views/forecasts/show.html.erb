@@ -15,12 +15,20 @@
         never stacked for the family (the controller enforces the same guard
         server-side). %>
     <% unless @workspace.onboarding? || @workspace.ready? %>
-      <%= render DS::Button.new(
-        text: t("forecasts.show.generate"),
-        icon: "play",
-        href: forecast_runs_path,
-        disabled: @workspace.running?
-      ) %>
+      <div class="flex flex-wrap items-center gap-2">
+        <%= render DS::Link.new(
+          text: t("forecasts.canvas.open"),
+          icon: "chart-line",
+          href: forecast_canvas_path,
+          variant: "outline"
+        ) %>
+        <%= render DS::Button.new(
+          text: t("forecasts.show.generate"),
+          icon: "play",
+          href: forecast_runs_path,
+          disabled: @workspace.running?
+        ) %>
+      </div>
     <% end %>
   </header>
 

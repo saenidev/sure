@@ -45,6 +45,7 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#forecast-empty-state-title", text: I18n.t("forecasts.empty_state.onboarding.title")
     assert_select "button", text: I18n.t("forecasts.show.generate")
     assert_select "a[href=?]", forecast_scenarios_path, text: I18n.t("forecasts.show.set_up_scenarios")
+    assert_select "a[href=?]", forecast_canvas_path, text: I18n.t("forecasts.canvas.open")
     assert_select "form[action=?]", forecast_scenarios_path, false
   end
 
@@ -63,6 +64,7 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     get forecast_url
 
     assert_response :success
+    assert_select "a[href=?]", forecast_canvas_path, text: I18n.t("forecasts.canvas.open")
     assert_select "section[aria-label=?]", I18n.t("forecasts.run_summary_header.title")
     Forecast::Workspace::TAB_IDS.each do |tab_id|
       assert_select "button[data-id=?]", tab_id
