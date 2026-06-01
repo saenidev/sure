@@ -24,7 +24,7 @@ class BudgetCategoriesController < ApplicationController
                                                  .where("categories.id = ? OR categories.parent_id = ?", @budget_category.category.id, @budget_category.category.id)
     end
 
-    @recent_transactions = @recent_transactions.order("entries.date DESC, ABS(entries.amount) DESC").take(3)
+    @recent_transactions = @recent_transactions.includes(:entry).order("entries.date DESC, ABS(entries.amount) DESC").take(3)
   end
 
   def update

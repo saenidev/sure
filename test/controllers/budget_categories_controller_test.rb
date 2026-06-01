@@ -139,6 +139,24 @@ class BudgetCategoriesControllerTest < ActionDispatch::IntegrationTest
       "matched funds_movement inflow must not appear in Uncategorized drilldown"
   end
 
+  test "show drilldown preloads recent transaction entries" do
+    3.times do |idx|
+      create_transaction(
+        date: @budget.start_date + idx.days,
+        account: accounts(:depository),
+        amount: 100 + idx,
+        name: "RECENT_PRELOAD_#{idx}",
+        category: @parent_category
+      )
+    end
+
+    assert_queries_count(matcher: /FROM "?entries"?/i, max: 1) do
+      get budget_budget_category_path(@budget, @parent_budget_category)
+    end
+
+    assert_response :success
+  end
+
   test "show drilldown still lists loan_payment transfers (intentionally budget-tracked)" do
     # loan_payment is NOT in BUDGET_EXCLUDED_KINDS. The drilldown should
     # keep showing loan_payment transfers so the user can see what's
