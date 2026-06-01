@@ -103,4 +103,15 @@ class Forecast::CanvasControllerTest < ActionDispatch::IntegrationTest
     assert_includes controller_source, "searchParams.set(\"series\", this.selectedSeriesId)"
     assert_includes controller_source, "searchParams.set(\"event\", this.selectedEventKey)"
   end
+
+  test "chart event rail follows the current timeline viewport" do
+    controller_source = Rails.root.join("app/javascript/controllers/forecast_canvas_chart_controller.js").read
+
+    assert_includes controller_source, "#renderEvents(domain)"
+    assert_includes controller_source, "#visibleEventsForDomain(domain"
+    assert_includes controller_source, "EVENT_LIST_LIMIT"
+    assert_includes controller_source, "labels.event_more_visible"
+    assert_includes controller_source, "labels.event_outside_visible"
+    assert_includes controller_source, "#eventCountText("
+  end
 end

@@ -327,6 +327,8 @@ module Forecast
             preview: I18n.t("forecasts.canvas.source.preview", default: "Using preview data.")
           },
           event_empty: I18n.t("forecasts.canvas.event_empty", default: "No dated events in this range."),
+          event_more_visible: I18n.t("forecasts.canvas.event_more_visible", default: "%{count} more in current range", count: "%{count}"),
+          event_outside_visible: I18n.t("forecasts.canvas.event_outside_visible", default: "%{count} outside visible range", count: "%{count}"),
           line_empty: I18n.t("forecasts.canvas.line_empty", default: "Turn on at least one scenario."),
           metric_empty: I18n.t("forecasts.canvas.metric_empty", default: "No projection points for this metric."),
           selection_empty: I18n.t("forecasts.canvas.selection.empty", default: "Select a point"),

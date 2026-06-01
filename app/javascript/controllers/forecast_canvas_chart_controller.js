@@ -4,6 +4,7 @@ import * as d3 from "d3";
 const parseDate = d3.timeParse("%Y-%m-%d");
 const formatIsoDate = d3.timeFormat("%Y-%m-%d");
 const formatShortDate = d3.timeFormat("%b %-d, %Y");
+const EVENT_LIST_LIMIT = 8;
 
 export default class extends Controller {
   static targets = [
@@ -134,8 +135,8 @@ export default class extends Controller {
     this.payload.events.push(savedEvent);
     this.payload.stale = true;
     this.#renderSource();
-    this.#renderEvents();
     this.#updateEvents();
+    this.#renderEvents(this.xScale?.domain?.());
     this.#selectEvent(savedEvent);
     this.draftPanelTarget.replaceChildren();
   }
@@ -374,21 +375,26 @@ export default class extends Controller {
     });
   }
 
-  #renderEvents() {
+  #renderEvents(domain) {
     this.eventListTarget.replaceChildren();
-    const events = [...this.payload.events, ...this.localEvents].sort(
-      (left, right) => d3.ascending(left.dateObject, right.dateObject),
-    );
+    const labels = this.payload.labels || {};
+    const allEvents = this.#allEvents();
+    const events = this.#visibleEventsForDomain(domain, allEvents);
 
     if (events.length === 0) {
       const empty = document.createElement("p");
       empty.className = "text-secondary text-sm";
-      empty.textContent = this.payload.labels?.event_empty || "";
+      empty.textContent = labels.event_empty || "";
       this.eventListTarget.append(empty);
+      if (domain && allEvents.length > 0) {
+        this.eventListTarget.append(
+          this.#eventCountText(labels.event_outside_visible, allEvents.length),
+        );
+      }
       return;
     }
 
-    events.slice(0, 8).forEach((event) => {
+    events.slice(0, EVENT_LIST_LIMIT).forEach((event) => {
       const eventKey = this.#eventKey(event);
       const row = document.createElement("button");
       row.type = "button";
@@ -423,6 +429,42 @@ export default class extends Controller {
       row.append(swatch, copy);
       this.eventListTarget.append(row);
     });
+
+    const hiddenVisibleCount = Math.max(events.length - EVENT_LIST_LIMIT, 0);
+    if (hiddenVisibleCount > 0) {
+      this.eventListTarget.append(
+        this.#eventCountText(labels.event_more_visible, hiddenVisibleCount),
+      );
+    }
+
+    const outsideCount = domain ? allEvents.length - events.length : 0;
+    if (outsideCount > 0) {
+      this.eventListTarget.append(
+        this.#eventCountText(labels.event_outside_visible, outsideCount),
+      );
+    }
+  }
+
+  #allEvents() {
+    return [...this.payload.events, ...this.localEvents].sort((left, right) =>
+      d3.ascending(left.dateObject, right.dateObject),
+    );
+  }
+
+  #visibleEventsForDomain(domain, events = this.#allEvents()) {
+    if (!domain?.[0] || !domain?.[1]) return events;
+
+    return events.filter((event) => {
+      return event.dateObject >= domain[0] && event.dateObject <= domain[1];
+    });
+  }
+
+  #eventCountText(template, count) {
+    const text = document.createElement("p");
+    text.className = "text-secondary text-xs";
+    text.textContent = (template || "%{count} hidden")
+      .replace("%{count}", count.toString());
+    return text;
   }
 
   #syncControls() {
@@ -669,6 +711,7 @@ export default class extends Controller {
       .attr("d", (series) => line(series.points));
 
     this.#updateEvents();
+    this.#renderEvents(domain);
     this.#renderViewportLabel();
     this.#syncSelectionStyles();
   }
@@ -1453,8 +1496,8 @@ export default class extends Controller {
     };
 
     this.localEvents.push(marker);
-    this.#renderEvents();
     this.#updateEvents();
+    this.#renderEvents(this.xScale?.domain?.());
     this.#selectEvent(marker);
     this.#renderDraftForm(marker);
   }

@@ -263,4 +263,11 @@ class Forecast::CanvasReadModelTest < ActiveSupport::TestCase
     assert_equal %w[weekly monthly], options.fetch(:recurrence_frequencies)
     assert_equal "__new__", options.fetch(:new_scenario_value)
   end
+
+  test "includes event rail count labels for viewport filtering" do
+    labels = Forecast::CanvasReadModel.new(Forecast::Workspace.new(family: @family)).payload.fetch(:labels)
+
+    assert_equal "%{count} more in current range", labels.fetch(:event_more_visible)
+    assert_equal "%{count} outside visible range", labels.fetch(:event_outside_visible)
+  end
 end
