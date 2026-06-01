@@ -145,10 +145,12 @@
   <% if Current.family.transactions.any? %>
     <%# Summary Dashboard - Always visible, not collapsible %>
     <section>
-      <%= render partial: "reports/summary_dashboard", locals: {
-        metrics: @summary_metrics,
-        period_type: @period_type
-      } %>
+      <% cache [@reports_fragment_cache_key, "summary_dashboard"] do %>
+        <%= render partial: "reports/summary_dashboard", locals: {
+          metrics: @summary_metrics,
+          period_type: @period_type
+        } %>
+      <% end %>
     </section>
 
     <%# Collapsible & Reorderable Sections %>
@@ -197,7 +199,9 @@
             </button>
           </div>
           <div class="p-4" data-reports-section-target="content">
-            <%= render partial: section[:partial], locals: section[:locals] %>
+            <% cache [@reports_fragment_cache_key, section[:key]] do %>
+              <%= render partial: section[:partial], locals: section[:locals] %>
+            <% end %>
           </div>
         </section>
       <% end %>

@@ -349,8 +349,14 @@ class Family < ApplicationRecord
   # Used for invalidating entry related aggregation queries
   def entries_cache_version
     @entries_cache_version ||= begin
-      ts = entries.maximum(:updated_at)
-      ts.present? ? ts.to_i : 0
+      count, max_at = entries
+        .unscope(:select, :order)
+        .pick(
+          Arel.sql("COUNT(*)"),
+          Arel.sql("MAX(#{Entry.quoted_table_name}.#{ActiveRecord::Base.connection.quote_column_name(:updated_at)})")
+        )
+
+      "#{count.to_i}-#{max_at&.to_i || 0}"
     end
   end
 

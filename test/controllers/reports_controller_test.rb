@@ -13,6 +13,20 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
   end
 
+  test "index reuses cached report data for repeated visits" do
+    with_memory_cache do
+      ReportsController.any_instance
+        .expects(:build_transactions_breakdown)
+        .once
+        .returns([])
+
+      2.times do
+        get reports_path(period_type: :monthly)
+        assert_response :ok
+      end
+    end
+  end
+
   test "index with monthly period" do
     get reports_path(period_type: :monthly)
     assert_response :ok
@@ -337,4 +351,14 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
 
     assert_select "button[disabled][aria-label=?]", I18n.t("reports.index.next_period")
   end
+
+  private
+
+    def with_memory_cache
+      original_cache = Rails.cache
+      Rails.cache = ActiveSupport::Cache::MemoryStore.new
+      yield
+    ensure
+      Rails.cache = original_cache
+    end
 end

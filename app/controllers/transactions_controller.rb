@@ -53,16 +53,10 @@ class TransactionsController < ApplicationController
       Set.new
     end
 
-    @uncategorized_count = Current.accessible_entries.uncategorized_transactions.count
+    @uncategorized_count = cached_uncategorized_transaction_count(accessible_account_ids)
 
     # Load projected recurring transactions for next 10 days
-    @projected_recurring = Current.family.recurring_transactions
-                                  .accessible_by(Current.user)
-                                  .active
-                                  .where("next_expected_date <= ? AND next_expected_date >= ?",
-                                         10.days.from_now.to_date,
-                                         Date.current)
-                                  .includes(:merchant)
+    @projected_recurring = cached_projected_recurring_transactions
 
     @breadcrumbs = [ [ t("breadcrumbs.home"), root_path ], [ t("breadcrumbs.transactions"), nil ] ]
   end
@@ -532,6 +526,48 @@ class TransactionsController < ApplicationController
 
     def stored_params
       Current.session.prev_transaction_page_params
+    end
+
+    def cached_uncategorized_transaction_count(accessible_account_ids)
+      AppCache.fetch_user_data(
+        family: Current.family,
+        user: Current.user,
+        namespace: "transactions/uncategorized-count",
+        parts: [ accessible_account_ids ],
+        versions: %i[family accounts entries account_shares]
+      ) do
+        uncategorized_transaction_count
+      end
+    end
+
+    def uncategorized_transaction_count
+      Current.accessible_entries.uncategorized_transactions.count
+    end
+
+    def cached_projected_recurring_transactions
+      ids = AppCache.fetch_user_data(
+        family: Current.family,
+        user: Current.user,
+        namespace: "transactions/projected-recurring-ids",
+        parts: [ Date.current, 10.days.from_now.to_date ],
+        versions: %i[family accounts recurring_transactions account_shares]
+      ) do
+        Current.family.recurring_transactions
+          .accessible_by(Current.user)
+          .active
+          .where("next_expected_date <= ? AND next_expected_date >= ?",
+                 10.days.from_now.to_date,
+                 Date.current)
+          .order(:next_expected_date, :id)
+          .pluck(:id)
+      end
+
+      recurring_by_id = Current.family.recurring_transactions
+        .where(id: ids)
+        .includes(:merchant)
+        .index_by(&:id)
+
+      ids.filter_map { |id| recurring_by_id[id] }
     end
 
     def preferences_params

@@ -11,6 +11,7 @@ class ReportsController < ApplicationController
 
     # Build reports sections for collapsible/reorderable UI
     @reports_sections = build_reports_sections
+    @reports_fragment_cache_key = reports_fragment_cache_key
 
     @breadcrumbs = [ [ t("breadcrumbs.home"), root_path ], [ t("breadcrumbs.reports"), nil ] ]
   end
@@ -109,31 +110,15 @@ class ReportsController < ApplicationController
       # Build the period
       @period = Period.custom(start_date: @start_date, end_date: @end_date)
       @previous_period = build_previous_period
+      ensure_budget_for_report_cache_key
 
-      # Get aggregated data
-      @current_income_totals = Current.family.income_statement.income_totals(period: @period)
-      @current_expense_totals = Current.family.income_statement.expense_totals(period: @period)
-
-      @previous_income_totals = Current.family.income_statement.income_totals(period: @previous_period)
-      @previous_expense_totals = Current.family.income_statement.expense_totals(period: @previous_period)
-
-      # Calculate summary metrics
-      @summary_metrics = build_summary_metrics
-
-      # Build trend data (last 6 months)
-      @trends_data = build_trends_data
-
-      # Net worth metrics
-      @net_worth_metrics = build_net_worth_metrics
-
-      # Transactions breakdown
-      @transactions = build_transactions_breakdown
-
-      # Investment metrics
+      cached_data = cached_report_data
+      @summary_metrics = cached_data.fetch(:summary_metrics)
+      @trends_data = cached_data.fetch(:trends_data)
+      @net_worth_metrics = cached_data.fetch(:net_worth_metrics)
+      @transactions = cached_data.fetch(:transactions)
+      @investment_flows = cached_data.fetch(:investment_flows)
       @investment_metrics = build_investment_metrics
-
-      # Investment flows (contributions/withdrawals)
-      @investment_flows = InvestmentFlowStatement.new(Current.family, user: Current.user).period_totals(period: @period)
 
       # Flags for view rendering
       @has_accounts = accessible_accounts.any?
@@ -148,6 +133,73 @@ class ReportsController < ApplicationController
         permitted["reports_collapsed_sections"] = prefs[:reports_collapsed_sections].to_unsafe_h if prefs[:reports_collapsed_sections]
         permitted["reports_section_order"] = prefs[:reports_section_order] if prefs[:reports_section_order]
       end
+    end
+
+    def cached_report_data
+      AppCache.fetch_user_data(
+        family: Current.family,
+        user: Current.user,
+        namespace: "reports/index",
+        parts: report_cache_parts,
+        versions: report_cache_versions
+      ) do
+        income_statement = Current.family.income_statement
+
+        @current_income_totals = income_statement.income_totals(period: @period)
+        @current_expense_totals = income_statement.expense_totals(period: @period)
+        @previous_income_totals = income_statement.income_totals(period: @previous_period)
+        @previous_expense_totals = income_statement.expense_totals(period: @previous_period)
+
+        {
+          summary_metrics: build_summary_metrics,
+          trends_data: build_trends_data,
+          net_worth_metrics: build_net_worth_metrics,
+          transactions: build_transactions_breakdown,
+          investment_flows: InvestmentFlowStatement.new(Current.family, user: Current.user).period_totals(period: @period)
+        }
+      end
+    end
+
+    def reports_fragment_cache_key
+      AppCache.user_data_key(
+        family: Current.family,
+        user: Current.user,
+        namespace: "reports/fragments",
+        parts: report_cache_parts,
+        versions: report_cache_versions
+      )
+    end
+
+    def report_cache_versions
+      %i[family accounts entries categories budgets holdings account_shares]
+    end
+
+    def report_cache_parts
+      {
+        period_type: @period_type,
+        start_date: @start_date,
+        end_date: @end_date,
+        previous_start_date: @previous_period.start_date,
+        previous_end_date: @previous_period.end_date,
+        filters: params.slice(
+          :filter_category_id,
+          :filter_account_id,
+          :filter_amount_min,
+          :filter_amount_max,
+          :filter_date_start,
+          :filter_date_end,
+          :filter_tag_id,
+          :sort_by,
+          :sort_direction
+        ).to_unsafe_h
+      }
+    end
+
+    def ensure_budget_for_report_cache_key
+      return unless @period_type == :monthly
+      return unless @start_date.beginning_of_month.to_date == Date.current.beginning_of_month.to_date
+
+      Budget.find_or_bootstrap(Current.family, start_date: @start_date.beginning_of_month.to_date, user: Current.user)
     end
 
     def build_reports_sections

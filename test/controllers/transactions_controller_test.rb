@@ -96,6 +96,20 @@ class TransactionsControllerTest < ActionDispatch::IntegrationTest
     assert_dom "#total-transactions", count: 1, text: "1"
   end
 
+  test "index reuses cached ancillary counts for repeated visits" do
+    with_memory_cache do
+      TransactionsController.any_instance
+        .expects(:uncategorized_transaction_count)
+        .once
+        .returns(0)
+
+      2.times do
+        get transactions_url
+        assert_response :success
+      end
+    end
+  end
+
   test "can update notes on split child transaction" do
     parent = create_transaction(account: accounts(:depository), amount: 100)
     parent.split!([ { name: "Part 1", amount: 60, category_id: nil }, { name: "Part 2", amount: 40, category_id: nil } ])
@@ -611,4 +625,14 @@ end
     created_entry = Entry.order(:created_at).last
     assert_nil created_entry.transaction.extra["exchange_rate"]
   end
+
+  private
+
+    def with_memory_cache
+      original_cache = Rails.cache
+      Rails.cache = ActiveSupport::Cache::MemoryStore.new
+      yield
+    ensure
+      Rails.cache = original_cache
+    end
 end

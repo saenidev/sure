@@ -43,6 +43,25 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-controller='sankey-chart']"
   end
 
+  test "dashboard reuses cached chart data for repeated visits" do
+    with_memory_cache do
+      PagesController.any_instance
+        .expects(:build_cashflow_sankey_data)
+        .once
+        .returns({ nodes: [], links: [], currency_symbol: Money::Currency.new(@family.currency).symbol })
+
+      PagesController.any_instance
+        .expects(:build_outflows_donut_data)
+        .once
+        .returns({ categories: [], total: 0, currency: @family.currency, currency_symbol: Money::Currency.new(@family.currency).symbol })
+
+      2.times do
+        get root_path(period: "last_30_days")
+        assert_response :ok
+      end
+    end
+  end
+
   test "changelog" do
     VCR.use_cassette("git_repository_provider/fetch_latest_release_notes") do
       get changelog_path
@@ -80,4 +99,14 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", text: "Test Release"
     # Should not crash even with nil values
   end
+
+  private
+
+    def with_memory_cache
+      original_cache = Rails.cache
+      Rails.cache = ActiveSupport::Cache::MemoryStore.new
+      yield
+    ensure
+      Rails.cache = original_cache
+    end
 end

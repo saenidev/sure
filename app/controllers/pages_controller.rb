@@ -15,16 +15,12 @@ class PagesController < ApplicationController
 
     family_currency = Current.family.currency
 
-    # Use IncomeStatement for all cashflow data (now includes categorized trades)
-    income_statement = Current.family.income_statement
-    income_totals = income_statement.income_totals(period: @period)
-    expense_totals = income_statement.expense_totals(period: @period)
-    net_totals = income_statement.net_category_totals(period: @period)
-
-    @cashflow_sankey_data = build_cashflow_sankey_data(net_totals, income_totals, expense_totals, family_currency)
-    @outflows_data = build_outflows_donut_data(net_totals)
+    chart_data = cached_dashboard_chart_data(family_currency)
+    @cashflow_sankey_data = chart_data.fetch(:cashflow_sankey_data)
+    @outflows_data = chart_data.fetch(:outflows_data)
 
     @dashboard_sections = build_dashboard_sections
+    @dashboard_fragment_cache_key = dashboard_fragment_cache_key
 
     @breadcrumbs = [ [ t("breadcrumbs.home"), root_path ], [ t("breadcrumbs.dashboard"), nil ] ]
   end
@@ -143,6 +139,45 @@ class PagesController < ApplicationController
 
     def github_provider
       Provider::Registry.get_provider(:github)
+    end
+
+    def cached_dashboard_chart_data(family_currency)
+      AppCache.fetch_user_data(
+        family: Current.family,
+        user: Current.user,
+        namespace: "dashboard/charts",
+        parts: dashboard_cache_parts,
+        versions: dashboard_cache_versions
+      ) do
+        # Use IncomeStatement for all cashflow data (now includes categorized trades)
+        income_statement = Current.family.income_statement
+        income_totals = income_statement.income_totals(period: @period)
+        expense_totals = income_statement.expense_totals(period: @period)
+        net_totals = income_statement.net_category_totals(period: @period)
+
+        {
+          cashflow_sankey_data: build_cashflow_sankey_data(net_totals, income_totals, expense_totals, family_currency),
+          outflows_data: build_outflows_donut_data(net_totals)
+        }
+      end
+    end
+
+    def dashboard_fragment_cache_key
+      AppCache.user_data_key(
+        family: Current.family,
+        user: Current.user,
+        namespace: "dashboard/fragments",
+        parts: dashboard_cache_parts,
+        versions: dashboard_cache_versions
+      )
+    end
+
+    def dashboard_cache_parts
+      [ @period.key, @period.start_date, @period.end_date ]
+    end
+
+    def dashboard_cache_versions
+      %i[family accounts entries categories holdings account_shares]
     end
 
     def build_cashflow_sankey_data(net_totals, income_totals, expense_totals, currency)
