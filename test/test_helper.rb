@@ -115,6 +115,22 @@ module ActiveSupport
       Rack::Test::UploadedFile.new(tempfile.path, content_type, true, original_filename: filename)
     end
 
+    def assert_queries_count(matcher:, max:)
+      queries = []
+      callback = lambda do |_name, _start, _finish, _id, payload|
+        sql = payload[:sql]
+        next if payload[:name].to_s.include?("SCHEMA")
+        next unless sql&.match?(matcher)
+
+        queries << sql
+      end
+
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+
+      assert queries.size <= max,
+        "expected at most #{max} queries matching #{matcher.inspect}, got #{queries.size}:\n#{queries.join("\n")}"
+    end
+
     def family_guest
       @family_guest ||= users(:family_admin).family.users.create!(
         first_name: "Readonly",

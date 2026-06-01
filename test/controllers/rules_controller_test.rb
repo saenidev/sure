@@ -210,6 +210,21 @@ class RulesControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "index preloads rule actions" do
+    3.times do |idx|
+      rule = @user.family.rules.build(name: "Preload action #{idx}", resource_type: "transaction")
+      rule.conditions.build(condition_type: "transaction_name", operator: "like", value: "preload-#{idx}")
+      rule.actions.build(action_type: "exclude_transaction")
+      rule.save!
+    end
+
+    assert_queries_count(matcher: /FROM "?rule_actions"?/i, max: 1) do
+      get rules_url
+    end
+
+    assert_response :success
+  end
+
   test "index shows blocked count in recent runs summary" do
     rule = rules(:one)
     RuleRun.create!(
