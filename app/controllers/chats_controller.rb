@@ -13,6 +13,7 @@ class ChatsController < ApplicationController
 
   def show
     set_last_viewed_chat(@chat)
+    @messages = @chat.conversation_messages.includes(:tool_calls).ordered
   end
 
   def new
