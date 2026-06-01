@@ -5,6 +5,11 @@ class CategoriesController < ApplicationController
 
   def index
     @categories = Current.family.categories.alphabetically
+    @category_ids_with_transactions = Current.family.transactions
+                                                 .where(category_id: @categories.select(:id))
+                                                 .distinct
+                                                 .pluck(:category_id)
+                                                 .to_set
 
     render layout: "settings"
   end

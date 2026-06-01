@@ -96,8 +96,11 @@ class Category < ApplicationRecord
     delegate :name, :color, to: :category
 
     def self.for(categories)
-      categories.select { |category| category.parent_id.nil? }.map do |category|
-        new(category, category.subcategories)
+      categories = categories.to_a
+      subcategories_by_parent_id = categories.group_by(&:parent_id)
+
+      subcategories_by_parent_id[nil].to_a.map do |category|
+        new(category, subcategories_by_parent_id[category.id].to_a)
       end
     end
 

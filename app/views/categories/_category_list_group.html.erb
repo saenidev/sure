@@ -10,10 +10,10 @@
   <div class="shadow-border-xs rounded-lg bg-container">
     <div class="overflow-hidden rounded-lg">
       <% Category::Group.for(categories).each_with_index do |group, idx| %>
-        <%= render group.category %>
+        <%= render group.category, subcategories: group.subcategories %>
 
         <% group.subcategories.each do |subcategory| %>
-          <%= render subcategory %>
+          <%= render subcategory, subcategories: [] %>
         <% end %>
 
         <% unless idx == Category::Group.for(categories).count - 1 %>

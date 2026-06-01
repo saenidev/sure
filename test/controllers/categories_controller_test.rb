@@ -1,8 +1,10 @@
 require "test_helper"
 
 class CategoriesControllerTest < ActionDispatch::IntegrationTest
+  include EntriesTestHelper
+
   setup do
-    sign_in users(:family_admin)
+    sign_in @user = users(:family_admin)
     @transaction = transactions :one
     ensure_tailwind_build
   end
@@ -13,6 +15,29 @@ class CategoriesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#category_#{categories(:food_and_drink).id} > [data-testid='category-content']", count: 1
     assert_select "#category_#{categories(:food_and_drink).id} > [data-testid='category-actions']", count: 1
     assert_select "#category_#{categories(:food_and_drink).id} [data-testid='category-name']", text: categories(:food_and_drink).name
+  end
+
+  test "index does not query transactions per category" do
+    3.times do |idx|
+      category = @user.family.categories.create!(
+        name: "Preload category #{idx}",
+        color: Category::COLORS[idx],
+        lucide_icon: "tag"
+      )
+      create_transaction(
+        date: Date.current,
+        account: accounts(:depository),
+        amount: 10 + idx,
+        name: "Category preload #{idx}",
+        category: category
+      )
+    end
+
+    assert_queries_count(matcher: /FROM "?transactions"?/i, max: 1) do
+      get categories_url
+    end
+
+    assert_response :success
   end
 
   test "new" do
