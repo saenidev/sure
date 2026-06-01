@@ -417,7 +417,7 @@ export default class extends Controller {
       .call(zoom)
       .on("mousemove", (event) => this.#trackPointer(event))
       .on("mouseleave", () => this.focusLayer.style("display", "none"))
-      .on("click", (event) => this.#addDraftMarker(event));
+      .on("click", (event) => this.#handleOverlayClick(event));
 
     this.#updatePlot();
   }
@@ -538,9 +538,11 @@ export default class extends Controller {
       .attr("y1", 0)
       .attr("y2", this.innerHeight)
       .attr("stroke", (event) => event.color || "var(--color-gray-500)")
-      .attr("stroke-width", 1.5)
+      .attr("stroke-width", 2)
       .attr("stroke-dasharray", "4 4")
-      .attr("opacity", 0.8);
+      .attr("stroke-linecap", "round")
+      .attr("opacity", 0.85)
+      .attr("pointer-events", "none");
   }
 
   #activeSeriesWithMetric() {
@@ -596,6 +598,49 @@ export default class extends Controller {
     this.#selectPoint(nearest.series, nearest.point);
   }
 
+  #handleOverlayClick(event) {
+    if (event.defaultPrevented) return;
+
+    const nearestEvent = this.#nearestEventToPointer(event);
+    if (nearestEvent) {
+      this.#selectEvent(nearestEvent);
+      return;
+    }
+
+    this.#addDraftMarker(event);
+  }
+
+  #nearestEventToPointer(event) {
+    const [x, y] = d3.pointer(event);
+    if (x < 0 || x > this.innerWidth || y < 0 || y > this.innerHeight) {
+      return null;
+    }
+
+    const domain = this.xScale.domain();
+    const hitRadius = 12;
+    let nearest = null;
+
+    [...this.payload.events, ...this.localEvents].forEach((candidate) => {
+      if (
+        !candidate.dateObject ||
+        candidate.dateObject < domain[0] ||
+        candidate.dateObject > domain[1]
+      ) {
+        return;
+      }
+
+      const xPosition = this.xScale(candidate.dateObject);
+      const distance = Math.abs(xPosition - x);
+      if (!Number.isFinite(distance) || distance > hitRadius) return;
+
+      if (!nearest || distance < nearest.distance) {
+        nearest = { event: candidate, distance };
+      }
+    });
+
+    return nearest?.event || null;
+  }
+
   #nearestPoint(date) {
     const bisect = d3.bisector((point) => point.dateObject).left;
     let nearest = null;
@@ -628,6 +673,9 @@ export default class extends Controller {
     this.selectedDateTarget.textContent = formatShortDate(event.dateObject);
     this.selectedValueTarget.textContent = event.label;
     this.selectedSeriesTarget.textContent = event.scenario || event.kind || "";
+    if (event.kind !== "draft" && this.hasDraftPanelTarget) {
+      this.draftPanelTarget.replaceChildren();
+    }
     this.#renderEventDetails(event);
   }
 

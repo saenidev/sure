@@ -45,4 +45,13 @@ class Forecast::CanvasControllerTest < ActionDispatch::IntegrationTest
       [ I18n.t("forecasts.canvas.title"), nil ]
     ], @controller.send(:breadcrumbs)
   end
+
+  test "chart overlay selects nearby event markers before creating drafts" do
+    controller_source = Rails.root.join("app/javascript/controllers/forecast_canvas_chart_controller.js").read
+
+    assert_includes controller_source, '.on("click", (event) => this.#handleOverlayClick(event))'
+    assert_includes controller_source, "#nearestEventToPointer(event)"
+    assert_includes controller_source, "this.#selectEvent(nearestEvent)"
+    assert_includes controller_source, "this.#addDraftMarker(event)"
+  end
 end
