@@ -35,6 +35,8 @@ export default class extends Controller {
       this.payload.series.map((series) => series.id),
     );
     this.localEvents = [];
+    this.selectedSeriesId = null;
+    this.selectedEventKey = null;
 
     this.#installResizeObserver();
     this.#renderSource();
@@ -86,6 +88,7 @@ export default class extends Controller {
       this.activeSeriesIds.add(seriesId);
     } else {
       this.activeSeriesIds.delete(seriesId);
+      if (this.selectedSeriesId === seriesId) this.selectedSeriesId = null;
     }
 
     this.#renderChart();
@@ -216,7 +219,10 @@ export default class extends Controller {
 
     this.payload.series.forEach((series) => {
       const row = document.createElement("div");
-      row.className = "flex items-center justify-between gap-2";
+      row.className =
+        "flex items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5";
+      row.setAttribute("data-forecast-canvas-series-id", series.id);
+      this.#toggleSelectedRow(row, this.#isSelectedSeries(series));
 
       const label = document.createElement("label");
       label.className =
@@ -257,6 +263,11 @@ export default class extends Controller {
         "shrink-0 rounded-md px-2 py-1 text-secondary text-xs hover:bg-surface-inset hover:text-primary";
       inspect.textContent =
         this.payload.labels?.inspector?.inspect || "Inspect";
+      inspect.setAttribute("data-forecast-canvas-series-inspect", series.id);
+      inspect.setAttribute(
+        "aria-pressed",
+        this.#isSelectedSeries(series) ? "true" : "false",
+      );
       inspect.addEventListener("click", () => this.#selectStack(series));
 
       if (!(series.prototype || series.preview)) {
@@ -282,10 +293,17 @@ export default class extends Controller {
     }
 
     events.slice(0, 8).forEach((event) => {
+      const eventKey = this.#eventKey(event);
       const row = document.createElement("button");
       row.type = "button";
       row.className =
-        "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-inset";
+        "flex w-full items-start gap-2 rounded-md border border-transparent px-2 py-1.5 text-left text-sm hover:bg-surface-inset";
+      row.setAttribute("data-forecast-canvas-event-key", eventKey);
+      row.setAttribute(
+        "aria-pressed",
+        this.#isSelectedEvent(event) ? "true" : "false",
+      );
+      this.#toggleSelectedRow(row, this.#isSelectedEvent(event));
       row.addEventListener("click", () => {
         this.#selectEvent(event);
       });
@@ -340,6 +358,8 @@ export default class extends Controller {
     this.xScale = null;
     this.zoom = null;
     this.overlay = null;
+    this.lineLayer = null;
+    this.eventLayer = null;
 
     const activeSeries = this.#activeSeriesWithMetric();
     const allPoints = activeSeries.flatMap((series) => series.points);
@@ -541,6 +561,12 @@ export default class extends Controller {
         (exit) => exit.remove(),
       )
       .attr("stroke", (series) => series.color)
+      .attr("stroke-width", (series) =>
+        this.#isSelectedSeries(series) ? 3.5 : 2.5,
+      )
+      .attr("opacity", (series) =>
+        this.selectedSeriesId && !this.#isSelectedSeries(series) ? 0.32 : 0.95,
+      )
       .attr("stroke-dasharray", (series) =>
         series.prototype || series.preview ? "6 4" : null,
       )
@@ -548,6 +574,7 @@ export default class extends Controller {
 
     this.#updateEvents();
     this.#renderViewportLabel();
+    this.#syncSelectionStyles();
   }
 
   #updateEvents() {
@@ -558,7 +585,7 @@ export default class extends Controller {
 
     this.eventLayer
       .selectAll("line.forecast-event")
-      .data(events, (event) => event.id || `${event.label}-${event.date}`)
+      .data(events, (event) => this.#eventKey(event))
       .join("line")
       .attr("class", "forecast-event")
       .attr("x1", (event) => this.xScale(event.dateObject))
@@ -566,10 +593,12 @@ export default class extends Controller {
       .attr("y1", 0)
       .attr("y2", this.innerHeight)
       .attr("stroke", (event) => event.color || "var(--color-gray-500)")
-      .attr("stroke-width", 2)
+      .attr("stroke-width", (event) => (this.#isSelectedEvent(event) ? 3.5 : 2))
       .attr("stroke-dasharray", "4 4")
       .attr("stroke-linecap", "round")
-      .attr("opacity", 0.85)
+      .attr("opacity", (event) =>
+        this.selectedEventKey && !this.#isSelectedEvent(event) ? 0.35 : 0.85,
+      )
       .attr("pointer-events", "none");
   }
 
@@ -719,6 +748,7 @@ export default class extends Controller {
   }
 
   #selectPoint(series, point) {
+    this.#setSelectedSeries(series);
     this.selectedDateTarget.textContent = formatShortDate(point.dateObject);
     this.selectedValueTarget.textContent =
       point.formatted || this.#formatValue(point.value);
@@ -727,6 +757,7 @@ export default class extends Controller {
   }
 
   #selectEvent(event) {
+    this.#setSelectedEvent(event);
     this.selectedDateTarget.textContent = formatShortDate(event.dateObject);
     this.selectedValueTarget.textContent = event.label;
     this.selectedSeriesTarget.textContent = event.scenario || event.kind || "";
@@ -737,6 +768,7 @@ export default class extends Controller {
   }
 
   #selectStack(series) {
+    this.#setSelectedSeries(series);
     const stack = this.payload.stacks?.find((candidate) => {
       return (
         candidate.id === series.id ||
@@ -763,6 +795,102 @@ export default class extends Controller {
     this.selectedSeriesTarget.textContent =
       stack.feasibility_status || series.feasibility_status || "";
     this.#renderStackDetails(stack, series);
+  }
+
+  #setSelectedSeries(series) {
+    const seriesId = String(series.id || series.stack_key || "");
+    const changed =
+      this.selectedSeriesId !== seriesId || this.selectedEventKey !== null;
+    this.selectedSeriesId = seriesId;
+    this.selectedEventKey = null;
+    if (changed) this.#syncSelectionStyles();
+  }
+
+  #setSelectedEvent(event) {
+    const eventKey = this.#eventKey(event);
+    const changed =
+      this.selectedEventKey !== eventKey || this.selectedSeriesId !== null;
+    this.selectedSeriesId = null;
+    this.selectedEventKey = eventKey;
+    if (changed) this.#syncSelectionStyles();
+  }
+
+  #syncSelectionStyles() {
+    this.#syncSeriesSelectionStyles();
+    this.#syncEventSelectionStyles();
+  }
+
+  #syncSeriesSelectionStyles() {
+    if (this.lineLayer) {
+      this.lineLayer
+        .selectAll("path.forecast-line")
+        .attr("stroke-width", (series) =>
+          this.#isSelectedSeries(series) ? 3.5 : 2.5,
+        )
+        .attr("opacity", (series) =>
+          this.selectedSeriesId && !this.#isSelectedSeries(series)
+            ? 0.32
+            : 0.95,
+        );
+    }
+
+    this.legendTarget
+      .querySelectorAll("[data-forecast-canvas-series-id]")
+      .forEach((row) => {
+        const selected =
+          row.dataset.forecastCanvasSeriesId === this.selectedSeriesId;
+        this.#toggleSelectedRow(row, selected);
+        row
+          .querySelector("[data-forecast-canvas-series-inspect]")
+          ?.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+  }
+
+  #syncEventSelectionStyles() {
+    if (this.eventLayer) {
+      this.eventLayer
+        .selectAll("line.forecast-event")
+        .attr("stroke-width", (event) =>
+          this.#isSelectedEvent(event) ? 3.5 : 2,
+        )
+        .attr("opacity", (event) =>
+          this.selectedEventKey && !this.#isSelectedEvent(event) ? 0.35 : 0.85,
+        );
+    }
+
+    this.eventListTarget
+      .querySelectorAll("[data-forecast-canvas-event-key]")
+      .forEach((row) => {
+        const selected =
+          row.dataset.forecastCanvasEventKey === this.selectedEventKey;
+        this.#toggleSelectedRow(row, selected);
+        row.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+  }
+
+  #toggleSelectedRow(row, selected) {
+    row.classList.toggle("bg-surface-inset", selected);
+    row.classList.toggle("border-primary", selected);
+    row.classList.toggle("border-transparent", !selected);
+  }
+
+  #isSelectedSeries(series) {
+    if (!this.selectedSeriesId) return false;
+
+    return [series.id, series.stack_key]
+      .filter(Boolean)
+      .map((identifier) => String(identifier))
+      .includes(this.selectedSeriesId);
+  }
+
+  #isSelectedEvent(event) {
+    return this.selectedEventKey === this.#eventKey(event);
+  }
+
+  #eventKey(event) {
+    if (event.id) return `event:${event.id}`;
+
+    return `${event.kind || "event"}:${event.date || ""}:${event.label || ""}`;
   }
 
   #renderEmptyDetails() {

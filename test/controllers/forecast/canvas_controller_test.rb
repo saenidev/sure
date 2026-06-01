@@ -69,4 +69,16 @@ class Forecast::CanvasControllerTest < ActionDispatch::IntegrationTest
     assert_includes controller_source, "#zoomBy(factor)"
     assert_includes controller_source, "#renderViewportLabel()"
   end
+
+  test "chart keeps selected lines and event markers visually synchronized" do
+    controller_source = Rails.root.join("app/javascript/controllers/forecast_canvas_chart_controller.js").read
+
+    assert_includes controller_source, "this.selectedSeriesId"
+    assert_includes controller_source, "this.selectedEventKey"
+    assert_includes controller_source, "data-forecast-canvas-series-id"
+    assert_includes controller_source, "data-forecast-canvas-event-key"
+    assert_includes controller_source, "#syncSelectionStyles()"
+    assert_includes controller_source, "#isSelectedSeries(series)"
+    assert_includes controller_source, "#isSelectedEvent(event)"
+  end
 end
