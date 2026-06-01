@@ -82,6 +82,23 @@ class KrakenItemTest < ActiveSupport::TestCase
     assert other_account.persisted?
   end
 
+  test "sync_status_summary uses preloaded account links" do
+    kraken_account = @item.kraken_accounts.create!(name: "Main", account_id: "main", account_type: "combined", currency: "USD")
+    @item.kraken_accounts.create!(name: "Earn", account_id: "earn", account_type: "earn", currency: "USD")
+    account = Account.create!(
+      family: @family, name: "Kraken Main", balance: 0, currency: "USD",
+      accountable: Crypto.create!(subtype: "exchange")
+    )
+    AccountProvider.create!(account: account, provider: kraken_account)
+
+    preloaded_item = KrakenItem.includes(kraken_accounts: :account_provider).find(@item.id)
+
+    assert_queries_count(matcher: /SELECT .* FROM "(kraken_accounts|account_providers)"/, max: 0) do
+      assert_equal I18n.t("kraken_items.kraken_item.sync_status.partial_sync", linked_count: 1, unlinked_count: 1),
+                   preloaded_item.sync_status_summary
+    end
+  end
+
   test "encrypts credentials when active record encryption is configured" do
     skip "Encryption not configured" unless KrakenItem.encryption_ready?
 

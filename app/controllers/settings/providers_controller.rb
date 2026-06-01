@@ -276,9 +276,9 @@ class Settings::ProvidersController < ApplicationController
       when "coinbase"
         @coinbase_items = Current.family.coinbase_items.ordered
       when "binance"
-        @binance_items = Current.family.binance_items.active.ordered
+        @binance_items = Current.family.binance_items.active.ordered.includes(:syncs, binance_accounts: :account_provider)
       when "kraken"
-        @kraken_items = Current.family.kraken_items.active.ordered
+        @kraken_items = Current.family.kraken_items.active.ordered.includes(:syncs, kraken_accounts: :account_provider)
       when "coinspot"
         @coinspot_items = Current.family.coinspot_items.active.ordered
       when "onchain_wallet"
@@ -328,8 +328,8 @@ class Settings::ProvidersController < ApplicationController
       @trading212_items = Current.family.trading212_items.ordered
       @trade_republic_items = Current.family.trade_republic_items.active.ordered.includes(:trade_republic_accounts)
       @indexa_capital_items = Current.family.indexa_capital_items.ordered.select(:id)
-      @binance_items = Current.family.binance_items.active.ordered
-      @kraken_items = Current.family.kraken_items.active.ordered
+      @binance_items = Current.family.binance_items.active.ordered.includes(:syncs, binance_accounts: :account_provider)
+      @kraken_items = Current.family.kraken_items.active.ordered.includes(:syncs, kraken_accounts: :account_provider)
       @coinspot_items = Current.family.coinspot_items.active.ordered
       @onchain_wallet_items = Current.family.onchain_wallet_items.active.ordered
       @questrade_items = Current.family.questrade_items.active.ordered.select(:id)
