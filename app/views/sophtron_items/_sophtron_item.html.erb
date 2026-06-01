@@ -114,7 +114,7 @@
         <% stats = if defined?(@sophtron_sync_stats_map) && @sophtron_sync_stats_map
              @sophtron_sync_stats_map[sophtron_item.id] || {}
            else
-             sophtron_item.syncs.ordered.first&.sync_stats || {}
+             sophtron_item.latest_sync_record&.sync_stats || {}
            end %>
         <%= render ProviderSyncSummary.new(
           stats: stats,

@@ -416,7 +416,7 @@ class SimplefinItem < ApplicationRecord
   # Get reconciled duplicates count from the last sync
   # Returns { count: N, message: "..." } or { count: 0 } if none
   def last_sync_reconciled_status
-    latest_sync = syncs.ordered.first
+    latest_sync = latest_sync_record
     return { count: 0 } unless latest_sync
 
     stats = parse_sync_stats(latest_sync.sync_stats)

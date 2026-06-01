@@ -85,7 +85,7 @@
           <%= render "accounts/index/account_groups", accounts: ibkr_item.accounts %>
         <% end %>
 
-        <% stats = ibkr_item.syncs.ordered.first&.sync_stats || {} %>
+        <% stats = ibkr_item.latest_sync_record&.sync_stats || {} %>
         <%= render ProviderSyncSummary.new(stats: stats, provider_item: ibkr_item) %>
 
         <% if Current.user&.admin? %>

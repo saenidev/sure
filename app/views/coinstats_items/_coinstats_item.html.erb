@@ -88,7 +88,7 @@
         <% stats = if defined?(@coinstats_sync_stats_map) && @coinstats_sync_stats_map
              @coinstats_sync_stats_map[coinstats_item.id] || {}
            else
-             coinstats_item.syncs.ordered.first&.sync_stats || {}
+             coinstats_item.latest_sync_record&.sync_stats || {}
            end %>
         <%= render ProviderSyncSummary.new(
           stats: stats,

@@ -44,7 +44,7 @@ module BrexItemsHelper
 
     {
       brex_item: brex_item,
-      stats: (sync_stats_map || {})[brex_item.id] || brex_item.syncs.ordered.first&.sync_stats || {},
+      stats: (sync_stats_map || {})[brex_item.id] || brex_item.latest_sync_record&.sync_stats || {},
       unlinked_count: counts[:unlinked] || brex_item.unlinked_accounts_count,
       linked_count: counts[:linked] || brex_item.linked_accounts_count,
       total_count: counts[:total] || brex_item.total_accounts_count,

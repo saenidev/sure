@@ -6,7 +6,11 @@ module Syncable
   end
 
   def syncing?
-    syncs.visible.any?
+    if syncs.loaded?
+      syncs.any? { |sync| sync.in_progress? && sync.created_at > Sync::VISIBLE_FOR.ago }
+    else
+      syncs.visible.any?
+    end
   end
 
   # Schedules a sync for syncable.  If there is an existing sync pending/syncing for this syncable,
@@ -56,7 +60,9 @@ module Syncable
   end
 
   def sync_error
-    latest_sync&.error || latest_sync&.children&.map(&:error)&.compact&.first
+    sync = latest_sync
+
+    sync&.error || sync&.children&.map(&:error)&.compact&.first
   end
 
   def last_synced_at
@@ -67,13 +73,25 @@ module Syncable
     latest_sync&.created_at
   end
 
+  def latest_sync_record
+    latest_sync
+  end
+
   private
     def latest_sync
-      syncs.ordered.first
+      if syncs.loaded?
+        syncs.max_by { |sync| [ sync.created_at || Time.at(0), sync.id || 0 ] }
+      else
+        syncs.ordered.first
+      end
     end
 
     def latest_completed_sync
-      syncs.completed.ordered.first
+      if syncs.loaded?
+        syncs.select(&:completed?).max_by { |sync| [ sync.created_at || Time.at(0), sync.id || 0 ] }
+      else
+        syncs.completed.ordered.first
+      end
     end
 
     def syncer

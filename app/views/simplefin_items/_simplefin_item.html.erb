@@ -207,7 +207,7 @@
              @simplefin_sync_stats_map[simplefin_item.id] || {}
            else
              # `latest_sync` is private on Syncable; access via association for broadcast renders.
-             simplefin_item.syncs.ordered.first&.sync_stats || {}
+             simplefin_item.latest_sync_record&.sync_stats || {}
            end %>
         <%= render ProviderSyncSummary.new(
           stats: stats,

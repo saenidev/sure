@@ -113,7 +113,7 @@
         <% stats = if defined?(@coinbase_sync_stats_map) && @coinbase_sync_stats_map
              @coinbase_sync_stats_map[coinbase_item.id] || {}
            else
-             coinbase_item.syncs.ordered.first&.sync_stats || {}
+             coinbase_item.latest_sync_record&.sync_stats || {}
            end %>
         <%= render ProviderSyncSummary.new(
           stats: stats,

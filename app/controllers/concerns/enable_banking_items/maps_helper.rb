@@ -39,7 +39,7 @@ module EnableBankingItems
         latest_sync = if item.syncs.loaded?
           item.syncs.max_by(&:created_at)
         else
-          item.syncs.ordered.first
+          item.latest_sync_record
         end
         stats = (latest_sync&.sync_stats || {})
         @enable_banking_sync_stats_map[item.id] = stats

@@ -164,7 +164,7 @@ class IbkrItemsController < ApplicationController
     @unlinked_accounts = @ibkr_accounts.reject { |ibkr_account| ibkr_account.current_account.present? }
 
     no_accounts = @linked_accounts.blank? && @unlinked_accounts.blank?
-    latest_sync = @ibkr_item.syncs.ordered.first
+    latest_sync = @ibkr_item.latest_sync_record
     should_sync = latest_sync.nil? || !latest_sync.completed?
 
     if no_accounts && !@ibkr_item.syncing? && should_sync
