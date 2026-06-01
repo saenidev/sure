@@ -209,6 +209,27 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to forecast_events_path(scenario_id: @scenario.id)
     event = @family.forecast_events.order(:created_at).last
     assert_equal @scenario.id, event.forecast_scenario_id
+    assert_not event.include_baseline?
+    assert_equal [ @scenario.id ], event.scenario_membership_ids
+  end
+
+  test "create can share one event across multiple scenarios" do
+    other_scenario = @family.forecast_scenarios.create!(name: "Other option", status: "active")
+
+    assert_difference "@family.forecast_events.count", 1 do
+      post forecast_events_path,
+           params: {
+             forecast_event: base_params(
+               include_baseline: "0",
+               forecast_scenario_ids: [ @scenario.id, other_scenario.id ]
+             )
+           }
+    end
+
+    assert_redirected_to forecast_events_path
+    event = @family.forecast_events.order(:created_at).last
+    assert_not event.include_baseline?
+    assert_equal [ @scenario.id, other_scenario.id ].sort, event.scenario_membership_ids.sort
   end
 
   test "create within a scenario preserves return target on redirect" do
@@ -428,6 +449,23 @@ class Forecast::EventsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Renamed", event.name
     assert_equal 2500, event.amount.to_i
     assert_equal "additive", event.behavior
+  end
+
+  test "update changes baseline and scenario membership scope" do
+    other_scenario = @family.forecast_scenarios.create!(name: "Other option", status: "active")
+    event = @family.forecast_events.create!(base_params_model)
+
+    patch forecast_event_path(event), params: {
+      forecast_event: {
+        include_baseline: "0",
+        forecast_scenario_ids: [ @scenario.id, other_scenario.id ]
+      }
+    }
+
+    assert_redirected_to forecast_events_path
+    event.reload
+    assert_not event.include_baseline?
+    assert_equal [ @scenario.id, other_scenario.id ].sort, event.scenario_membership_ids.sort
   end
 
   test "update with invalid data re-renders the form with a 422" do

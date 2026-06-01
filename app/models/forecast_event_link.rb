@@ -81,6 +81,8 @@ class ForecastEventLink < ApplicationRecord
         "occurrence_on" => occurrence_on&.iso8601,
         "starts_on" => forecast_event.starts_on&.iso8601,
         "ends_on" => forecast_event.ends_on&.iso8601,
+        "include_baseline" => forecast_event.include_baseline?,
+        "forecast_scenario_ids" => forecast_event.scenario_membership_ids,
         "forecast_scenario_id" => forecast_event.forecast_scenario_id,
         "account_id" => forecast_event.account_id,
         "destination_account_id" => forecast_event.destination_account_id,

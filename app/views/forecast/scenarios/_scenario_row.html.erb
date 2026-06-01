@@ -8,7 +8,7 @@
     "rejected" => :fuchsia
   }
   approval_tone = approval_tones.fetch(scenario.approval_status, :gray)
-  events = scenario.forecast_events.to_a.sort_by { |event| [ event.starts_on, event.created_at || Time.zone.at(0) ] }
+  events = scenario.included_forecast_events.to_a.sort_by { |event| [ event.starts_on, event.created_at || Time.zone.at(0) ] }
   event_route_params = { scenario_id: scenario.id }.tap do |route_params|
     route_params[:return_to] = events_return_to if events_return_to.present?
   end

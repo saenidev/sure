@@ -16,13 +16,20 @@ class ForecastEvent < ApplicationRecord
   BEHAVIORS = %w[additive].freeze
   STATUSES = %w[planned accepted ignored disabled].freeze
 
+  attr_accessor :scope_managed
+
   belongs_to :family
   belongs_to :forecast_scenario, optional: true
   belongs_to :account, optional: true
   belongs_to :destination_account, class_name: "Account", optional: true
   belongs_to :category, optional: true
 
+  has_many :forecast_event_scenario_memberships, dependent: :destroy
+  has_many :forecast_scenarios, through: :forecast_event_scenario_memberships
   has_many :forecast_event_links, dependent: :nullify
+
+  before_validation :default_include_baseline
+  before_validation :build_membership_from_legacy_scenario, if: :forecast_scenario_id?
 
   monetize :amount, allow_nil: true
 
@@ -46,7 +53,49 @@ class ForecastEvent < ApplicationRecord
     recurrence_rule.present?
   end
 
+  def applies_to_scenario_stack?(scenario_ids)
+    ids = Array(scenario_ids).compact_blank.map(&:to_s)
+    return include_baseline? if ids.empty?
+
+    scenario_membership_ids.map(&:to_s).intersect?(ids)
+  end
+
+  def scenario_membership_ids
+    if forecast_event_scenario_memberships.loaded?
+      forecast_event_scenario_memberships.map(&:forecast_scenario_id)
+    else
+      forecast_event_scenario_memberships.pluck(:forecast_scenario_id)
+    end
+  end
+
+  def scope_summary
+    {
+      "include_baseline" => include_baseline?,
+      "forecast_scenario_ids" => scenario_membership_ids
+    }
+  end
+
   private
+    def default_include_baseline
+      if !scope_managed && new_record? && forecast_scenario_id.present? && !will_save_change_to_include_baseline?
+        self.include_baseline = false
+        return
+      end
+
+      return unless include_baseline.nil?
+
+      self.include_baseline = forecast_scenario_id.blank?
+    end
+
+    def build_membership_from_legacy_scenario
+      return if forecast_event_scenario_memberships.any? { |membership| membership.forecast_scenario_id == forecast_scenario_id }
+
+      forecast_event_scenario_memberships.build(
+        family: family,
+        forecast_scenario: forecast_scenario
+      )
+    end
+
     def date_range_valid
       return if ends_on.blank? || starts_on.blank? || ends_on >= starts_on
 

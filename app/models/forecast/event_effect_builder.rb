@@ -95,6 +95,8 @@ module Forecast
             "name" => event.name,
             "effect_type" => event.effect_type,
             "behavior" => event.behavior,
+            "include_baseline" => event.include_baseline?,
+            "forecast_scenario_ids" => event.scenario_membership_ids,
             "probability_weight" => event.probability_weight.to_s,
             "account_id" => event.account_id,
             "destination_account_id" => event.destination_account_id,

@@ -7,6 +7,8 @@ class ForecastScenario < ApplicationRecord
   belongs_to :parent_scenario, class_name: "ForecastScenario", optional: true
 
   has_many :forecast_events, dependent: :destroy
+  has_many :forecast_event_scenario_memberships, dependent: :destroy
+  has_many :included_forecast_events, through: :forecast_event_scenario_memberships, source: :forecast_event
   has_many :forecast_budget_overrides, dependent: :destroy
   has_one :forecast_budget_plan, dependent: :destroy
   has_many :forecast_goals, dependent: :destroy
@@ -96,7 +98,7 @@ class ForecastScenario < ApplicationRecord
 
   private
     def copy_forecast_events_into(copy, family)
-      forecast_events.find_each do |event|
+      included_forecast_events.find_each do |event|
         copy.forecast_events.create!(
           family: family,
           account: event.account,
@@ -114,6 +116,7 @@ class ForecastScenario < ApplicationRecord
           status: "planned",
           probability_weight: event.probability_weight,
           apply_order: event.apply_order,
+          include_baseline: false,
           source_metadata: event.source_metadata
         )
       end

@@ -13,6 +13,9 @@
     "market_shock" => :gray
   }
   effect_tone = effect_tones.fetch(event.effect_type, :gray)
+  scope_names = []
+  scope_names << t("forecasts.events.row.baseline_scope", default: "Baseline") if event.include_baseline?
+  scope_names.concat(event.forecast_scenarios.map(&:name))
 %>
 
 <div id="<%= dom_id(event) %>"
@@ -46,8 +49,8 @@
       <% end %>
     </div>
 
-    <% if event.forecast_scenario.present? %>
-      <p class="text-secondary text-xs"><%= t("forecasts.events.row.scenario", name: event.forecast_scenario.name) %></p>
+    <% if scope_names.any? %>
+      <p class="text-secondary text-xs"><%= t("forecasts.events.row.scope", default: "Applies to %{names}", names: scope_names.to_sentence) %></p>
     <% end %>
   </div>
 

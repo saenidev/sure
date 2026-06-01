@@ -88,14 +88,14 @@ module Forecast
       def forecast_events(stack, end_on, event_consuming_links)
         source_events = family.forecast_events
           .where(status: %w[planned accepted])
-          .where(forecast_scenario_id: [ nil, *stack.scenario_ids ])
           .where(
             "(destination_account_id IS NULL AND (account_id IS NULL OR account_id IN (:ids))) OR " \
             "(destination_account_id IS NOT NULL AND (account_id IN (:ids) OR destination_account_id IN (:ids)))",
             ids: included_account_scope.id_values
           )
-          .includes(:forecast_scenario, :account, :destination_account, :category)
+          .includes(:forecast_scenario, :forecast_event_scenario_memberships, :account, :destination_account, :category)
           .order(:starts_on, :apply_order, :created_at, :id)
+          .select { |event| event.applies_to_scenario_stack?(stack.scenario_ids) }
 
         Forecast::EventEffectBuilder.new(
           family: family,
@@ -167,11 +167,19 @@ module Forecast
 
       def accepted_link_in_stack?(link, stack)
         if link.forecast_event.present?
-          return [ nil, *stack.scenario_ids ].include?(link.forecast_event.forecast_scenario_id)
+          return link.forecast_event.applies_to_scenario_stack?(stack.scenario_ids)
         end
 
-        scenario_id = link.event_snapshot&.fetch("forecast_scenario_id", nil)
-        scenario_id.blank? || stack.scenario_ids.map(&:to_s).include?(scenario_id.to_s)
+        snapshot = link.event_snapshot || {}
+        snapshot_scenario_ids = Array(snapshot["forecast_scenario_ids"]).compact_blank.map(&:to_s)
+        if snapshot.key?("include_baseline") || snapshot_scenario_ids.any?
+          return snapshot["include_baseline"] if stack.scenario_ids.empty?
+
+          return snapshot_scenario_ids.intersect?(stack.scenario_ids.map(&:to_s))
+        end
+
+        legacy_scenario_id = snapshot["forecast_scenario_id"]
+        stack.scenario_ids.empty? ? legacy_scenario_id.blank? : stack.scenario_ids.map(&:to_s).include?(legacy_scenario_id.to_s)
       end
 
       def debt_sensitive_events(events)
@@ -250,6 +258,7 @@ module Forecast
           "recurring_transactions_max_updated_at" => scoped_recurring_transactions.maximum(:updated_at)&.iso8601,
           "forecast_scenarios_max_updated_at" => family.forecast_scenarios.maximum(:updated_at)&.iso8601,
           "forecast_events_max_updated_at" => scoped_forecast_events.maximum(:updated_at)&.iso8601,
+          "forecast_event_scenario_memberships_max_updated_at" => family.forecast_event_scenario_memberships.maximum(:updated_at)&.iso8601,
           "forecast_event_links_max_updated_at" => family.forecast_event_links.maximum(:updated_at)&.iso8601,
           "forecast_goals_max_updated_at" => family.forecast_goals.maximum(:updated_at)&.iso8601,
           "forecast_account_liquidity_settings_max_updated_at" => family.forecast_account_liquidity_settings.where(account_id: included_ids).maximum(:updated_at)&.iso8601,

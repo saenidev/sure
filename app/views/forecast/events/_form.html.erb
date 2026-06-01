@@ -8,6 +8,9 @@
   amount_types = ForecastEvent::AMOUNT_EFFECT_TYPES.join(" ")
   category_types = "income expense"
   transfer_types = "transfer"
+  selected_scenario_ids = event.forecast_event_scenario_memberships.map(&:forecast_scenario_id)
+  selected_scenario_ids = [ scenario.id ] if selected_scenario_ids.blank? && scenario.present? && !event.persisted?
+  include_baseline = event.include_baseline.nil? ? scenario.blank? : event.include_baseline?
   return_route_params = {}.tap do |route_params|
     route_params[:return_to] = params[:return_to] if params[:return_to].present?
   end
@@ -21,8 +24,6 @@
   <% if event.errors.any? %>
     <%= render "shared/form_errors", model: event %>
   <% end %>
-
-  <%= f.hidden_field :forecast_scenario_id, value: scenario&.id %>
 
   <div class="space-y-2">
     <%= f.text_field :name,
@@ -41,6 +42,32 @@
                    }
                  } %>
   </div>
+
+  <fieldset class="rounded-lg border border-primary p-3 space-y-2">
+    <legend class="text-primary text-sm font-medium px-1"><%= t("forecasts.events.form.scope_label", default: "Applies to") %></legend>
+
+    <input type="hidden" name="forecast_event[include_baseline]" value="0">
+    <label class="flex items-center gap-2 text-sm text-primary">
+      <%= check_box_tag "forecast_event[include_baseline]", "1", include_baseline, class: "form-field__checkbox" %>
+      <%= t("forecasts.events.form.scope_baseline", default: "Baseline") %>
+    </label>
+
+    <% if scenarios.any? %>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <% scenarios.each do |forecast_scenario| %>
+          <% checkbox_id = "forecast-event-scenario-#{forecast_scenario.id}" %>
+          <label for="<%= checkbox_id %>" class="flex items-center gap-2 text-sm text-primary">
+            <%= check_box_tag "forecast_event[forecast_scenario_ids][]",
+                              forecast_scenario.id,
+                              selected_scenario_ids.map(&:to_s).include?(forecast_scenario.id.to_s),
+                              id: checkbox_id,
+                              class: "form-field__checkbox" %>
+            <span class="truncate"><%= forecast_scenario.name %></span>
+          </label>
+        <% end %>
+      </div>
+    <% end %>
+  </fieldset>
 
   <%# Amount + currency: every amount effect type. %>
   <div data-forecast-event-form-target="field"

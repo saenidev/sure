@@ -41,6 +41,25 @@ class ForecastEventTest < ActiveSupport::TestCase
     assert event.valid?
   end
 
+  test "legacy scenario-owned event defaults out of baseline and into its scenario membership" do
+    scenario = @family.forecast_scenarios.create!(name: "Move", status: "active")
+
+    event = scenario.forecast_events.create!(
+      family: @family,
+      name: "Scenario cost",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 100,
+      currency: @family.currency,
+      starts_on: Date.current
+    )
+
+    assert_not event.include_baseline?
+    assert_equal [ scenario.id ], event.scenario_membership_ids
+    assert event.applies_to_scenario_stack?([ scenario.id ])
+    assert_not event.applies_to_scenario_stack?([])
+  end
+
   test "accepts a valid weekly recurrence rule" do
     event = @family.forecast_events.build(
       name: "Weekly groceries",

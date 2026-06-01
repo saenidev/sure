@@ -198,7 +198,7 @@ module Forecast
       return @scenario_groups if defined?(@scenario_groups)
 
       scenarios = family.forecast_scenarios
-        .includes(:forecast_events, :forecast_budget_overrides, :forecast_budget_plan, :forecast_goals, :forecast_account_liquidity_settings)
+        .includes(:included_forecast_events, :forecast_budget_overrides, :forecast_budget_plan, :forecast_goals, :forecast_account_liquidity_settings)
         .ordered
         .to_a
 

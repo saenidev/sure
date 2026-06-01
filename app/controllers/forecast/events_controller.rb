@@ -20,7 +20,7 @@ module Forecast
       set_index_breadcrumbs
 
       @events = scoped_events
-        .includes(:account, :destination_account, :category, :forecast_scenario)
+        .includes(:account, :destination_account, :category, :forecast_scenario, :forecast_event_scenario_memberships, :forecast_scenarios)
         .order(starts_on: :desc, created_at: :desc)
         .to_a
     end
@@ -34,6 +34,7 @@ module Forecast
         currency: @family.currency,
         starts_on: default_starts_on,
         forecast_scenario: @scenario,
+        include_baseline: @scenario.blank?,
         probability_weight: 1.0
       )
     end
@@ -43,7 +44,7 @@ module Forecast
       @event = @family.forecast_events.new(event_params)
       @event.behavior = "additive" # behavior is fixed; never user-settable.
 
-      if @event.save
+      if save_event_with_scope(@event)
         redirect_to after_save_path, notice: t(".success")
       else
         render :new, status: :unprocessable_entity
@@ -56,7 +57,9 @@ module Forecast
 
     # PATCH/PUT /forecast/events/:id
     def update
-      if @event.update(event_params.merge(behavior: "additive"))
+      @event.assign_attributes(event_params.merge(behavior: "additive"))
+
+      if save_event_with_scope(@event)
         redirect_to after_save_path, notice: t(".success")
       else
         render :edit, status: :unprocessable_entity
@@ -85,7 +88,7 @@ module Forecast
       end
 
       def scoped_events
-        @scenario ? @scenario.forecast_events : @family.forecast_events
+        @scenario ? @scenario.included_forecast_events : @family.forecast_events
       end
 
       def default_starts_on
@@ -153,14 +156,81 @@ module Forecast
         permitted = params.require(:forecast_event).permit(
           :name, :description, :effect_type, :amount, :currency,
           :starts_on, :ends_on, :status, :probability_weight,
-          :forecast_scenario_id, :account_id, :destination_account_id, :category_id,
-          :recurring, recurrence_rule: %i[frequency interval day_of_month],
+          :include_baseline, :forecast_scenario_id, :account_id, :destination_account_id, :category_id,
+          :recurring,
+          forecast_scenario_ids: [],
+          recurrence_rule: %i[frequency interval day_of_month],
           source_metadata: %i[destination_amount destination_currency]
         )
 
+        extract_event_scope(permitted)
         normalize_recurrence(permitted)
         normalize_source_metadata(permitted)
         permitted
+      end
+
+      def extract_event_scope(permitted)
+        legacy_scenario_id = permitted.delete(:forecast_scenario_id)
+        scenario_ids = Array(permitted.delete(:forecast_scenario_ids))
+          .flat_map { |value| value.to_s.split(",") }
+          .compact_blank
+          .uniq
+        scenario_ids << legacy_scenario_id if legacy_scenario_id.present? && !scenario_ids.include?(legacy_scenario_id)
+        scenario_ids << @scenario.id if @scenario.present? && scenario_ids.blank?
+
+        include_baseline = if permitted.key?(:include_baseline)
+          ActiveModel::Type::Boolean.new.cast(permitted.delete(:include_baseline))
+        else
+          scenario_ids.blank?
+        end
+
+        @event_scope = {
+          include_baseline: include_baseline,
+          scenario_ids: scenario_ids
+        }
+      end
+
+      def save_event_with_scope(event)
+        scenarios = selected_scope_scenarios!
+        event.scope_managed = true
+        event.include_baseline = @event_scope.fetch(:include_baseline)
+        event.forecast_scenario = scenarios.first
+
+        if !event.include_baseline? && scenarios.empty?
+          event.errors.add(:base, t("forecasts.events.form.scope_required", default: "Choose baseline or at least one scenario."))
+          return false
+        end
+
+        saved = false
+        ForecastEvent.transaction do
+          saved = event.save
+          raise ActiveRecord::Rollback unless saved
+
+          sync_event_scenarios!(event, scenarios)
+        end
+        saved
+      end
+
+      def selected_scope_scenarios!
+        ids = Array(@event_scope&.fetch(:scenario_ids, []))
+        return [] if ids.blank?
+
+        scenarios = @family.forecast_scenarios.where(id: ids).to_a
+        found_ids = scenarios.map { |scenario| scenario.id.to_s }
+        raise ActiveRecord::RecordNotFound if ids.map(&:to_s).sort != found_ids.sort
+
+        ids.map { |id| scenarios.find { |scenario| scenario.id.to_s == id.to_s } }
+      end
+
+      def sync_event_scenarios!(event, scenarios)
+        scenario_ids = scenarios.map(&:id)
+        event.forecast_event_scenario_memberships.where.not(forecast_scenario_id: scenario_ids).destroy_all
+
+        scenarios.each do |scenario|
+          event.forecast_event_scenario_memberships.find_or_create_by!(forecast_scenario: scenario) do |membership|
+            membership.family = @family
+          end
+        end
       end
 
       # The form sends a `recurring` checkbox plus a nested recurrence_rule. When

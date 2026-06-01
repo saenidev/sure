@@ -75,6 +75,69 @@ class Forecast::InputBuilderTest < ActiveSupport::TestCase
     assert_equal 0.to_d, row.fetch(:net_worth_delta)
   end
 
+  test "baseline event is excluded from scenario stack unless explicitly shared" do
+    family = families(:dylan_family)
+    scenario = family.forecast_scenarios.create!(name: "Move abroad", status: "active")
+    event = family.forecast_events.create!(
+      name: "Baseline-only repair",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 400,
+      currency: family.currency,
+      starts_on: Date.current
+    )
+
+    result = Forecast::InputBuilder.new(
+      family: family,
+      user: users(:family_admin),
+      scenario_ids: [ scenario.id ],
+      start_on: Date.current
+    ).call
+
+    assert result.events.none? { |row| row.fetch(:forecast_event_id) == event.id },
+      "baseline events must not implicitly leak into scenario stacks"
+  end
+
+  test "event shared with multiple scenarios is included by any matching stack once" do
+    family = families(:dylan_family)
+    move = family.forecast_scenarios.create!(name: "Move abroad", status: "active")
+    sabbatical = family.forecast_scenarios.create!(name: "Sabbatical", status: "active")
+    unrelated = family.forecast_scenarios.create!(name: "Stay put", status: "active")
+    event = family.forecast_events.create!(
+      name: "Storage unit",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 120,
+      currency: family.currency,
+      starts_on: Date.current,
+      include_baseline: false
+    )
+    event.forecast_scenarios = [ move, sabbatical ]
+
+    move_result = Forecast::InputBuilder.new(
+      family: family,
+      user: users(:family_admin),
+      scenario_ids: [ move.id ],
+      start_on: Date.current
+    ).call
+    combined_result = Forecast::InputBuilder.new(
+      family: family,
+      user: users(:family_admin),
+      scenario_ids: [ move.id, sabbatical.id ],
+      start_on: Date.current
+    ).call
+    unrelated_result = Forecast::InputBuilder.new(
+      family: family,
+      user: users(:family_admin),
+      scenario_ids: [ unrelated.id ],
+      start_on: Date.current
+    ).call
+
+    assert_equal 1, move_result.events.count { |row| row.fetch(:forecast_event_id) == event.id }
+    assert_equal 1, combined_result.events.count { |row| row.fetch(:forecast_event_id) == event.id }
+    assert unrelated_result.events.none? { |row| row.fetch(:forecast_event_id) == event.id }
+  end
+
   test "no liquidity setting windows yields an empty reclassification stream" do
     result = Forecast::InputBuilder.new(
       family: families(:dylan_family),

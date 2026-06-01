@@ -29,15 +29,20 @@ module Forecast
     end
 
     def event_marker(event)
+      scenario_ids = event.scenario_membership_ids
+      scenario_names = event.forecast_scenarios.map(&:name)
       {
         id: event.id,
         date: event.starts_on.iso8601,
         end_date: event.ends_on&.iso8601,
         window_label: event_window_label(event),
         label: event.name,
-        kind: event.forecast_scenario_id.present? ? "scenario" : "event",
-        scenario_id: event.forecast_scenario_id,
-        scenario: event.forecast_scenario&.name,
+        kind: scenario_ids.any? ? "scenario" : "event",
+        include_baseline: event.include_baseline?,
+        scenario_id: scenario_ids.one? ? scenario_ids.first : nil,
+        scenario_ids: scenario_ids,
+        scenario: scenario_names.to_sentence,
+        scenarios: scenario_names,
         effect_type: event.effect_type,
         status: event.status,
         status_label: I18n.t("forecasts.events.statuses.#{event.status}", default: event.status.to_s.humanize),
@@ -47,7 +52,7 @@ module Forecast
         amount: event.amount&.to_f,
         formatted_amount: formatted_event_amount(event),
         effect_label: I18n.t("forecasts.events.effect_types.#{event.effect_type}", default: event.effect_type.to_s.humanize),
-        color: event.forecast_scenario&.color.presence || event_color(event),
+        color: event.forecast_scenarios.first&.color.presence || event_color(event),
         edit_url: route_helpers.edit_forecast_event_path(event)
       }
     end
@@ -237,7 +242,7 @@ module Forecast
 
       def event_markers
         family.forecast_events
-          .includes(:forecast_scenario)
+          .includes(:forecast_event_scenario_memberships, :forecast_scenarios)
           .where.not(starts_on: nil)
           .order(:starts_on, :created_at)
           .limit(100)
@@ -426,6 +431,7 @@ module Forecast
         [
           family.forecast_scenarios,
           family.forecast_events,
+          family.forecast_event_scenario_memberships,
           family.forecast_event_links,
           family.forecast_budget_overrides,
           family.forecast_budget_plans,
@@ -436,7 +442,7 @@ module Forecast
       end
 
       def event_color(event)
-        event.forecast_scenario_id.present? ? COLORS.second : COLORS.fourth
+        event.scenario_membership_ids.any? ? COLORS.second : COLORS.fourth
       end
 
       def formatted_event_amount(event)

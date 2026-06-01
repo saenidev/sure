@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_01_090000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_01_103000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -1123,6 +1123,19 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_090000) do
     t.index ["forecast_event_id"], name: "index_forecast_event_links_on_forecast_event_id"
   end
 
+  create_table "forecast_event_scenario_memberships", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "forecast_event_id", null: false
+    t.uuid "forecast_scenario_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "forecast_scenario_id"], name: "idx_event_scenario_memberships_family_scenario"
+    t.index ["family_id"], name: "index_forecast_event_scenario_memberships_on_family_id"
+    t.index ["forecast_event_id", "forecast_scenario_id"], name: "idx_event_scenario_memberships_unique", unique: true
+    t.index ["forecast_event_id"], name: "index_forecast_event_scenario_memberships_on_forecast_event_id"
+    t.index ["forecast_scenario_id"], name: "idx_on_forecast_scenario_id_898923fb50"
+  end
+
   create_table "forecast_events", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "family_id", null: false
     t.uuid "forecast_scenario_id"
@@ -1144,9 +1157,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_090000) do
     t.jsonb "source_metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "include_baseline", default: true, null: false
     t.index ["account_id"], name: "index_forecast_events_on_account_id"
     t.index ["category_id"], name: "index_forecast_events_on_category_id"
     t.index ["destination_account_id"], name: "index_forecast_events_on_destination_account_id"
+    t.index ["family_id", "include_baseline", "starts_on"], name: "idx_forecast_events_baseline_start"
     t.index ["family_id", "starts_on"], name: "index_forecast_events_on_family_id_and_starts_on"
     t.index ["family_id"], name: "index_forecast_events_on_family_id"
     t.index ["forecast_scenario_id", "starts_on"], name: "index_forecast_events_on_forecast_scenario_id_and_starts_on"
@@ -2520,6 +2535,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_090000) do
   add_foreign_key "forecast_event_links", "entries", on_delete: :nullify
   add_foreign_key "forecast_event_links", "families"
   add_foreign_key "forecast_event_links", "forecast_events", on_delete: :nullify
+  add_foreign_key "forecast_event_scenario_memberships", "families", on_delete: :cascade
+  add_foreign_key "forecast_event_scenario_memberships", "forecast_events", on_delete: :cascade
+  add_foreign_key "forecast_event_scenario_memberships", "forecast_scenarios", on_delete: :cascade
   add_foreign_key "forecast_events", "accounts", column: "destination_account_id", on_delete: :nullify
   add_foreign_key "forecast_events", "accounts", on_delete: :nullify
   add_foreign_key "forecast_events", "categories", on_delete: :nullify

@@ -48,6 +48,7 @@ class Family < ApplicationRecord
 
   has_many :forecast_scenarios, dependent: :destroy
   has_many :forecast_events, dependent: :destroy
+  has_many :forecast_event_scenario_memberships, dependent: :destroy
   has_many :forecast_event_links, dependent: :destroy
   has_many :forecast_budget_overrides, dependent: :destroy
   has_many :forecast_goals, dependent: :destroy
