@@ -401,7 +401,27 @@ module Forecast
       end
 
       def stale?
-        false
+        generated_at = workspace.generated_at
+        return false if generated_at.blank?
+
+        latest_input_updated_at = forecast_input_freshness_scopes
+          .filter_map { |scope| scope.maximum(:updated_at) }
+          .max
+
+        latest_input_updated_at.present? && latest_input_updated_at > generated_at
+      end
+
+      def forecast_input_freshness_scopes
+        [
+          family.forecast_scenarios,
+          family.forecast_events,
+          family.forecast_event_links,
+          family.forecast_budget_overrides,
+          family.forecast_budget_plans,
+          family.forecast_budget_plan_amounts,
+          family.forecast_goals,
+          family.forecast_account_liquidity_settings
+        ]
       end
 
       def event_color(event)

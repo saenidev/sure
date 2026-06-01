@@ -32,6 +32,44 @@ class Forecast::CanvasReadModelTest < ActiveSupport::TestCase
     assert_equal "$5,000.00", baseline.dig(:metrics, "net_worth").first.fetch(:formatted)
   end
 
+  test "marks latest run stale when forecast inputs changed after generation" do
+    group = build_run_group_with_series(family: @family, user: @user, months: 3)
+    event = @family.forecast_events.create!(
+      name: "New school cost",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 1200,
+      currency: @family.currency,
+      starts_on: Date.current,
+      status: "planned"
+    )
+    event.update_columns(updated_at: group.finished_at + 1.minute)
+
+    payload = Forecast::CanvasReadModel.new(Forecast::Workspace.new(family: @family)).payload
+
+    assert_equal "latest_run", payload.fetch(:source)
+    assert_equal true, payload.fetch(:stale)
+  end
+
+  test "keeps latest run fresh when forecast inputs are not newer than generation" do
+    group = build_run_group_with_series(family: @family, user: @user, months: 3)
+    event = @family.forecast_events.create!(
+      name: "Known school cost",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 1200,
+      currency: @family.currency,
+      starts_on: Date.current,
+      status: "planned"
+    )
+    event.update_columns(created_at: group.finished_at - 1.minute, updated_at: group.finished_at - 1.minute)
+
+    payload = Forecast::CanvasReadModel.new(Forecast::Workspace.new(family: @family)).payload
+
+    assert_equal "latest_run", payload.fetch(:source)
+    assert_equal false, payload.fetch(:stale)
+  end
+
   test "serializes only current family events" do
     mine = @family.forecast_events.create!(
       name: "Tuition",
