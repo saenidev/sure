@@ -1,5 +1,6 @@
 class AccountsController < ApplicationController
   include StreamExtensions
+  include SimplefinItems::MapsHelper
 
   before_action :set_account, only: %i[show sparkline sync set_default remove_default]
   before_action :set_manageable_account, only: %i[toggle_active destroy unlink confirm_unlink select_provider]
@@ -12,18 +13,20 @@ class AccountsController < ApplicationController
           .where(id: @accessible_account_ids)
           .includes(:accountable, :account_providers, :plaid_account, :simplefin_account, :syncs)
           .order(:name)
-    @plaid_items = visible_provider_items(family.plaid_items.ordered.includes(:plaid_accounts, syncs: :children))
+    @plaid_items = visible_provider_items(family.plaid_items.ordered.includes({ syncs: :children }, plaid_accounts: [ :account, { account_provider: :account } ]))
     @simplefin_items = visible_provider_items(family.simplefin_items.ordered.includes(syncs: :children))
-    @lunchflow_items = visible_provider_items(family.lunchflow_items.ordered.includes(:lunchflow_accounts, syncs: :children))
-    @enable_banking_items = visible_provider_items(family.enable_banking_items.ordered.includes(syncs: :children))
-    @coinstats_items = visible_provider_items(family.coinstats_items.ordered.includes(:coinstats_accounts, :accounts, syncs: :children))
-    @mercury_items = visible_provider_items(family.mercury_items.ordered.includes(:mercury_accounts, syncs: :children))
+    @lunchflow_items = visible_provider_items(family.lunchflow_items.ordered.includes(:accounts, { syncs: :children }, lunchflow_accounts: :account_provider))
+    @enable_banking_items = visible_provider_items(family.enable_banking_items.ordered.includes(:accounts, { syncs: :children }, enable_banking_accounts: :account_provider))
+    @coinstats_items = visible_provider_items(family.coinstats_items.ordered.includes(:accounts, { syncs: :children }, coinstats_accounts: :account_provider))
+    @mercury_items = visible_provider_items(family.mercury_items.ordered.includes(:accounts, { syncs: :children }, mercury_accounts: :account_provider))
     @brex_items = visible_provider_items(family.brex_items.ordered.includes(:accounts, { syncs: :children }, brex_accounts: :account_provider))
-    @coinbase_items = visible_provider_items(family.coinbase_items.ordered.includes(:coinbase_accounts, :accounts, syncs: :children))
-    @snaptrade_items = visible_provider_items(family.snaptrade_items.ordered.includes(:snaptrade_accounts, syncs: :children))
-    @ibkr_items = visible_provider_items(family.ibkr_items.ordered.includes(:ibkr_accounts, syncs: :children))
-    @indexa_capital_items = visible_provider_items(family.indexa_capital_items.ordered.includes(:indexa_capital_accounts, syncs: :children))
-    @sophtron_items = visible_provider_items(family.sophtron_items.ordered.includes(:sophtron_accounts, syncs: :children))
+    @coinbase_items = visible_provider_items(family.coinbase_items.ordered.includes({ syncs: :children }, coinbase_accounts: { account_provider: :account }))
+    @snaptrade_items = visible_provider_items(family.snaptrade_items.ordered.includes({ syncs: :children }, snaptrade_accounts: { account_provider: :account }))
+    @ibkr_items = visible_provider_items(family.ibkr_items.ordered.includes({ syncs: :children }, ibkr_accounts: { account_provider: :account }))
+    @indexa_capital_items = visible_provider_items(family.indexa_capital_items.ordered.includes(:accounts, { syncs: :children }, indexa_capital_accounts: :account_provider))
+    @sophtron_items = visible_provider_items(family.sophtron_items.ordered.includes(:accounts, { syncs: :children }, sophtron_accounts: :account_provider))
+
+    preload_simplefin_accounts_for_cards
 
     # Build sync stats maps for all providers
     build_sync_stats_maps
@@ -241,6 +244,21 @@ class AccountsController < ApplicationController
       end
     end
 
+    def preload_simplefin_accounts_for_cards
+      return if @simplefin_items.empty?
+
+      accounts_by_item_id = SimplefinAccount
+        .where(simplefin_item_id: @simplefin_items.map(&:id))
+        .includes(:account, account_provider: :account)
+        .group_by(&:simplefin_item_id)
+
+      @simplefin_items.each do |item|
+        item.preload_accounts_for_card(accounts_by_item_id[item.id] || [])
+        item.association(:simplefin_accounts).target = accounts_by_item_id[item.id] || []
+        item.association(:simplefin_accounts).loaded!
+      end
+    end
+
     def build_statement_tab_data
       return unless statement_tab_active?
 
@@ -277,39 +295,7 @@ class AccountsController < ApplicationController
     # Builds sync stats maps for all provider types to avoid N+1 queries in views
     def build_sync_stats_maps
       # SimpleFIN sync stats
-      @simplefin_sync_stats_map = {}
-      @simplefin_has_unlinked_map = {}
-      @simplefin_unlinked_count_map = {}
-      @simplefin_show_relink_map = {}
-      @simplefin_duplicate_only_map = {}
-
-      @simplefin_items.each do |item|
-        latest_sync = latest_sync_for(item)
-        stats = latest_sync&.sync_stats || {}
-        @simplefin_sync_stats_map[item.id] = stats
-        @simplefin_has_unlinked_map[item.id] = item.family.accounts.listable_manual.exists?
-
-        # Count unlinked accounts
-        count = item.simplefin_accounts
-          .left_joins(:account, :account_provider)
-          .where(accounts: { id: nil }, account_providers: { id: nil })
-          .count
-        @simplefin_unlinked_count_map[item.id] = count
-
-        # CTA visibility
-        manuals_exist = @simplefin_has_unlinked_map[item.id]
-        sfa_any = item.simplefin_accounts.loaded? ? item.simplefin_accounts.any? : item.simplefin_accounts.exists?
-        @simplefin_show_relink_map[item.id] = (count.to_i == 0 && manuals_exist && sfa_any)
-
-        # Check if all errors are duplicate-skips
-        errors = Array(stats["errors"]).map { |e| e.is_a?(Hash) ? e["message"] || e[:message] : e.to_s }
-        @simplefin_duplicate_only_map[item.id] = errors.present? && errors.all? { |m| m.to_s.downcase.include?("duplicate upstream account detected") }
-      rescue => e
-        Rails.logger.warn("SimpleFin stats map build failed for item #{item.id}: #{e.class} - #{e.message}")
-        @simplefin_sync_stats_map[item.id] = {}
-        @simplefin_show_relink_map[item.id] = false
-        @simplefin_duplicate_only_map[item.id] = false
-      end
+      build_simplefin_maps_for(@simplefin_items)
 
       # Plaid sync stats
       @plaid_sync_stats_map = {}
@@ -378,17 +364,16 @@ class AccountsController < ApplicationController
 
       # Coinbase sync stats
       @coinbase_sync_stats_map = {}
-      @coinbase_unlinked_count_map = {}
+      @coinbase_unlinked_count_map = CoinbaseAccount
+        .where(coinbase_item_id: @coinbase_items.map(&:id))
+        .left_joins(:account_provider)
+        .where(account_providers: { id: nil })
+        .group(:coinbase_item_id)
+        .count
+
       @coinbase_items.each do |item|
         latest_sync = latest_sync_for(item)
         @coinbase_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
-
-        # Count unlinked accounts
-        count = item.coinbase_accounts
-          .left_joins(:account_provider)
-          .where(account_providers: { id: nil })
-          .count
-        @coinbase_unlinked_count_map[item.id] = count
       end
 
       # IndexaCapital sync stats

@@ -163,10 +163,8 @@ class SnaptradeItem < ApplicationRecord
   end
 
   def connected_institutions
-    snaptrade_accounts
-                  .where.not(institution_metadata: nil)
-                  .map { |acc| acc.institution_metadata }
-                  .uniq { |inst| inst["name"] || inst["institution_name"] }
+    accounts = snaptrade_accounts.loaded? ? snaptrade_accounts : snaptrade_accounts.where.not(institution_metadata: nil)
+    accounts.filter_map(&:institution_metadata).uniq { |inst| inst["name"] || inst["institution_name"] }
   end
 
   def institution_summary
@@ -203,6 +201,10 @@ class SnaptradeItem < ApplicationRecord
 
   # Get all Sure accounts linked to this SnapTrade item
   def accounts
+    if snaptrade_accounts.loaded? && snaptrade_accounts.all? { |account| account.association(:account_provider).loaded? && (account.account_provider.blank? || account.account_provider.association(:account).loaded?) }
+      return snaptrade_accounts.filter_map { |account| account.account_provider&.account }.uniq
+    end
+
     snaptrade_accounts
       .includes(account_provider: :account)
       .filter_map { |sa| sa.current_account }

@@ -157,10 +157,8 @@ class MercuryItem < ApplicationRecord
   # SimpleFin uses org_data, others use institution_metadata.
   # Adjust the field name and key lookups as needed.
   def connected_institutions
-    mercury_accounts.includes(:account)
-                  .where.not(institution_metadata: nil)
-                  .map { |acc| acc.institution_metadata }
-                  .uniq { |inst| inst["name"] || inst["institution_name"] }
+    accounts = mercury_accounts.loaded? ? mercury_accounts : mercury_accounts.includes(:account).where.not(institution_metadata: nil)
+    accounts.filter_map(&:institution_metadata).uniq { |inst| inst["name"] || inst["institution_name"] }
   end
 
   # TODO: Customize institution summary if your provider has special fields

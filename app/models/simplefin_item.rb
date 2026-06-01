@@ -32,12 +32,23 @@ class SimplefinItem < ApplicationRecord
 
   # Get accounts from both new and legacy systems
   def accounts
+    return @preloaded_accounts_for_card if defined?(@preloaded_accounts_for_card)
+
+    if simplefin_accounts.loaded?
+      return accounts_from_simplefin_accounts(simplefin_accounts)
+    end
+
     # Preload associations to avoid N+1 queries
     simplefin_accounts
       .includes(:account, account_provider: :account)
       .map(&:current_account)
       .compact
       .uniq
+  end
+
+  def preload_accounts_for_card(simplefin_accounts)
+    @preloaded_simplefin_accounts_for_card = simplefin_accounts
+    @preloaded_accounts_for_card = accounts_from_simplefin_accounts(simplefin_accounts)
   end
 
   def destroy_later
@@ -321,10 +332,15 @@ class SimplefinItem < ApplicationRecord
 
   def connected_institutions
     # Get unique institutions from all accounts
-    simplefin_accounts.includes(:account)
-                     .where.not(org_data: nil)
-                     .map { |acc| acc.org_data }
-                     .uniq { |org| org["domain"] || org["name"] }
+    accounts = if defined?(@preloaded_simplefin_accounts_for_card)
+      @preloaded_simplefin_accounts_for_card
+    elsif simplefin_accounts.loaded?
+      simplefin_accounts
+    else
+      simplefin_accounts.includes(:account).where.not(org_data: nil)
+    end
+
+    accounts.filter_map(&:org_data).uniq { |org| org["domain"] || org["name"] }
   end
 
   def institution_summary
@@ -434,9 +450,7 @@ class SimplefinItem < ApplicationRecord
   # Count stale pending transactions (>8 days old) across all linked accounts
   # Returns { count: N, accounts: [names] } or { count: 0 } if none
   def stale_pending_status(days: 8)
-    # Get all accounts linked to this SimpleFIN item
-    # Eager-load both association paths to avoid N+1 on current_account method
-    linked_accounts = simplefin_accounts.includes(:account, :linked_account).filter_map(&:current_account)
+    linked_accounts = accounts
     return { count: 0 } if linked_accounts.empty?
 
     # Batch query to avoid N+1
@@ -464,6 +478,17 @@ class SimplefinItem < ApplicationRecord
   end
 
   private
+    def accounts_from_simplefin_accounts(records)
+      records.filter_map do |simplefin_account|
+        provider_account = if simplefin_account.association(:account_provider).loaded?
+          account_provider = simplefin_account.account_provider
+          account_provider&.account if account_provider&.association(:account)&.loaded?
+        end
+
+        provider_account || simplefin_account.account
+      end.uniq
+    end
+
     # Parse sync_stats, handling cases where it might be a raw JSON string
     # (e.g., from console testing or bypassed serialization)
     def parse_sync_stats(sync_stats)

@@ -81,6 +81,10 @@ class IbkrItem < ApplicationRecord
   end
 
   def accounts
+    if ibkr_accounts.loaded? && ibkr_accounts.all? { |account| account.association(:account_provider).loaded? && (account.account_provider.blank? || account.account_provider.association(:account).loaded?) }
+      return ibkr_accounts.filter_map { |account| account.account_provider&.account }.uniq
+    end
+
     ibkr_accounts.includes(account_provider: :account).filter_map(&:current_account).uniq
   end
 

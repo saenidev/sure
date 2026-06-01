@@ -146,10 +146,13 @@ class BrexItem < ApplicationRecord
   end
 
   def connected_institutions
-    brex_accounts.where.not(institution_metadata: nil)
-                 .pluck(:institution_metadata)
-                 .compact
-                 .uniq { |inst| inst["name"] || inst["institution_name"] }
+    institutions = if brex_accounts.loaded?
+      brex_accounts.filter_map(&:institution_metadata)
+    else
+      brex_accounts.where.not(institution_metadata: nil).pluck(:institution_metadata).compact
+    end
+
+    institutions.uniq { |inst| inst["name"] || inst["institution_name"] }
   end
 
   def institution_summary

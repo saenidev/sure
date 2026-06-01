@@ -143,10 +143,8 @@ class LunchflowItem < ApplicationRecord
 
   def connected_institutions
     # Get unique institutions from all accounts
-    lunchflow_accounts.includes(:account)
-                      .where.not(institution_metadata: nil)
-                      .map { |acc| acc.institution_metadata }
-                      .uniq { |inst| inst["name"] || inst["institution_name"] }
+    accounts = lunchflow_accounts.loaded? ? lunchflow_accounts : lunchflow_accounts.includes(:account).where.not(institution_metadata: nil)
+    accounts.filter_map(&:institution_metadata).uniq { |inst| inst["name"] || inst["institution_name"] }
   end
 
   def institution_summary

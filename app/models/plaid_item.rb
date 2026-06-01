@@ -29,6 +29,12 @@ class PlaidItem < ApplicationRecord
 
   # Get accounts from both new and legacy systems
   def accounts
+    if plaid_accounts.loaded? && plaid_accounts.all? { |account| account.association(:account).loaded? && account.association(:account_provider).loaded? && (account.account_provider.blank? || account.account_provider.association(:account).loaded?) }
+      return plaid_accounts.filter_map do |plaid_account|
+        plaid_account.account_provider&.account || plaid_account.account
+      end.uniq
+    end
+
     # Preload associations to avoid N+1 queries
     plaid_accounts
       .includes(:account, account_provider: :account)

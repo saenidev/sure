@@ -363,10 +363,8 @@ class SophtronItem < ApplicationRecord
 
   def connected_institutions
     # Get unique institutions from all accounts
-    sophtron_accounts.includes(:account)
-                      .where.not(institution_metadata: nil)
-                      .map { |acc| acc.institution_metadata }
-                      .uniq { |inst| inst["name"] || inst["institution_name"] }
+    accounts = sophtron_accounts.loaded? ? sophtron_accounts : sophtron_accounts.includes(:account).where.not(institution_metadata: nil)
+    accounts.filter_map(&:institution_metadata).uniq { |inst| inst["name"] || inst["institution_name"] }
   end
 
   def institution_summary

@@ -423,4 +423,34 @@ class AccountsControllerSimplefinCtaTest < ActionDispatch::IntegrationTest
     refute_includes @response.body, setup_accounts_simplefin_item_path(item)
     refute_includes @response.body, "Link existing accounts"
   end
+
+  test "index batches simplefin account lookups for provider cards" do
+    2.times do |index|
+      item = SimplefinItem.create!(family: @family, name: "Conn #{index}", access_url: "https://example.com/access/#{index}")
+      sfa = item.simplefin_accounts.create!(name: "SFA #{index}", account_id: "sf_#{index}", currency: "USD", current_balance: 1, account_type: "depository")
+      account = Account.create!(family: @family, name: "Linked #{index}", currency: "USD", balance: 0, accountable: Depository.create!(subtype: "checking"))
+      sfa.update!(account: account)
+    end
+
+    assert_queries_count(matcher: /SELECT .* FROM "simplefin_accounts"/, max: 2) do
+      get accounts_path
+    end
+
+    assert_response :success
+  end
+
+  test "index batches coinbase account lookups for provider cards" do
+    2.times do |index|
+      item = CoinbaseItem.create!(family: @family, name: "Coinbase #{index}", api_key: "key", api_secret: "secret")
+      coinbase_account = item.coinbase_accounts.create!(name: "Wallet #{index}", account_id: "cb_#{index}", currency: "USD")
+      account = Account.create!(family: @family, name: "Coinbase Linked #{index}", currency: "USD", balance: 0, accountable: Crypto.create!(subtype: "exchange"))
+      AccountProvider.create!(account: account, provider: coinbase_account)
+    end
+
+    assert_queries_count(matcher: /SELECT .* FROM "coinbase_accounts"/, max: 2) do
+      get accounts_path
+    end
+
+    assert_response :success
+  end
 end

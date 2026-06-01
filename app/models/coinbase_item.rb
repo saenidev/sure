@@ -148,15 +148,31 @@ class CoinbaseItem < ApplicationRecord
     coinbase_accounts.count
   end
 
+  def accounts
+    if coinbase_accounts.loaded? && coinbase_accounts.all? { |account| account.association(:account_provider).loaded? && (account.account_provider.blank? || account.account_provider.association(:account).loaded?) }
+      return coinbase_accounts.filter_map do |coinbase_account|
+        account_provider = coinbase_account.account_provider
+        account = account_provider&.account
+        next unless account
+
+        account_provider.association(:provider).target = coinbase_account
+        account_provider.association(:provider).loaded!
+        account.association(:account_providers).target = [ account_provider ]
+        account.association(:account_providers).loaded!
+        account
+      end.uniq
+    end
+
+    coinbase_accounts.includes(account_provider: :account).filter_map(&:current_account).uniq
+  end
+
   def institution_display_name
     institution_name.presence || institution_domain.presence || name
   end
 
   def connected_institutions
-    coinbase_accounts.includes(:account)
-                  .where.not(institution_metadata: nil)
-                  .map { |acc| acc.institution_metadata }
-                  .uniq { |inst| inst["name"] || inst["institution_name"] }
+    accounts = coinbase_accounts.loaded? ? coinbase_accounts : coinbase_accounts.includes(:account).where.not(institution_metadata: nil)
+    accounts.filter_map(&:institution_metadata).uniq { |inst| inst["name"] || inst["institution_name"] }
   end
 
   def institution_summary

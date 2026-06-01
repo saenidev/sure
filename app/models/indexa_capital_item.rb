@@ -165,10 +165,8 @@ class IndexaCapitalItem < ApplicationRecord
   end
 
   def connected_institutions
-    indexa_capital_accounts.includes(:account)
-                  .where.not(institution_metadata: nil)
-                  .map { |acc| acc.institution_metadata }
-                  .uniq { |inst| inst["name"] || inst["institution_name"] }
+    accounts = indexa_capital_accounts.loaded? ? indexa_capital_accounts : indexa_capital_accounts.includes(:account).where.not(institution_metadata: nil)
+    accounts.filter_map(&:institution_metadata).uniq { |inst| inst["name"] || inst["institution_name"] }
   end
 
   def institution_summary
