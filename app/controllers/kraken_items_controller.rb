@@ -169,7 +169,7 @@ class KrakenItemsController < ApplicationController
     def render_panel_success(message)
       if turbo_frame_request?
         flash.now[:notice] = message
-        @kraken_items = Current.family.kraken_items.active.ordered
+        @kraken_items = Current.family.kraken_items.active.ordered.includes(:syncs, kraken_accounts: :account_provider)
         stream = turbo_stream.update("kraken-providers-panel", partial: "settings/providers/kraken_panel", locals: { kraken_items: @kraken_items })
         render turbo_stream: [ stream, *flash_notification_stream_items ]
       else

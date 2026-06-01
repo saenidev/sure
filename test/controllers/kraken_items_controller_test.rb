@@ -38,6 +38,21 @@ class KrakenItemsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "joint_kraken_key", @family.kraken_items.find_by!(name: "Joint Kraken").api_key
   end
 
+  test "create turbo panel preloads kraken account summary counts" do
+    2.times do |index|
+      item = KrakenItem.create!(family: @family, name: "Existing Kraken #{index}", api_key: "key", api_secret: "secret")
+      item.kraken_accounts.create!(name: "Wallet #{index}", account_id: "kr_#{index}", account_type: "combined", currency: "USD")
+    end
+
+    assert_queries_count(matcher: /SELECT COUNT\(\*\).*"kraken_accounts"/, max: 0) do
+      post kraken_items_url,
+        params: { kraken_item: { name: "Turbo Kraken", api_key: "new_key", api_secret: "new_secret" } },
+        headers: { "Turbo-Frame" => "kraken-providers-panel" }
+    end
+
+    assert_response :success
+  end
+
   test "update changes only the selected kraken connection" do
     existing_key = @existing_item.api_key
 
