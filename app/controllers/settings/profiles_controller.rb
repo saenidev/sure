@@ -2,8 +2,8 @@ class Settings::ProfilesController < ApplicationController
   layout :layout_for_settings_profile
 
   def show
-    @user = Current.user
-    @users = Current.family.users.order(:created_at)
+    @users = Current.family.users.with_attached_profile_image.order(:created_at)
+    @user = @users.find { |user| user.id == Current.user.id } || Current.user
     @pending_invitations = Current.family.invitations.pending
     @breadcrumbs = [
       [ t("breadcrumbs.home"), root_path ],
