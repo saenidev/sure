@@ -202,6 +202,20 @@ class Forecast::BudgetPlansControllerTest < ActionDispatch::IntegrationTest
     assert_select "label[for=forecast_budget_plan_amount_slider_expected_income]", text: I18n.t("forecasts.budget_plans.editor.slider_label", label: I18n.t("forecasts.budget_plans.types.expected_income"))
   end
 
+  test "edit gives zero-value rows a slider range beyond one thousand" do
+    plan = create_plan
+    period = Budget.date_to_param(plan.horizon_start_on)
+
+    get edit_forecast_budget_plan_path(plan, period: period)
+
+    assert_response :success
+    fragment = Nokogiri::HTML.fragment(@response.body)
+    slider = fragment.at_css("input#forecast_budget_plan_amount_slider_uncategorized_spending")
+
+    assert_not_nil slider
+    assert_operator slider["max"].to_d, :>=, 10_000.to_d
+  end
+
   private
     def create_plan(name: "Lean summer")
       base_month = @family.current_custom_month_period.start_date + 1.month

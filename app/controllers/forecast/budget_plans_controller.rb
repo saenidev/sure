@@ -263,6 +263,7 @@ module Forecast
         exact_amounts = @plan.forecast_budget_plan_amounts.where(period_start_on: @period_start_on).index_by(&:amount_key)
         effective_amounts = @plan.effective_amounts_for(@period_start_on)
         inherited = inherited_values
+        slider_max_floor = amount_slider_max_floor(inherited)
 
         rows = []
         rows << build_amount_row(
@@ -271,7 +272,8 @@ module Forecast
           label: t("forecasts.budget_plans.types.expected_income"),
           inherited_amount: inherited.fetch([ "expected_income", nil ], nil),
           exact_amounts: exact_amounts,
-          effective_amounts: effective_amounts
+          effective_amounts: effective_amounts,
+          slider_max_floor: slider_max_floor
         )
         rows << build_amount_row(
           key: "uncategorized_spending",
@@ -279,7 +281,8 @@ module Forecast
           label: t("forecasts.budget_plans.types.uncategorized_spending"),
           inherited_amount: inherited.fetch([ "uncategorized_spending", nil ], nil),
           exact_amounts: exact_amounts,
-          effective_amounts: effective_amounts
+          effective_amounts: effective_amounts,
+          slider_max_floor: slider_max_floor
         )
         @family.categories.roots.alphabetically.each do |category|
           rows << build_amount_row(
@@ -289,19 +292,20 @@ module Forecast
             label: category.name,
             inherited_amount: inherited.fetch([ "category_spending", category.id ], nil),
             exact_amounts: exact_amounts,
-            effective_amounts: effective_amounts
+            effective_amounts: effective_amounts,
+            slider_max_floor: slider_max_floor
           )
         end
         rows
       end
 
-      def build_amount_row(key:, amount_type:, label:, inherited_amount:, exact_amounts:, effective_amounts:, category: nil)
+      def build_amount_row(key:, amount_type:, label:, inherited_amount:, exact_amounts:, effective_amounts:, slider_max_floor:, category: nil)
         amount_key = [ amount_type, category&.id ]
         exact = exact_amounts[amount_key]
         effective = effective_amounts[amount_key]
         source_amount = exact || effective
         value = exact&.amount || effective&.amount || inherited_amount || 0
-        slider_max = [ value.to_d * 2, 1_000.to_d ].max
+        slider_max = [ value.to_d * 2, slider_max_floor ].max
         mode = if exact.present?
           "exact"
         elsif effective.present?
@@ -325,6 +329,11 @@ module Forecast
           note: source_amount&.note,
           source_metadata: source_amount&.source_metadata || {}
         }
+      end
+
+      def amount_slider_max_floor(inherited)
+        largest_visible_amount = inherited.values.compact.map(&:to_d).max || 0.to_d
+        [ largest_visible_amount * 2, 10_000.to_d ].max
       end
 
       def budget_plan_summary(rows)
