@@ -58,6 +58,7 @@ module Forecast
 
     def update
       attrs = normalized_plan_params
+      template = nil
 
       @plan.transaction do
         @plan.forecast_scenario.update!(
@@ -76,9 +77,14 @@ module Forecast
           dependency_metadata: dependency_metadata_from(attrs)
         )
         apply_amount_rows!(attrs[:amounts] || {})
+        template = build_template_from_plan! if save_template_commit?
       end
 
-      redirect_to edit_forecast_budget_plan_path(@plan, period: Budget.date_to_param(@period_start_on)), notice: t(".success")
+      if template
+        redirect_to forecast_budget_plans_path, notice: t("forecast.budget_plans.create_template.success", name: template.name)
+      else
+        redirect_to edit_forecast_budget_plan_path(@plan, period: Budget.date_to_param(@period_start_on)), notice: t(".success")
+      end
     rescue ActiveRecord::RecordInvalid => e
       @errors = e.record.errors.full_messages
       load_builder_context
@@ -113,7 +119,7 @@ module Forecast
 
       def set_period
         fallback = @plan&.base_period_start_on || default_horizon.fetch(:start_on)
-        @period_start_on = period_from_param(params[:period], fallback: fallback)
+        @period_start_on = clamp_period_to_plan_horizon(period_from_param(params[:period], fallback: fallback))
         @period_end_on = @family.custom_month_end_for(@period_start_on)
       end
 
@@ -200,6 +206,22 @@ module Forecast
         @family.custom_month_start_for(base)
       end
 
+      def clamp_period_to_plan_horizon(period_start_on)
+        return period_start_on if @plan.blank?
+
+        period = @family.custom_month_start_for(period_start_on)
+        if @plan.horizon_start_on.present? && period < @plan.horizon_start_on
+          return @plan.horizon_start_on
+        end
+
+        if @plan.horizon_end_on.present?
+          horizon_end_period = @family.custom_month_start_for(@plan.horizon_end_on)
+          return horizon_end_period if period > horizon_end_period
+        end
+
+        period
+      end
+
       def allowed_status(status)
         ForecastScenario::STATUSES.include?(status) ? status : "active"
       end
@@ -277,8 +299,16 @@ module Forecast
         amount_key = [ amount_type, category&.id ]
         exact = exact_amounts[amount_key]
         effective = effective_amounts[amount_key]
+        source_amount = exact || effective
         value = exact&.amount || effective&.amount || inherited_amount || 0
         slider_max = [ value.to_d * 2, 1_000.to_d ].max
+        mode = if exact.present?
+          "exact"
+        elsif effective.present?
+          "projected"
+        else
+          "inherited"
+        end
 
         {
           key: key,
@@ -288,9 +318,12 @@ module Forecast
           inherited_amount: inherited_amount,
           exact_amount: exact,
           effective_amount: effective,
+          mode: mode,
           value: value,
           input_value: input_value_for(value),
-          slider_max: input_value_for(slider_max)
+          slider_max: input_value_for(slider_max),
+          note: source_amount&.note,
+          source_metadata: source_amount&.source_metadata || {}
         }
       end
 
@@ -343,13 +376,14 @@ module Forecast
           next unless ForecastBudgetPlanAmount::AMOUNT_TYPES.include?(amount_type)
 
           category = amount_type == "category_spending" ? @family.categories.find_by(id: row["category_id"].presence) : nil
+          mode = row["mode"].presence || "exact"
           exact = @plan.forecast_budget_plan_amounts.find_by(
             period_start_on: @period_start_on,
             amount_type: amount_type,
             category_id: category&.id
           )
 
-          if row["amount"].blank?
+          if mode != "exact" || row["amount"].blank?
             exact&.destroy!
             next
           end
@@ -371,7 +405,7 @@ module Forecast
       end
 
       def build_template_from_plan!
-        effective_amounts = @plan.effective_amounts_for(@period_start_on).values
+        rows = amount_rows
 
         @family.forecast_budget_templates.transaction do
           template = @family.forecast_budget_templates.create!(
@@ -384,20 +418,24 @@ module Forecast
             }
           )
 
-          effective_amounts.each do |amount|
+          rows.each do |row|
             template.forecast_budget_template_amounts.create!(
               family: @family,
-              category: amount.category,
-              amount_type: amount.amount_type,
-              amount: amount.amount,
-              currency: amount.currency,
-              note: amount.note,
-              source_metadata: amount.source_metadata
+              category: row.fetch(:category),
+              amount_type: row.fetch(:amount_type),
+              amount: row.fetch(:value),
+              currency: @plan.currency,
+              note: row.fetch(:note),
+              source_metadata: row.fetch(:source_metadata)
             )
           end
 
           template
         end
+      end
+
+      def save_template_commit?
+        params[:commit].to_s.in?([ "save_template", t("forecasts.budget_plans.edit.save_template") ])
       end
   end
 end

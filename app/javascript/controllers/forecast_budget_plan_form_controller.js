@@ -1,7 +1,14 @@
 import { Controller } from "@hotwired/stimulus";
 
 export default class extends Controller {
-  static targets = ["amount", "incomeTotal", "netTotal", "slider", "spendingTotal"];
+  static targets = [
+    "amount",
+    "incomeTotal",
+    "mode",
+    "netTotal",
+    "slider",
+    "spendingTotal",
+  ];
   static values = { currency: String };
 
   connect() {
@@ -14,6 +21,7 @@ export default class extends Controller {
     if (!amount) return;
 
     amount.value = slider.value;
+    this.updateRowMode(amount);
     this.refreshTotals();
   }
 
@@ -26,6 +34,7 @@ export default class extends Controller {
     const max = Number(slider.max || 0);
     if (value > max) slider.max = String(Math.ceil(value * 1.5));
     slider.value = amount.value || 0;
+    this.updateRowMode(amount);
     this.refreshTotals();
   }
 
@@ -39,6 +48,24 @@ export default class extends Controller {
     return this.sliderTargets.find(
       (target) => target.dataset.rowKey === rowKey,
     );
+  }
+
+  modeTargetFor(rowKey) {
+    return this.modeTargets.find((target) => target.dataset.rowKey === rowKey);
+  }
+
+  updateRowMode(amount) {
+    const mode = this.modeTargetFor(amount.dataset.rowKey);
+    if (!mode) return;
+
+    const originalMode = mode.dataset.originalMode || "inherited";
+    const originalAmount = Number(amount.dataset.originalAmount || 0);
+    const currentAmount = Number(amount.value || 0);
+
+    mode.value =
+      originalMode !== "exact" && currentAmount === originalAmount
+        ? originalMode
+        : "exact";
   }
 
   refreshTotals() {

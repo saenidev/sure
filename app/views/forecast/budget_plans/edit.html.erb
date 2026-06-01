@@ -38,10 +38,21 @@
       <%= render DS::Button.new(
         text: t("forecasts.budget_plans.edit.save_template"),
         icon: "save",
-        href: create_template_forecast_budget_plan_path(@plan, period: Budget.date_to_param(@period_start_on)),
-        method: :post,
+        type: "submit",
+        form: "forecast_budget_plan_form",
+        name: "commit",
+        value: "save_template",
         variant: "outline",
         size: :sm
+      ) %>
+      <%= render DS::Button.new(
+        text: t("forecasts.budget_plans.edit.delete"),
+        icon: "trash-2",
+        href: forecast_budget_plan_path(@plan),
+        method: :delete,
+        variant: "outline_destructive",
+        size: :sm,
+        confirm: CustomConfirm.for_resource_deletion(@plan.forecast_scenario.name)
       ) %>
     </div>
   </header>
@@ -61,6 +72,7 @@
                 url: forecast_budget_plan_path(@plan, period: Budget.date_to_param(@period_start_on)),
                 scope: :forecast_budget_plan,
                 method: :patch,
+                id: "forecast_budget_plan_form",
                 class: "space-y-5" do |f| %>
     <div class="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_24rem]">
       <main class="min-w-0 space-y-5">
@@ -72,22 +84,50 @@
                 <p class="text-secondary text-sm"><%= t("forecasts.budget_plans.editor.description") %></p>
               </div>
 
+              <%
+                previous_period_start = @family.custom_month_start_for(@period_start_on - 1.month)
+                next_period_start = @family.custom_month_start_for(@period_start_on + 1.month)
+                previous_period_available = previous_period_start >= @plan.horizon_start_on
+                next_period_available = @family.custom_month_end_for(next_period_start) <= @plan.horizon_end_on
+              %>
               <nav class="flex shrink-0 items-center gap-2" aria-label="<%= t("forecasts.budget_plans.editor.period_nav_label") %>">
-                <%= render DS::Link.new(
-                  variant: "icon",
-                  icon: "chevron-left",
-                  href: edit_forecast_budget_plan_path(@plan, period: Budget.date_to_param(@period_start_on - 1.month))
-                ) %>
+                <% if previous_period_available %>
+                  <%= render DS::Link.new(
+                    variant: "icon",
+                    icon: "chevron-left",
+                    href: edit_forecast_budget_plan_path(@plan, period: Budget.date_to_param(previous_period_start)),
+                    aria: { label: t("forecasts.budget_plans.editor.previous_month") }
+                  ) %>
+                <% else %>
+                  <%= render DS::Button.new(
+                    variant: "icon",
+                    icon: "chevron-left",
+                    type: "button",
+                    disabled: true,
+                    aria: { label: t("forecasts.budget_plans.editor.previous_month") }
+                  ) %>
+                <% end %>
                 <span class="min-w-52 text-center text-primary text-sm font-medium tabular-nums" data-testid="forecast-budget-plan-period">
                   <%= t("forecasts.budget_plans.editor.period_range",
                         start_date: l(@period_start_on, format: :long),
                         end_date: l(@period_end_on, format: :long)) %>
                 </span>
-                <%= render DS::Link.new(
-                  variant: "icon",
-                  icon: "chevron-right",
-                  href: edit_forecast_budget_plan_path(@plan, period: Budget.date_to_param(@period_start_on + 1.month))
-                ) %>
+                <% if next_period_available %>
+                  <%= render DS::Link.new(
+                    variant: "icon",
+                    icon: "chevron-right",
+                    href: edit_forecast_budget_plan_path(@plan, period: Budget.date_to_param(next_period_start)),
+                    aria: { label: t("forecasts.budget_plans.editor.next_month") }
+                  ) %>
+                <% else %>
+                  <%= render DS::Button.new(
+                    variant: "icon",
+                    icon: "chevron-right",
+                    type: "button",
+                    disabled: true,
+                    aria: { label: t("forecasts.budget_plans.editor.next_month") }
+                  ) %>
+                <% end %>
               </nav>
             </div>
           </div>
@@ -124,10 +164,11 @@
           <div role="list" aria-label="<%= t("forecasts.budget_plans.editor.caption") %>">
             <% @rows.each do |row| %>
               <% row_key = row.fetch(:key) %>
+              <% row_label = row.fetch(:label) %>
               <div id="forecast_budget_plan_<%= row_key %>_row" class="border-t border-primary p-4 first:border-t-0 hover:bg-surface-hover" role="listitem">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div class="min-w-0">
-                    <p class="text-primary text-sm font-medium"><%= row.fetch(:label) %></p>
+                    <p class="text-primary text-sm font-medium"><%= row_label %></p>
                     <p class="mt-1 text-secondary text-xs tabular-nums">
                       <%= t("forecasts.budget_plans.editor.inherited") %>:
                       <% if row.fetch(:inherited_amount).present? %>
@@ -151,24 +192,34 @@
 
                 <div class="mt-3 grid grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-3">
                   <div>
-                    <label class="sr-only" for="forecast_budget_plan_amount_<%= row_key %>"><%= t("forecasts.budget_plans.editor.forecast") %></label>
+                    <label class="sr-only" for="forecast_budget_plan_amount_<%= row_key %>"><%= t("forecasts.budget_plans.editor.forecast_amount_label", label: row_label) %></label>
                     <%= hidden_field_tag "forecast_budget_plan[amounts][#{row_key}][amount_type]", row.fetch(:amount_type) %>
                     <%= hidden_field_tag "forecast_budget_plan[amounts][#{row_key}][category_id]", row.fetch(:category)&.id %>
+                    <%= hidden_field_tag "forecast_budget_plan[amounts][#{row_key}][mode]",
+                                         row.fetch(:mode),
+                                         data: {
+                                           forecast_budget_plan_form_target: "mode",
+                                           row_key: row_key,
+                                           original_mode: row.fetch(:mode)
+                                         } %>
+                    <%= hidden_field_tag "forecast_budget_plan[amounts][#{row_key}][original_amount]", row.fetch(:input_value) %>
                     <%= number_field_tag "forecast_budget_plan[amounts][#{row_key}][amount]",
                                          row.fetch(:input_value),
                                          min: 0,
                                          step: 1,
+                                         autocomplete: "off",
                                          id: "forecast_budget_plan_amount_#{row_key}",
                                          class: "form-field__input h-9 rounded-md bg-container-inset px-2 text-right tabular-nums",
                                          data: {
                                            forecast_budget_plan_form_target: "amount",
                                            row_key: row_key,
+                                           original_amount: row.fetch(:input_value),
                                            amount_type: row.fetch(:amount_type),
                                            action: "input->forecast-budget-plan-form#syncSlider"
                                          } %>
                   </div>
                   <div>
-                    <label class="sr-only" for="forecast_budget_plan_amount_slider_<%= row_key %>"><%= t("forecasts.budget_plans.editor.slider") %></label>
+                    <label class="sr-only" for="forecast_budget_plan_amount_slider_<%= row_key %>"><%= t("forecasts.budget_plans.editor.slider_label", label: row_label) %></label>
                     <%= range_field_tag "forecast_budget_plan_amount_slider_#{row_key}",
                                         row.fetch(:input_value),
                                         min: 0,

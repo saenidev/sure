@@ -114,6 +114,15 @@
                   variant: "ghost",
                   size: :sm
                 ) %>
+                <%= render DS::Button.new(
+                  text: t("forecasts.budget_plans.index.delete"),
+                  icon: "trash-2",
+                  href: forecast_budget_plan_path(plan),
+                  method: :delete,
+                  variant: "outline_destructive",
+                  size: :sm,
+                  confirm: CustomConfirm.for_resource_deletion(scenario.name)
+                ) %>
               </div>
             </div>
           </article>
