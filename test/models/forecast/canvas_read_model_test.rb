@@ -97,6 +97,27 @@ class Forecast::CanvasReadModelTest < ActiveSupport::TestCase
     assert_not_includes labels, "Foreign"
   end
 
+  test "serializes event window and recurrence details for inspector mode" do
+    event = @family.forecast_events.create!(
+      name: "School tuition",
+      effect_type: "expense",
+      behavior: "additive",
+      amount: 1200,
+      currency: @family.currency,
+      starts_on: Date.new(2026, 9, 1),
+      ends_on: Date.new(2027, 6, 30),
+      recurrence_rule: { "frequency" => "monthly", "interval" => 2, "day_of_month" => 15 },
+      status: "planned"
+    )
+
+    marker = Forecast::CanvasReadModel.new(Forecast::Workspace.new(family: @family)).event_marker(event)
+
+    assert_equal "Sep 1, 2026 to Jun 30, 2027", marker.fetch(:window_label)
+    assert_equal true, marker.fetch(:recurring)
+    assert_equal "Every 2 months on day 15", marker.fetch(:recurrence_label)
+    assert_equal({ "frequency" => "monthly", "interval" => 2, "day_of_month" => 15 }, marker.fetch(:recurrence_rule))
+  end
+
   test "includes delta from baseline for comparison series points" do
     group = @family.forecast_run_groups.create!(
       user: @user,

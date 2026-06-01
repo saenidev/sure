@@ -730,6 +730,14 @@ export default class extends Controller {
 
     const rows = [
       [labels.status || "Status", event.status_label || event.status],
+      [
+        labels.window || "Window",
+        event.window_label || formatShortDate(event.dateObject),
+      ],
+      [
+        labels.recurrence || "Recurrence",
+        event.recurrence_label || (event.recurring ? "" : labels.one_time),
+      ],
       [labels.effect || "Effect", event.effect_label || event.effect_type],
       [labels.amount || "Amount", event.formatted_amount],
       [labels.scenario || "Scenario", event.scenario],

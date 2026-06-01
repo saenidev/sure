@@ -33,6 +33,7 @@ module Forecast
         id: event.id,
         date: event.starts_on.iso8601,
         end_date: event.ends_on&.iso8601,
+        window_label: event_window_label(event),
         label: event.name,
         kind: event.forecast_scenario_id.present? ? "scenario" : "event",
         scenario_id: event.forecast_scenario_id,
@@ -40,6 +41,9 @@ module Forecast
         effect_type: event.effect_type,
         status: event.status,
         status_label: I18n.t("forecasts.events.statuses.#{event.status}", default: event.status.to_s.humanize),
+        recurring: event.recurring?,
+        recurrence_rule: event.recurrence_rule,
+        recurrence_label: recurrence_label(event),
         amount: event.amount&.to_f,
         formatted_amount: formatted_event_amount(event),
         effect_label: I18n.t("forecasts.events.effect_types.#{event.effect_type}", default: event.effect_type.to_s.humanize),
@@ -344,6 +348,9 @@ module Forecast
             none: I18n.t("forecasts.canvas.inspector.none", default: "None"),
             event_heading: I18n.t("forecasts.canvas.inspector.event_heading", default: "Event details"),
             edit_event: I18n.t("forecasts.canvas.inspector.edit_event", default: "Edit event"),
+            window: I18n.t("forecasts.canvas.inspector.window", default: "Window"),
+            recurrence: I18n.t("forecasts.canvas.inspector.recurrence", default: "Recurrence"),
+            one_time: I18n.t("forecasts.canvas.inspector.one_time", default: "One-time"),
             amount: I18n.t("forecasts.canvas.inspector.amount", default: "Amount"),
             effect: I18n.t("forecasts.canvas.inspector.effect", default: "Effect"),
             scenario: I18n.t("forecasts.canvas.inspector.scenario", default: "Scenario"),
@@ -432,6 +439,50 @@ module Forecast
         return if event.amount.blank?
 
         Money.new(event.amount, event.currency || workspace.currency).format
+      end
+
+      def event_window_label(event)
+        starts_on = date_label(event.starts_on)
+        return starts_on if event.ends_on.blank?
+
+        I18n.t(
+          "forecasts.canvas.inspector.window_range",
+          default: "%{start_date} to %{end_date}",
+          start_date: starts_on,
+          end_date: date_label(event.ends_on)
+        )
+      end
+
+      def recurrence_label(event)
+        return I18n.t("forecasts.canvas.inspector.one_time", default: "One-time") unless event.recurring?
+
+        rule = event.recurrence_rule
+        frequency = rule.fetch("frequency", "monthly")
+        interval = rule.fetch("interval", 1).to_i
+
+        case frequency
+        when "weekly"
+          interval <= 1 ? I18n.t("forecasts.events.frequencies.weekly", default: "Weekly") : I18n.t("forecasts.canvas.inspector.every_weeks", default: "Every %{count} weeks", count: interval)
+        else
+          monthly_recurrence_label(rule, interval)
+        end
+      end
+
+      def monthly_recurrence_label(rule, interval)
+        day_of_month = rule["day_of_month"]
+        if interval <= 1
+          return I18n.t("forecasts.canvas.inspector.monthly_on_day", default: "Monthly on day %{day}", day: day_of_month) if day_of_month.present?
+
+          I18n.t("forecasts.events.frequencies.monthly", default: "Monthly")
+        elsif day_of_month.present?
+          I18n.t("forecasts.canvas.inspector.every_months_on_day", default: "Every %{count} months on day %{day}", count: interval, day: day_of_month)
+        else
+          I18n.t("forecasts.canvas.inspector.every_months", default: "Every %{count} months", count: interval)
+        end
+      end
+
+      def date_label(date)
+        date.strftime("%b %-d, %Y")
       end
 
       def money_payload(value)
