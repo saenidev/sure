@@ -29,14 +29,15 @@ export default class extends Controller {
 
   connect() {
     this.payload = this.#normalizePayload(this.payloadValue);
-    this.selectedMetric = this.payload.metrics[0]?.key;
-    this.selectedRange = "3y";
+    const initialState = this.#stateFromUrl();
+    this.selectedMetric = initialState.metric || this.payload.metrics[0]?.key;
+    this.selectedRange = initialState.range || "3y";
     this.activeSeriesIds = new Set(
       this.payload.series.map((series) => series.id),
     );
     this.localEvents = [];
-    this.selectedSeriesId = null;
-    this.selectedEventKey = null;
+    this.selectedSeriesId = initialState.series || null;
+    this.selectedEventKey = initialState.event || null;
 
     this.#installResizeObserver();
     this.#renderSource();
@@ -45,6 +46,8 @@ export default class extends Controller {
     this.#renderEmptyDetails();
     this.#syncControls();
     this.#renderChart();
+    this.#applyInitialSelectionFromUrl();
+    this.#syncUrlState();
   }
 
   disconnect() {
@@ -55,12 +58,14 @@ export default class extends Controller {
     this.selectedMetric = event.currentTarget.dataset.metric;
     this.#syncControls();
     this.#renderChart();
+    this.#syncUrlState();
   }
 
   selectRange(event) {
     this.selectedRange = event.currentTarget.dataset.range;
     this.#syncControls();
     this.#renderChart();
+    this.#syncUrlState();
   }
 
   zoomIn() {
@@ -92,6 +97,7 @@ export default class extends Controller {
     }
 
     this.#renderChart();
+    this.#syncUrlState();
   }
 
   async saveDraft(event) {
@@ -194,6 +200,96 @@ export default class extends Controller {
         .filter((event) => event.dateObject)
         .sort((left, right) => d3.ascending(left.dateObject, right.dateObject)),
     };
+  }
+
+  #stateFromUrl() {
+    if (typeof window === "undefined") return {};
+
+    const searchParams = new URL(window.location.href).searchParams;
+    const state = {};
+    const metric = searchParams.get("metric");
+    const range = searchParams.get("range");
+    const series = searchParams.get("series");
+    const event = searchParams.get("event");
+
+    if (this.payload.metrics.some((candidate) => candidate.key === metric)) {
+      state.metric = metric;
+    }
+
+    if (
+      this.rangeButtonTargets.some((button) => button.dataset.range === range)
+    ) {
+      state.range = range;
+    }
+
+    if (this.#seriesById(series)) {
+      state.series = series;
+    }
+
+    if (this.#eventByKey(event)) {
+      state.event = event;
+      state.series = undefined;
+    }
+
+    return state;
+  }
+
+  #applyInitialSelectionFromUrl() {
+    if (this.selectedEventKey) {
+      const event = this.#eventByKey(this.selectedEventKey);
+      if (event) {
+        this.#selectEvent(event);
+        return;
+      }
+
+      this.selectedEventKey = null;
+    }
+
+    if (this.selectedSeriesId) {
+      const series = this.#seriesById(this.selectedSeriesId);
+      if (series) {
+        this.#selectStack(series);
+        return;
+      }
+
+      this.selectedSeriesId = null;
+    }
+
+    this.#syncSelectionStyles();
+  }
+
+  #syncUrlState() {
+    if (typeof window === "undefined" || !window.history?.replaceState) return;
+
+    const url = new URL(window.location.href);
+    const searchParams = url.searchParams;
+
+    if (this.selectedMetric) {
+      searchParams.set("metric", this.selectedMetric);
+    } else {
+      searchParams.delete("metric");
+    }
+
+    if (this.selectedRange) {
+      searchParams.set("range", this.selectedRange);
+    } else {
+      searchParams.delete("range");
+    }
+
+    if (this.selectedSeriesId) {
+      searchParams.set("series", this.selectedSeriesId);
+    } else {
+      searchParams.delete("series");
+    }
+
+    if (this.selectedEventKey) {
+      searchParams.set("event", this.selectedEventKey);
+      searchParams.delete("series");
+    } else {
+      searchParams.delete("event");
+    }
+
+    window.history.replaceState(window.history.state, "", url);
   }
 
   #installResizeObserver() {
@@ -804,6 +900,7 @@ export default class extends Controller {
     this.selectedSeriesId = seriesId;
     this.selectedEventKey = null;
     if (changed) this.#syncSelectionStyles();
+    this.#syncUrlState();
   }
 
   #setSelectedEvent(event) {
@@ -813,6 +910,7 @@ export default class extends Controller {
     this.selectedSeriesId = null;
     this.selectedEventKey = eventKey;
     if (changed) this.#syncSelectionStyles();
+    this.#syncUrlState();
   }
 
   #syncSelectionStyles() {
@@ -891,6 +989,25 @@ export default class extends Controller {
     if (event.id) return `event:${event.id}`;
 
     return `${event.kind || "event"}:${event.date || ""}:${event.label || ""}`;
+  }
+
+  #seriesById(seriesId) {
+    if (!seriesId) return null;
+
+    return this.payload.series.find((series) => {
+      return [series.id, series.stack_key]
+        .filter(Boolean)
+        .map((identifier) => String(identifier))
+        .includes(seriesId);
+    });
+  }
+
+  #eventByKey(eventKey) {
+    if (!eventKey) return null;
+
+    return [...this.payload.events, ...this.localEvents].find((event) => {
+      return this.#eventKey(event) === eventKey;
+    });
   }
 
   #renderEmptyDetails() {

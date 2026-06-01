@@ -81,4 +81,26 @@ class Forecast::CanvasControllerTest < ActionDispatch::IntegrationTest
     assert_includes controller_source, "#isSelectedSeries(series)"
     assert_includes controller_source, "#isSelectedEvent(event)"
   end
+
+  test "chart initializes advanced route state from URL params" do
+    controller_source = Rails.root.join("app/javascript/controllers/forecast_canvas_chart_controller.js").read
+
+    assert_includes controller_source, "#stateFromUrl()"
+    assert_includes controller_source, "searchParams.get(\"metric\")"
+    assert_includes controller_source, "searchParams.get(\"range\")"
+    assert_includes controller_source, "searchParams.get(\"series\")"
+    assert_includes controller_source, "searchParams.get(\"event\")"
+    assert_includes controller_source, "#applyInitialSelectionFromUrl()"
+  end
+
+  test "chart persists advanced route state to the URL" do
+    controller_source = Rails.root.join("app/javascript/controllers/forecast_canvas_chart_controller.js").read
+
+    assert_includes controller_source, "#syncUrlState()"
+    assert_includes controller_source, "window.history.replaceState"
+    assert_includes controller_source, "searchParams.set(\"metric\", this.selectedMetric)"
+    assert_includes controller_source, "searchParams.set(\"range\", this.selectedRange)"
+    assert_includes controller_source, "searchParams.set(\"series\", this.selectedSeriesId)"
+    assert_includes controller_source, "searchParams.set(\"event\", this.selectedEventKey)"
+  end
 end
