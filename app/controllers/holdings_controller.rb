@@ -6,10 +6,15 @@ class HoldingsController < ApplicationController
 
   def index
     @account = accessible_accounts.find(params[:account_id])
+    @holdings = @account.current_holdings.includes(:security).to_a
+    @avg_cost_by_holding_id = Holding.avg_costs_for(@holdings)
   end
 
   def show
     @last_price_updated = @holding.security.prices.maximum(:updated_at)
+    @trade_entries = @holding.trades.to_a
+    @earliest_trade_date = @trade_entries.map(&:date).min
+    @avg_cost = @holding.avg_cost
   end
 
   def update

@@ -30,6 +30,56 @@ class Holding < ApplicationRecord
 
   delegate :ticker, to: :security
 
+  def self.avg_costs_for(holdings)
+    costs = {}
+    holdings = holdings.to_a
+    fallback_holdings = []
+
+    holdings.each do |holding|
+      if holding.cost_basis.present? && (holding.cost_basis_locked? || holding.cost_basis.positive?)
+        costs[holding.id] = Money.new(holding.cost_basis, holding.currency)
+      else
+        fallback_holdings << holding
+      end
+    end
+
+    if fallback_holdings.any?
+      quoted_ids = fallback_holdings.map { |holding| connection.quote(holding.id) }.join(", ")
+
+      rows = connection.exec_query(<<~SQL.squish)
+        SELECT holdings.id AS holding_id,
+               holdings.currency AS holding_currency,
+               SUM(trades.price * trades.qty * COALESCE(exchange_rates.rate, 1)) AS total_cost,
+               SUM(trades.qty) AS total_qty
+        FROM holdings
+        INNER JOIN trades ON trades.security_id = holdings.security_id
+        INNER JOIN entries ON entries.entryable_type = 'Trade'
+          AND entries.entryable_id = trades.id
+          AND entries.account_id = holdings.account_id
+        LEFT JOIN exchange_rates ON exchange_rates.date = entries.date
+          AND exchange_rates.from_currency = trades.currency
+          AND exchange_rates.to_currency = holdings.currency
+        WHERE holdings.id IN (#{quoted_ids})
+          AND trades.qty > 0
+          AND entries.date <= holdings.date
+        GROUP BY holdings.id, holdings.currency
+      SQL
+
+      rows.each do |row|
+        total_qty = row["total_qty"].to_d
+        next unless total_qty.positive?
+
+        costs[row["holding_id"]] = Money.new(row["total_cost"].to_d / total_qty, row["holding_currency"])
+      end
+    end
+
+    holdings.each do |holding|
+      holding.instance_variable_set(:@avg_cost, costs[holding.id])
+    end
+
+    costs
+  end
+
   def name
     security.name || ticker
   end
@@ -47,17 +97,19 @@ class Holding < ApplicationRecord
   # otherwise falls back to calculating from trades. Returns nil when cost
   # basis cannot be determined (no trades and no provider cost_basis).
   def avg_cost
+    return @avg_cost if instance_variable_defined?(:@avg_cost)
+
     # Use stored cost_basis if available (eliminates N+1 queries)
     # - If locked (user-set), trust the value even if 0 (valid for airdrops)
     # - Otherwise require positive since providers sometimes return 0 when unknown
     if cost_basis.present?
       if cost_basis_locked? || cost_basis.positive?
-        return Money.new(cost_basis, currency)
+        return @avg_cost = Money.new(cost_basis, currency)
       end
     end
 
     # Fallback to calculation for holdings without pre-computed cost_basis
-    calculate_avg_cost
+    @avg_cost = calculate_avg_cost
   end
 
   def trend
@@ -82,7 +134,7 @@ class Holding < ApplicationRecord
   end
 
   def trades
-    account.entries.where(entryable: account.trades.where(security: security)).reverse_chronological
+    account.entries.includes(entryable: :security).where(entryable: account.trades.where(security: security)).reverse_chronological
   end
 
   def destroy_holding_and_entries!

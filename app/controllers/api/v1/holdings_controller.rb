@@ -19,6 +19,7 @@ class Api::V1::HoldingsController < Api::V1::BaseController
       limit: safe_per_page_param
     )
     @per_page = safe_per_page_param
+    @avg_cost_by_holding_id = Holding.avg_costs_for(@holdings)
 
     render :index
   rescue ArgumentError => e

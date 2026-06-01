@@ -95,7 +95,12 @@ class Assistant::Function::GetHoldings < Assistant::Function
 
     total_value = holdings_query.sum(:amount)
 
+    paginated_holdings = paginated_holdings.to_a
+    avg_cost_by_holding_id = Holding.avg_costs_for(paginated_holdings)
+
     normalized_holdings = paginated_holdings.map do |holding|
+      avg_cost = avg_cost_by_holding_id[holding.id]
+
       {
         ticker: holding.ticker,
         name: holding.name,
@@ -105,8 +110,8 @@ class Assistant::Function::GetHoldings < Assistant::Function
         amount: holding.amount.to_f,
         formatted_amount: holding.amount_money.format,
         weight: holding.weight&.round(2),
-        average_cost: holding.avg_cost&.to_f,
-        formatted_average_cost: holding.avg_cost&.format,
+        average_cost: avg_cost&.to_f,
+        formatted_average_cost: avg_cost&.format,
         account: holding.account.name,
         date: holding.date
       }

@@ -29,9 +29,9 @@
             <%= render "shared/ruler" %>
           <% end %>
 
-          <% if @account.current_holdings.any? %>
+          <% if @holdings.any? %>
             <%= render partial: "holdings/holding",
-                      collection: @account.current_holdings,
+                      collection: @holdings,
                       spacer_template: "shared/ruler" %>
           <% end %>
         </div>

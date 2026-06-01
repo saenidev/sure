@@ -1,6 +1,8 @@
 require "test_helper"
 
 class HoldingsControllerTest < ActionDispatch::IntegrationTest
+  include EntriesTestHelper
+
   setup do
     sign_in users(:family_admin)
     @account = accounts(:investment)
@@ -12,8 +14,78 @@ class HoldingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "index avoids per holding security and avg cost queries" do
+    3.times do |idx|
+      security = Security.create!(
+        ticker: "NPLUS#{idx}",
+        name: "N Plus #{idx}",
+        exchange_operating_mic: "XNAS",
+        country_code: "US"
+      )
+
+      create_trade(security, account: @account, qty: 10, date: 5.days.ago.to_date, price: 100)
+
+      @account.holdings.create!(
+        security: security,
+        date: (idx + 2).days.ago.to_date,
+        qty: 10 + idx,
+        price: 110 + idx,
+        amount: (10 + idx) * (110 + idx),
+        currency: "USD",
+        cost_basis: nil,
+        cost_basis_source: nil
+      )
+    end
+
+    assert_queries_count(matcher: /SUM\(trades\.price \* trades\.qty/i, max: 1) do
+      assert_queries_count(matcher: /SELECT "?securities"?\.\* FROM "?securities"?/i, max: 1) do
+        get holdings_url(account_id: @account.id)
+      end
+    end
+
+    assert_response :success
+  end
+
   test "gets holding" do
     get holding_path(@holding)
+
+    assert_response :success
+  end
+
+  test "show preloads trade history entryable securities" do
+    3.times do |idx|
+      create_trade(
+        @holding.security,
+        account: @account,
+        qty: idx + 1,
+        date: (idx + 2).days.ago.to_date,
+        price: 100 + idx
+      )
+    end
+
+    assert_queries_count(matcher: /SELECT "?trades"?\.\* FROM "?trades"?/i, max: 1) do
+      assert_queries_count(matcher: /SELECT "?securities"?\.\* FROM "?securities"?/i, max: 2) do
+        get holding_path(@holding)
+      end
+    end
+
+    assert_response :success
+  end
+
+  test "show materializes trade history once" do
+    3.times do |idx|
+      create_trade(
+        @holding.security,
+        account: @account,
+        qty: idx + 1,
+        date: (idx + 2).days.ago.to_date,
+        price: 100 + idx
+      )
+    end
+
+    assert_queries_count(matcher: /FROM "?entries"? .*"entries"\."entryable_type" = /i, max: 1) do
+      get holding_path(@holding)
+    end
 
     assert_response :success
   end

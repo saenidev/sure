@@ -20,7 +20,7 @@ json.security do
   json.name holding.security.name
 end
 
-avg = holding.avg_cost
+avg = defined?(@avg_cost_by_holding_id) && @avg_cost_by_holding_id ? @avg_cost_by_holding_id[holding.id] : holding.avg_cost
 json.avg_cost avg ? avg.format : nil
 
 json.created_at holding.created_at.iso8601
