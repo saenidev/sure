@@ -16,6 +16,22 @@ class ImportsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "index preloads import accounts" do
+    3.times do
+      @user.family.imports.create!(
+        type: "TransactionImport",
+        account: accounts(:depository),
+        date_format: @user.family.date_format
+      )
+    end
+
+    assert_queries_count(matcher: /SELECT "?accounts"?\.\* FROM "?accounts"?/i, max: 1) do
+      get imports_url
+    end
+
+    assert_response :success
+  end
+
   test "gets new" do
     get new_import_url
 

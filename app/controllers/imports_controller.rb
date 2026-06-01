@@ -28,7 +28,7 @@ class ImportsController < ApplicationController
   end
 
   def index
-    @pagy, @imports = pagy(Current.family.imports.where(type: Import::TYPES).ordered, limit: safe_per_page)
+    @pagy, @imports = pagy(Current.family.imports.where(type: Import::TYPES).includes(:account).ordered, limit: safe_per_page)
     @breadcrumbs = [
       [ t("breadcrumbs.home"), root_path ],
       [ t("breadcrumbs.imports"), imports_path ]
