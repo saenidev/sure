@@ -34,6 +34,21 @@ class BinanceItemsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "create turbo panel preloads binance account summary counts" do
+    2.times do |index|
+      item = BinanceItem.create!(family: @family, name: "Existing Binance #{index}", api_key: "key", api_secret: "secret")
+      item.binance_accounts.create!(name: "Wallet #{index}", account_type: "spot", currency: "USD")
+    end
+
+    assert_queries_count(matcher: /SELECT COUNT\(\*\).*"binance_accounts"/, max: 0) do
+      post binance_items_url,
+        params: { binance_item: { name: "Turbo Binance", api_key: "new_key", api_secret: "new_secret" } },
+        headers: { "Turbo-Frame" => "binance-providers-panel" }
+    end
+
+    assert_response :success
+  end
+
   test "complete_account_setup creates accounts for selected binance_accounts" do
     binance_account = @binance_item.binance_accounts.create!(
       name: "Spot Portfolio",

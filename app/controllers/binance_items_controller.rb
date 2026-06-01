@@ -28,7 +28,7 @@ class BinanceItemsController < ApplicationController
 
       if turbo_frame_request?
         flash.now[:notice] = t(".success")
-        @binance_items = Current.family.binance_items.ordered
+        @binance_items = Current.family.binance_items.ordered.includes(:syncs, binance_accounts: :account_provider)
         render turbo_stream: [
           turbo_stream.update(
             "binance-providers-panel",
@@ -59,7 +59,7 @@ class BinanceItemsController < ApplicationController
     if @binance_item.update(binance_item_params)
       if turbo_frame_request?
         flash.now[:notice] = t(".success")
-        @binance_items = Current.family.binance_items.ordered
+        @binance_items = Current.family.binance_items.ordered.includes(:syncs, binance_accounts: :account_provider)
         render turbo_stream: [
           turbo_stream.update(
             "binance-providers-panel",
