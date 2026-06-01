@@ -15,11 +15,21 @@ class LayoutAccessibilityTest < ActionDispatch::IntegrationTest
     assert_select "main#main"
   end
 
-  test "application layout disables Turbo hover prefetch" do
+  test "application layout allows Turbo hover prefetch" do
     get root_path
     assert_response :ok
 
-    assert_select "meta[name='turbo-prefetch'][content='false']"
+    assert_select "meta[name='turbo-prefetch']", count: 0
+  end
+
+  test "authenticated application layout preloads route code and route shells" do
+    get root_path
+    assert_response :ok
+
+    assert_includes response.body, 'rel="modulepreload" href="/assets/controllers/'
+    assert_includes response.body, 'rel="modulepreload" href="/assets/d3'
+    assert_includes response.body, "route-preloader"
+    assert_includes response.body, "data-route-preloader-paths-value"
   end
 
   test "settings layout renders skip-link pointing at #main and a <main> with id=\"main\"" do

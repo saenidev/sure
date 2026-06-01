@@ -23,7 +23,8 @@ end %>
 <%= render "layouts/shared/htmldoc" do %>
   <div
     class="flex flex-col lg:flex-row h-full bg-surface"
-    data-controller="app-layout privacy-mode"
+    data-controller="app-layout privacy-mode route-preloader"
+    data-route-preloader-paths-value="<%= authenticated_route_preload_paths.to_json %>"
     data-app-layout-expanded-sidebar-class="<%= expanded_sidebar_class %>"
     data-app-layout-collapsed-sidebar-class="<%= collapsed_sidebar_class %>"
     data-app-layout-user-id-value="<%= Current.user.id %>">

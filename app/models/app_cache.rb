@@ -40,6 +40,15 @@ module AppCache
   end
 
   def version_value(version, family:, user:)
+    return uncached_version_value(version, family: family, user: user) unless request_version_cache_enabled?
+
+    cache_key = [ family.id, user&.id || "anonymous", version ]
+    request_version_cache.fetch(cache_key) do
+      request_version_cache[cache_key] = uncached_version_value(version, family: family, user: user)
+    end
+  end
+
+  def uncached_version_value(version, family:, user:)
     case version
     when :family
       [
@@ -64,6 +73,14 @@ module AppCache
     else
       raise ArgumentError, "Unknown app cache version: #{version.inspect}"
     end
+  end
+
+  def request_version_cache
+    Current.app_cache_versions ||= {}
+  end
+
+  def request_version_cache_enabled?
+    Current.session.present?
   end
 
   def normalize_cache_part(value)

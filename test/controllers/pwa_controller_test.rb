@@ -18,6 +18,9 @@ class PwaControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "application/javascript", response.media_type
     assert_includes response.body, "self.addEventListener('fetch'"
+    assert_includes response.body, "ROUTE_TTL_MS"
+    assert_includes response.body, "X-Sure-Route-Preload"
+    assert_includes response.body, "clearRouteCache"
   ensure
     ActionController::Base.allow_forgery_protection = previous_forgery_setting
   end

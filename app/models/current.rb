@@ -1,5 +1,6 @@
 class Current < ActiveSupport::CurrentAttributes
   attribute :user_agent, :ip_address
+  attribute :app_cache_versions
 
   attribute :session
 

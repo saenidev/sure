@@ -497,6 +497,8 @@ class TransactionsController < ApplicationController
     end
 
     def store_params!
+      return if prefetch_request?
+
       if should_restore_params?
         params_to_restore = {}
 

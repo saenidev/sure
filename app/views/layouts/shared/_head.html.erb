@@ -8,12 +8,15 @@
 
   <%= combobox_style_tag %>
 
-  <%= javascript_importmap_tags %>
+  <%= javascript_inline_importmap_tag %>
+  <%= javascript_importmap_module_preload_tags(Rails.application.importmap, entry_point: "application") %>
+  <% if Current.user %>
+    <%= javascript_importmap_module_preload_tags(Rails.application.importmap, entry_point: "authenticated") %>
+  <% end %>
+  <%= javascript_import_module_tag "application" %>
   <%= render "layouts/dark_mode_check" %>
   <%= render "layouts/privacy_mode_check" %>
   <%= turbo_refreshes_with method: :morph, scroll: :preserve %>
-
-  <meta name="turbo-prefetch" content="false">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 
   <meta name="mobile-web-app-capable" content="yes">

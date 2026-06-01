@@ -81,6 +81,17 @@ module ApplicationHelper
     current_page?(path) || (request.path.start_with?(path) && path != "/")
   end
 
+  def authenticated_route_preload_paths
+    [
+      root_path,
+      transactions_path,
+      reports_path,
+      budgets_path,
+      forecast_path,
+      chats_path
+    ].uniq
+  end
+
   # Wrapper around I18n.l to support custom date formats
   def format_date(object, format = :default, options = {})
     date = object.to_date

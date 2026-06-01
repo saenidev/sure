@@ -21,5 +21,4 @@ class ForecastsController < ApplicationController
     @tab_id = @workspace.canonical_tab_id(params[:tab_id])
     render layout: false
   end
-
 end

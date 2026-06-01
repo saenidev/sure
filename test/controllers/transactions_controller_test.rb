@@ -230,6 +230,19 @@ end
     assert_no_match(/page=3/, response.location, "must not restore the stale page")
   end
 
+  test "prefetching index does not mutate saved transaction filters" do
+    get transactions_url(q: { search: "groceries" }, page: 3, per_page: 10)
+    assert_response :success
+
+    session_record = @user.sessions.order(:created_at).last
+    saved_params = session_record.reload.prev_transaction_page_params.deep_dup
+
+    get transactions_url, headers: { "X-Sure-Route-Preload" => "1", "X-Sec-Purpose" => "prefetch" }
+    assert_response :success
+
+    assert_equal saved_params, session_record.reload.prev_transaction_page_params
+  end
+
   test "calls Transaction::Search totals method with correct search parameters" do
     family = families(:empty)
     sign_in users(:empty)

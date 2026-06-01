@@ -103,4 +103,14 @@ class ApplicationController < ActionController::Base
       Current.finance_accounts
     end
     helper_method :finance_accounts
+
+    def prefetch_request?
+      return true if request.headers["X-Sure-Route-Preload"].present?
+
+      [
+        request.headers["X-Sec-Purpose"],
+        request.headers["Sec-Purpose"],
+        request.headers["Purpose"]
+      ].any? { |value| value.to_s.downcase.include?("prefetch") }
+    end
 end
