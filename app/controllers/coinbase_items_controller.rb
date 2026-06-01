@@ -29,7 +29,7 @@ class CoinbaseItemsController < ApplicationController
 
       if turbo_frame_request?
         flash.now[:notice] = t(".success")
-        @coinbase_items = Current.family.coinbase_items.ordered
+        @coinbase_items = Current.family.coinbase_items.ordered.includes(:syncs, coinbase_accounts: :account_provider)
         render turbo_stream: [
           turbo_stream.replace(
             "coinbase-providers-panel",
@@ -60,7 +60,7 @@ class CoinbaseItemsController < ApplicationController
     if @coinbase_item.update(coinbase_item_params)
       if turbo_frame_request?
         flash.now[:notice] = t(".success")
-        @coinbase_items = Current.family.coinbase_items.ordered
+        @coinbase_items = Current.family.coinbase_items.ordered.includes(:syncs, coinbase_accounts: :account_provider)
         render turbo_stream: [
           turbo_stream.replace(
             "coinbase-providers-panel",

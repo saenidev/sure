@@ -34,6 +34,21 @@ class CoinbaseItemsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "create turbo panel preloads coinbase account summary counts" do
+    2.times do |index|
+      item = CoinbaseItem.create!(family: @family, name: "Existing Coinbase #{index}", api_key: "key", api_secret: "secret")
+      item.coinbase_accounts.create!(name: "Wallet #{index}", account_id: "cb_#{index}", currency: "USD")
+    end
+
+    assert_queries_count(matcher: /SELECT COUNT\(\*\).*"coinbase_accounts"/, max: 0) do
+      post coinbase_items_url,
+        params: { coinbase_item: { name: "Turbo Coinbase", api_key: "new_key", api_secret: "new_secret" } },
+        headers: { "Turbo-Frame" => "coinbase-providers-panel" }
+    end
+
+    assert_response :success
+  end
+
   test "complete_account_setup creates accounts for selected coinbase_accounts" do
     coinbase_account = @coinbase_item.coinbase_accounts.create!(
       name: "BTC Wallet",
