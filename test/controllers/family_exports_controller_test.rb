@@ -51,6 +51,20 @@ class FamilyExportsControllerTest < ActionDispatch::IntegrationTest
     assert_match "Exporting...", response.body
   end
 
+  test "index does not requery exports while rendering list" do
+    @family.family_exports.destroy_all
+
+    3.times do |index|
+      @family.family_exports.create!(status: index.even? ? "completed" : "processing")
+    end
+
+    assert_queries_count(matcher: /SELECT .* FROM "family_exports"/, max: 2) do
+      get family_exports_path
+    end
+
+    assert_response :success
+  end
+
   test "admin can download completed export" do
     export = @family.family_exports.create!(status: "completed")
     export.export_file.attach(
