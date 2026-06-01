@@ -13,6 +13,26 @@ class Settings::ProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "show preloads family member profile images" do
+    @admin.family.users.create!(
+      first_name: "Preload",
+      last_name: "Avatar",
+      email: "avatar-preload@example.com",
+      password: user_password_test,
+      role: "member",
+      onboarded_at: Time.current,
+      ui_layout: "dashboard"
+    )
+
+    sign_in @admin
+
+    assert_queries_count(matcher: /FROM "?active_storage_attachments"?/i, max: 1) do
+      get settings_profile_path
+    end
+
+    assert_response :success
+  end
+
   test "intro user sees profile without settings navigation" do
     sign_in @intro_user
     get settings_profile_path
