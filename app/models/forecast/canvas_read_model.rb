@@ -334,6 +334,8 @@ module Forecast
           preview: I18n.t("forecasts.canvas.preview_notice", default: "Preview data is shown because no completed projection exists yet."),
           stale: I18n.t("forecasts.canvas.stale_notice", default: "Inputs changed after this forecast was generated."),
           prototype: I18n.t("forecasts.canvas.prototype_label", default: "Preview"),
+          viewport_empty: I18n.t("forecasts.canvas.viewport.empty", default: "No visible date range"),
+          viewport_window: I18n.t("forecasts.canvas.viewport.window", default: "%{start_date} to %{end_date}"),
           inspector: {
             delta_label: I18n.t("forecasts.canvas.inspector.delta_label", default: "Vs baseline"),
             no_delta: I18n.t("forecasts.canvas.inspector.no_delta", default: "Baseline series"),

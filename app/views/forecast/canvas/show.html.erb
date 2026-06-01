@@ -72,6 +72,45 @@
               </button>
             <% end %>
           </div>
+
+          <div class="flex items-center gap-2 rounded-lg border border-primary px-2 py-1">
+            <span class="min-w-44 text-secondary text-xs tabular-nums"
+                  data-forecast-canvas-chart-target="viewportLabel"
+                  aria-live="polite">
+              <%= t("forecasts.canvas.viewport.loading") %>
+            </span>
+
+            <div class="inline-flex items-center gap-1" role="group"
+                 aria-label="<%= t("forecasts.canvas.viewport.controls") %>">
+              <%= render DS::Button.new(
+                variant: :icon,
+                size: :sm,
+                icon: "zoom-out",
+                type: "button",
+                title: t("forecasts.canvas.viewport.zoom_out"),
+                aria: { label: t("forecasts.canvas.viewport.zoom_out") },
+                data: { action: "forecast-canvas-chart#zoomOut" }
+              ) %>
+              <%= render DS::Button.new(
+                variant: :icon,
+                size: :sm,
+                icon: "zoom-in",
+                type: "button",
+                title: t("forecasts.canvas.viewport.zoom_in"),
+                aria: { label: t("forecasts.canvas.viewport.zoom_in") },
+                data: { action: "forecast-canvas-chart#zoomIn" }
+              ) %>
+              <%= render DS::Button.new(
+                variant: :icon,
+                size: :sm,
+                icon: "rotate-ccw",
+                type: "button",
+                title: t("forecasts.canvas.viewport.reset"),
+                aria: { label: t("forecasts.canvas.viewport.reset") },
+                data: { action: "forecast-canvas-chart#resetZoom" }
+              ) %>
+            </div>
+          </div>
         </div>
       </div>
     </div>

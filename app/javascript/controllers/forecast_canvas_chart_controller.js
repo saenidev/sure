@@ -20,6 +20,7 @@ export default class extends Controller {
     "selectedSeries",
     "selectedValue",
     "sourceLabel",
+    "viewportLabel",
   ];
 
   static values = {
@@ -58,6 +59,23 @@ export default class extends Controller {
     this.selectedRange = event.currentTarget.dataset.range;
     this.#syncControls();
     this.#renderChart();
+  }
+
+  zoomIn() {
+    this.#zoomBy(1.4);
+  }
+
+  zoomOut() {
+    this.#zoomBy(1 / 1.4);
+  }
+
+  resetZoom() {
+    if (!this.overlay || !this.zoom) return;
+
+    this.overlay
+      .transition()
+      .duration(160)
+      .call(this.zoom.transform, d3.zoomIdentity);
   }
 
   toggleSeries(event) {
@@ -318,6 +336,10 @@ export default class extends Controller {
     const innerHeight = height - margin.top - margin.bottom;
 
     d3.select(this.chartTarget).selectAll("*").remove();
+    this.baseXScale = null;
+    this.xScale = null;
+    this.zoom = null;
+    this.overlay = null;
 
     const activeSeries = this.#activeSeriesWithMetric();
     const allPoints = activeSeries.flatMap((series) => series.points);
@@ -336,6 +358,7 @@ export default class extends Controller {
         height,
         this.payload.labels?.line_empty,
       );
+      this.#renderViewportLabel();
       return;
     }
 
@@ -346,6 +369,7 @@ export default class extends Controller {
         height,
         this.payload.labels?.metric_empty,
       );
+      this.#renderViewportLabel();
       return;
     }
 
@@ -392,7 +416,7 @@ export default class extends Controller {
     this.xScale = this.baseXScale.copy();
     this.yScale = d3.scaleLinear().range([innerHeight, 0]);
 
-    const zoom = d3
+    this.zoom = d3
       .zoom()
       .scaleExtent([1, 24])
       .translateExtent([
@@ -414,7 +438,7 @@ export default class extends Controller {
       .attr("height", innerHeight)
       .attr("fill", "transparent")
       .attr("pointer-events", "all")
-      .call(zoom)
+      .call(this.zoom)
       .on("mousemove", (event) => this.#trackPointer(event))
       .on("mouseleave", () => this.focusLayer.style("display", "none"))
       .on("click", (event) => this.#handleOverlayClick(event));
@@ -434,7 +458,10 @@ export default class extends Controller {
         .map((point) => point.value),
     );
 
-    if (visibleValues.length === 0) return;
+    if (visibleValues.length === 0) {
+      this.#renderViewportLabel();
+      return;
+    }
 
     const [minValue, maxValue] = d3.extent(visibleValues);
     const padding = Math.max(
@@ -520,6 +547,7 @@ export default class extends Controller {
       .attr("d", (series) => line(series.points));
 
     this.#updateEvents();
+    this.#renderViewportLabel();
   }
 
   #updateEvents() {
@@ -578,6 +606,35 @@ export default class extends Controller {
     const end = fullDomain[1];
     const start = d3.max([fullDomain[0], d3.timeMonth.offset(end, -months)]);
     return [start, end];
+  }
+
+  #zoomBy(factor) {
+    if (!this.overlay || !this.zoom) return;
+
+    this.overlay
+      .transition()
+      .duration(160)
+      .call(this.zoom.scaleBy, factor, [
+        this.innerWidth / 2,
+        this.innerHeight / 2,
+      ]);
+  }
+
+  #renderViewportLabel() {
+    if (!this.hasViewportLabelTarget) return;
+
+    const domain = this.xScale?.domain?.();
+    if (!domain?.[0] || !domain?.[1]) {
+      this.viewportLabelTarget.textContent =
+        this.payload.labels?.viewport_empty || "";
+      return;
+    }
+
+    this.viewportLabelTarget.textContent = (
+      this.payload.labels?.viewport_window || "%{start_date} to %{end_date}"
+    )
+      .replace("%{start_date}", formatShortDate(domain[0]))
+      .replace("%{end_date}", formatShortDate(domain[1]));
   }
 
   #trackPointer(event) {

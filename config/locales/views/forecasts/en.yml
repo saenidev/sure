@@ -126,6 +126,14 @@ en:
         1y: "1Y"
         3y: "3Y"
         all: "All"
+      viewport:
+        controls: "Timeline viewport controls"
+        empty: "No visible date range"
+        loading: "Loading range"
+        reset: "Reset timeline zoom"
+        window: "%{start_date} to %{end_date}"
+        zoom_in: "Zoom in"
+        zoom_out: "Zoom out"
       selection:
         heading: "Selection"
         empty: "Select a point"

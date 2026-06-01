@@ -18,7 +18,11 @@ class Forecast::CanvasControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-forecast-canvas-chart-target='chart']"
     assert_select "[data-forecast-canvas-chart-target='inspector']"
     assert_select "[data-forecast-canvas-chart-target='detailPanel']"
+    assert_select "[data-forecast-canvas-chart-target='viewportLabel']"
     assert_select "button[data-action*='forecast-canvas-chart#selectMetric']", minimum: 4
+    assert_select "button[data-action*='forecast-canvas-chart#zoomIn']"
+    assert_select "button[data-action*='forecast-canvas-chart#zoomOut']"
+    assert_select "button[data-action*='forecast-canvas-chart#resetZoom']"
     assert_select "template[data-forecast-canvas-chart-target='draftTemplate']"
     assert_select "form[data-forecast-canvas-chart-target='draftForm']"
     assert_select "form[data-controller~='forecast-event-form']"
@@ -53,5 +57,16 @@ class Forecast::CanvasControllerTest < ActionDispatch::IntegrationTest
     assert_includes controller_source, "#nearestEventToPointer(event)"
     assert_includes controller_source, "this.#selectEvent(nearestEvent)"
     assert_includes controller_source, "this.#addDraftMarker(event)"
+  end
+
+  test "chart exposes explicit timeline viewport controls" do
+    controller_source = Rails.root.join("app/javascript/controllers/forecast_canvas_chart_controller.js").read
+
+    assert_includes controller_source, '"viewportLabel"'
+    assert_includes controller_source, "zoomIn()"
+    assert_includes controller_source, "zoomOut()"
+    assert_includes controller_source, "resetZoom()"
+    assert_includes controller_source, "#zoomBy(factor)"
+    assert_includes controller_source, "#renderViewportLabel()"
   end
 end
