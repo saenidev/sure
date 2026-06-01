@@ -25,6 +25,35 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "show preloads assistant message tool calls" do
+    chat = @user.chats.create!(title: "Tool calls")
+
+    3.times do |idx|
+      message = chat.messages.create!(
+        type: "AssistantMessage",
+        content: "Assistant #{idx}",
+        ai_model: "gpt-4.1",
+        status: "complete"
+      )
+      ToolCall::Function.create!(
+        message: message,
+        provider_id: "call_#{idx}",
+        provider_call_id: "call_#{idx}",
+        function_name: "lookup_#{idx}",
+        function_arguments: {},
+        function_result: { ok: true }
+      )
+    end
+
+    with_env_overrides("AI_DEBUG_MODE" => "true") do
+      assert_queries_count(matcher: /FROM "?tool_calls"?/i, max: 1) do
+        get chat_url(chat)
+      end
+    end
+
+    assert_response :success
+  end
+
   test "destroys chat" do
     assert_difference("Chat.count", -1) do
       delete chat_url(chats(:one))
