@@ -127,16 +127,26 @@ class CoinstatsItem < ApplicationRecord
 
   # @return [Integer] Number of accounts with provider links
   def linked_accounts_count
+    if coinstats_accounts.loaded? && coinstats_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return coinstats_accounts.count { |account| account.account_provider.present? }
+    end
+
     coinstats_accounts.joins(:account_provider).count
   end
 
   # @return [Integer] Number of accounts without provider links
   def unlinked_accounts_count
+    if coinstats_accounts.loaded? && coinstats_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return coinstats_accounts.count { |account| account.account_provider.blank? }
+    end
+
     coinstats_accounts.left_joins(:account_provider).where(account_providers: { id: nil }).count
   end
 
   # @return [Integer] Total number of coinstats accounts
   def total_accounts_count
+    return coinstats_accounts.size if coinstats_accounts.loaded?
+
     coinstats_accounts.count
   end
 

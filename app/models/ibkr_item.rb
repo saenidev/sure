@@ -89,14 +89,24 @@ class IbkrItem < ApplicationRecord
   end
 
   def linked_accounts_count
+    if ibkr_accounts.loaded? && ibkr_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return ibkr_accounts.count { |account| account.account_provider.present? }
+    end
+
     ibkr_accounts.joins(:account_provider).count
   end
 
   def unlinked_accounts_count
+    if ibkr_accounts.loaded? && ibkr_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return ibkr_accounts.count { |account| account.account_provider.blank? }
+    end
+
     ibkr_accounts.left_joins(:account_provider).where(account_providers: { id: nil }).count
   end
 
   def total_accounts_count
+    return ibkr_accounts.size if ibkr_accounts.loaded?
+
     ibkr_accounts.count
   end
 

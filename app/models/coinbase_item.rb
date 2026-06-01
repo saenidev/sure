@@ -127,14 +127,24 @@ class CoinbaseItem < ApplicationRecord
   end
 
   def linked_accounts_count
+    if coinbase_accounts.loaded? && coinbase_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return coinbase_accounts.count { |account| account.account_provider.present? }
+    end
+
     coinbase_accounts.joins(:account_provider).count
   end
 
   def unlinked_accounts_count
+    if coinbase_accounts.loaded? && coinbase_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return coinbase_accounts.count { |account| account.account_provider.blank? }
+    end
+
     coinbase_accounts.left_joins(:account_provider).where(account_providers: { id: nil }).count
   end
 
   def total_accounts_count
+    return coinbase_accounts.size if coinbase_accounts.loaded?
+
     coinbase_accounts.count
   end
 

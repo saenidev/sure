@@ -15,7 +15,7 @@
   <% end %>
 
   <%
-    snaptrade_item = Current.family.snaptrade_items.first_or_initialize(name: "SnapTrade Connection")
+    snaptrade_item = local_assigns[:snaptrade_items]&.first || @snaptrade_items&.first || Current.family.snaptrade_items.first_or_initialize(name: "SnapTrade Connection")
     is_new_record = snaptrade_item.new_record?
     is_configured = snaptrade_item.persisted? && snaptrade_item.credentials_configured?
     is_registered = snaptrade_item.persisted? && snaptrade_item.user_registered?
@@ -66,9 +66,10 @@
         <summary class="flex items-center justify-between cursor-pointer list-none [&::-webkit-details-marker]:hidden">
           <div class="flex items-center gap-2">
             <p class="text-sm text-secondary">
-              <%= t("providers.snaptrade.status_connected", count: item.snaptrade_accounts.count) %>
-              <% if item.unlinked_accounts_count > 0 %>
-                <span class="text-warning">(<%= t("providers.snaptrade.needs_setup", count: item.unlinked_accounts_count) %>)</span>
+              <% unlinked_accounts_count = item.unlinked_accounts_count %>
+              <%= t("providers.snaptrade.status_connected", count: item.snaptrade_accounts.size) %>
+              <% if unlinked_accounts_count > 0 %>
+                <span class="text-warning">(<%= t("providers.snaptrade.needs_setup", count: unlinked_accounts_count) %>)</span>
               <% end %>
             </p>
           </div>

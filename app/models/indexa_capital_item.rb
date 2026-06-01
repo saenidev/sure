@@ -139,14 +139,24 @@ class IndexaCapitalItem < ApplicationRecord
   end
 
   def linked_accounts_count
+    if indexa_capital_accounts.loaded? && indexa_capital_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return indexa_capital_accounts.count { |account| account.account_provider.present? }
+    end
+
     indexa_capital_accounts.joins(:account_provider).count
   end
 
   def unlinked_accounts_count
+    if indexa_capital_accounts.loaded? && indexa_capital_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return indexa_capital_accounts.count { |account| account.account_provider.blank? }
+    end
+
     indexa_capital_accounts.left_joins(:account_provider).where(account_providers: { id: nil }).count
   end
 
   def total_accounts_count
+    return indexa_capital_accounts.size if indexa_capital_accounts.loaded?
+
     indexa_capital_accounts.count
   end
 

@@ -41,6 +41,26 @@ class Settings::ProvidersControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "brex-providers-panel"
   end
 
+  test "show does not count provider accounts while rendering summaries" do
+    provider_account_tables = %w[
+      brex_accounts
+      coinbase_accounts
+      coinstats_accounts
+      enable_banking_accounts
+      ibkr_accounts
+      indexa_capital_accounts
+      lunchflow_accounts
+      mercury_accounts
+      snaptrade_accounts
+    ].join("|")
+
+    assert_queries_count(matcher: /SELECT COUNT\(\*\).*"(#{provider_account_tables})"/, max: 0) do
+      get settings_providers_url
+    end
+
+    assert_response :success
+  end
+
   test "shows Brex as available when family has no Brex connections" do
     sign_in users(:empty)
 

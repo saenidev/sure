@@ -92,7 +92,7 @@
   </details>
 
   <%
-    ibkr_item = Current.family.ibkr_items.first_or_initialize(name: "Interactive Brokers")
+    ibkr_item = local_assigns[:ibkr_items]&.first || @ibkr_items&.first || Current.family.ibkr_items.first_or_initialize(name: "Interactive Brokers")
     is_new_record = ibkr_item.new_record?
   %>
 

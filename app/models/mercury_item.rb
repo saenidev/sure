@@ -128,14 +128,24 @@ class MercuryItem < ApplicationRecord
   end
 
   def linked_accounts_count
+    if mercury_accounts.loaded? && mercury_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return mercury_accounts.count { |account| account.account_provider.present? }
+    end
+
     mercury_accounts.joins(:account_provider).count
   end
 
   def unlinked_accounts_count
+    if mercury_accounts.loaded? && mercury_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return mercury_accounts.count { |account| account.account_provider.blank? }
+    end
+
     mercury_accounts.left_joins(:account_provider).where(account_providers: { id: nil }).count
   end
 
   def total_accounts_count
+    return mercury_accounts.size if mercury_accounts.loaded?
+
     mercury_accounts.count
   end
 

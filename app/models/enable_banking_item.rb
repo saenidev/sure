@@ -200,14 +200,24 @@ class EnableBankingItem < ApplicationRecord
   end
 
   def linked_accounts_count
+    if enable_banking_accounts.loaded? && enable_banking_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return enable_banking_accounts.count { |account| account.account_provider.present? }
+    end
+
     enable_banking_accounts.joins(:account_provider).count
   end
 
   def unlinked_accounts_count
+    if enable_banking_accounts.loaded? && enable_banking_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return enable_banking_accounts.count { |account| account.account_provider.blank? }
+    end
+
     enable_banking_accounts.left_joins(:account_provider).where(account_providers: { id: nil }).count
   end
 
   def total_accounts_count
+    return enable_banking_accounts.size if enable_banking_accounts.loaded?
+
     enable_banking_accounts.count
   end
 

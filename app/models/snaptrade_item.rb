@@ -137,14 +137,24 @@ class SnaptradeItem < ApplicationRecord
   end
 
   def linked_accounts_count
+    if snaptrade_accounts.loaded? && snaptrade_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return snaptrade_accounts.count { |account| account.account_provider.present? }
+    end
+
     snaptrade_accounts.joins(:account_provider).count
   end
 
   def unlinked_accounts_count
+    if snaptrade_accounts.loaded? && snaptrade_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return snaptrade_accounts.count { |account| account.account_provider.blank? }
+    end
+
     snaptrade_accounts.left_joins(:account_provider).where(account_providers: { id: nil }).count
   end
 
   def total_accounts_count
+    return snaptrade_accounts.size if snaptrade_accounts.loaded?
+
     snaptrade_accounts.count
   end
 

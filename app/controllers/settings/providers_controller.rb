@@ -221,29 +221,29 @@ class Settings::ProvidersController < ApplicationController
       when "simplefin"
         @simplefin_items = Current.family.simplefin_items.ordered
       when "lunchflow"
-        @lunchflow_items = Current.family.lunchflow_items.ordered
+        @lunchflow_items = Current.family.lunchflow_items.ordered.includes(:syncs, lunchflow_accounts: :account_provider)
       when "enable_banking"
-        @enable_banking_items = Current.family.enable_banking_items.ordered
+        @enable_banking_items = Current.family.enable_banking_items.ordered.includes(:syncs, enable_banking_accounts: :account_provider)
       when "coinstats"
-        @coinstats_items = Current.family.coinstats_items.ordered
+        @coinstats_items = Current.family.coinstats_items.ordered.includes(:syncs, coinstats_accounts: :account_provider)
       when "mercury"
-        @mercury_items = Current.family.mercury_items.active.ordered.includes(:syncs, :mercury_accounts)
+        @mercury_items = Current.family.mercury_items.active.ordered.includes(:syncs, mercury_accounts: :account_provider)
       when "brex"
-        @brex_items = Current.family.brex_items.active.ordered.includes(:syncs, :brex_accounts)
+        @brex_items = Current.family.brex_items.active.ordered.includes(:syncs, brex_accounts: :account_provider)
       when "coinbase"
-        @coinbase_items = Current.family.coinbase_items.ordered
+        @coinbase_items = Current.family.coinbase_items.ordered.includes(:syncs, coinbase_accounts: :account_provider)
       when "binance"
         @binance_items = Current.family.binance_items.active.ordered.includes(:syncs, binance_accounts: :account_provider)
       when "kraken"
         @kraken_items = Current.family.kraken_items.active.ordered.includes(:syncs, kraken_accounts: :account_provider)
       when "snaptrade"
-        @snaptrade_items = Current.family.snaptrade_items.includes(:snaptrade_accounts).ordered
+        @snaptrade_items = Current.family.snaptrade_items.ordered.includes(:syncs, snaptrade_accounts: :account_provider)
       when "ibkr"
-        @ibkr_items = Current.family.ibkr_items.ordered
+        @ibkr_items = Current.family.ibkr_items.ordered.includes(:syncs, ibkr_accounts: :account_provider)
       when "indexa_capital"
-        @indexa_capital_items = Current.family.indexa_capital_items.ordered
+        @indexa_capital_items = Current.family.indexa_capital_items.ordered.includes(:syncs, indexa_capital_accounts: :account_provider)
       when "sophtron"
-        @sophtron_items = Current.family.sophtron_items.ordered
+        @sophtron_items = Current.family.sophtron_items.ordered.includes(:syncs, sophtron_accounts: :account_provider)
       end
     end
 
@@ -257,17 +257,17 @@ class Settings::ProvidersController < ApplicationController
 
       # Providers page only needs to know whether any SimpleFin/Lunchflow connections exist with valid credentials
       @simplefin_items = Current.family.simplefin_items.where.not(access_url: [ nil, "" ]).ordered.select(:id)
-      @lunchflow_items = Current.family.lunchflow_items.where.not(api_key: [ nil, "" ]).ordered.select(:id)
-      @enable_banking_items = Current.family.enable_banking_items.ordered # Enable Banking panel needs session info for status display
+      @lunchflow_items = Current.family.lunchflow_items.where.not(api_key: [ nil, "" ]).ordered.includes(:syncs, lunchflow_accounts: :account_provider)
+      @enable_banking_items = Current.family.enable_banking_items.ordered.includes(:syncs, enable_banking_accounts: :account_provider)
       # Providers page only needs to know whether any Sophtron connections exist with valid credentials
       @sophtron_items = Current.family.sophtron_items.where.not(user_id: [ nil, "" ], access_key: [ nil, "" ]).ordered.select(:id)
-      @coinstats_items = Current.family.coinstats_items.ordered # CoinStats panel needs account info for status display
-      @mercury_items = Current.family.mercury_items.active.ordered
-      @brex_items = Current.family.brex_items.active.ordered
-      @coinbase_items = Current.family.coinbase_items.ordered # Coinbase panel needs name and sync info for status display
-      @snaptrade_items = Current.family.snaptrade_items.ordered
-      @ibkr_items = Current.family.ibkr_items.ordered.select(:id)
-      @indexa_capital_items = Current.family.indexa_capital_items.ordered.select(:id)
+      @coinstats_items = Current.family.coinstats_items.ordered.includes(:syncs, coinstats_accounts: :account_provider)
+      @mercury_items = Current.family.mercury_items.active.ordered.includes(:syncs, mercury_accounts: :account_provider)
+      @brex_items = Current.family.brex_items.active.ordered.includes(:syncs, brex_accounts: :account_provider)
+      @coinbase_items = Current.family.coinbase_items.ordered.includes(:syncs, coinbase_accounts: :account_provider)
+      @snaptrade_items = Current.family.snaptrade_items.ordered.includes(:syncs, snaptrade_accounts: :account_provider)
+      @ibkr_items = Current.family.ibkr_items.ordered.includes(:syncs, ibkr_accounts: :account_provider)
+      @indexa_capital_items = Current.family.indexa_capital_items.ordered.includes(:syncs, indexa_capital_accounts: :account_provider)
       @binance_items = Current.family.binance_items.active.ordered.includes(:syncs, binance_accounts: :account_provider)
       @kraken_items = Current.family.kraken_items.active.ordered.includes(:syncs, kraken_accounts: :account_provider)
 

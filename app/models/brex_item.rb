@@ -120,14 +120,24 @@ class BrexItem < ApplicationRecord
   end
 
   def linked_accounts_count
+    if brex_accounts.loaded? && brex_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return brex_accounts.count { |account| account.account_provider.present? }
+    end
+
     brex_accounts.joins(:account_provider).count
   end
 
   def unlinked_accounts_count
+    if brex_accounts.loaded? && brex_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return brex_accounts.count { |account| account.account_provider.blank? }
+    end
+
     brex_accounts.left_joins(:account_provider).where(account_providers: { id: nil }).count
   end
 
   def total_accounts_count
+    return brex_accounts.size if brex_accounts.loaded?
+
     brex_accounts.count
   end
 
