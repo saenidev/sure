@@ -52,6 +52,30 @@ class Api::V1::ChatsControllerTest < ActionDispatch::IntegrationTest
     assert response_body["pagination"].present?
   end
 
+  test "index preloads chat message summaries" do
+    3.times do |idx|
+      chat = @user.chats.create!(title: "Summary #{idx}")
+      chat.messages.create!(
+        type: "UserMessage",
+        content: "Question #{idx}",
+        ai_model: "gpt-4.1",
+        created_at: idx.minutes.ago
+      )
+      chat.messages.create!(
+        type: "AssistantMessage",
+        content: "Answer #{idx}",
+        ai_model: "gpt-4.1",
+        created_at: idx.minutes.ago + 30.seconds
+      )
+    end
+
+    assert_queries_count(matcher: /FROM "?messages"?/i, max: 2) do
+      get "/api/v1/chats", headers: bearer_auth_header(@read_token)
+    end
+
+    assert_response :success
+  end
+
   test "should show chat with messages" do
     get "/api/v1/chats/#{@chat.id}", headers: bearer_auth_header(@read_token)
     assert_response :success
@@ -59,6 +83,32 @@ class Api::V1::ChatsControllerTest < ActionDispatch::IntegrationTest
     response_body = JSON.parse(response.body)
     assert_equal @chat.id, response_body["id"]
     assert response_body["messages"].is_a?(Array)
+  end
+
+  test "show preloads assistant message tool calls" do
+    3.times do |idx|
+      message = @chat.messages.create!(
+        type: "AssistantMessage",
+        content: "Answer #{idx}",
+        ai_model: "gpt-4.1",
+        created_at: idx.minutes.ago
+      )
+
+      ToolCall::Function.create!(
+        message: message,
+        provider_id: "call_#{idx}",
+        provider_call_id: "call_#{idx}",
+        function_name: "lookup",
+        function_arguments: { idx: idx },
+        function_result: { ok: true }
+      )
+    end
+
+    assert_queries_count(matcher: /FROM "?tool_calls"?/i, max: 1) do
+      get "/api/v1/chats/#{@chat.id}", headers: bearer_auth_header(@read_token)
+    end
+
+    assert_response :success
   end
 
   test "should create chat with write scope" do

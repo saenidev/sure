@@ -9,11 +9,14 @@ class Api::V1::ChatsController < Api::V1::BaseController
 
   def index
     @pagy, @chats = pagy(Current.user.chats.ordered, items: 20)
+    chat_ids = @chats.map(&:id)
+    @last_message_at_by_chat_id = Message.where(chat_id: chat_ids).group(:chat_id).maximum(:created_at)
+    @message_count_by_chat_id = Message.where(chat_id: chat_ids).group(:chat_id).count
   end
 
   def show
     return unless @chat
-    @pagy, @messages = pagy(@chat.messages.ordered, items: 50)
+    @pagy, @messages = pagy(@chat.messages.includes(:tool_calls).ordered, items: 50)
   end
 
   def create
