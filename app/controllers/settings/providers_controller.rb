@@ -233,9 +233,9 @@ class Settings::ProvidersController < ApplicationController
       when "coinbase"
         @coinbase_items = Current.family.coinbase_items.ordered
       when "binance"
-        @binance_items = Current.family.binance_items.active.ordered
+        @binance_items = Current.family.binance_items.active.ordered.includes(:syncs, binance_accounts: :account_provider)
       when "kraken"
-        @kraken_items = Current.family.kraken_items.active.ordered
+        @kraken_items = Current.family.kraken_items.active.ordered.includes(:syncs, kraken_accounts: :account_provider)
       when "snaptrade"
         @snaptrade_items = Current.family.snaptrade_items.includes(:snaptrade_accounts).ordered
       when "ibkr"
@@ -268,8 +268,8 @@ class Settings::ProvidersController < ApplicationController
       @snaptrade_items = Current.family.snaptrade_items.ordered
       @ibkr_items = Current.family.ibkr_items.ordered.select(:id)
       @indexa_capital_items = Current.family.indexa_capital_items.ordered.select(:id)
-      @binance_items = Current.family.binance_items.active.ordered
-      @kraken_items = Current.family.kraken_items.active.ordered
+      @binance_items = Current.family.binance_items.active.ordered.includes(:syncs, binance_accounts: :account_provider)
+      @kraken_items = Current.family.kraken_items.active.ordered.includes(:syncs, kraken_accounts: :account_provider)
 
       @provider_sync_health = compute_provider_sync_health(family_panel_items)
 

@@ -129,14 +129,24 @@ class BinanceItem < ApplicationRecord
   end
 
   def linked_accounts_count
+    if binance_accounts.loaded? && binance_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return binance_accounts.count { |account| account.account_provider.present? }
+    end
+
     binance_accounts.joins(:account_provider).count
   end
 
   def unlinked_accounts_count
+    if binance_accounts.loaded? && binance_accounts.all? { |account| account.association(:account_provider).loaded? }
+      return binance_accounts.count { |account| account.account_provider.blank? }
+    end
+
     binance_accounts.left_joins(:account_provider).where(account_providers: { id: nil }).count
   end
 
   def total_accounts_count
+    return binance_accounts.size if binance_accounts.loaded?
+
     binance_accounts.count
   end
 
