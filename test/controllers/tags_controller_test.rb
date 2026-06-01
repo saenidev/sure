@@ -1,6 +1,8 @@
 require "test_helper"
 
 class TagsControllerTest < ActionDispatch::IntegrationTest
+  include EntriesTestHelper
+
   setup do
     sign_in @user = users(:family_admin)
     @other_family_user = users(:empty)
@@ -17,6 +19,25 @@ class TagsControllerTest < ActionDispatch::IntegrationTest
     @user.family.tags.each do |tag|
       assert_select "#" + dom_id(tag), count: 1
     end
+  end
+
+  test "index does not query taggings per tag" do
+    3.times do |idx|
+      tag = @user.family.tags.create!(name: "Preload tag #{idx}", color: Tag::COLORS[idx])
+      entry = create_transaction(
+        date: Date.current,
+        account: accounts(:depository),
+        amount: 10 + idx,
+        name: "Tag preload #{idx}"
+      )
+      entry.transaction.tags << tag
+    end
+
+    assert_queries_count(matcher: /FROM "?taggings"?|JOIN "?taggings"?/i, max: 1) do
+      get tags_url
+    end
+
+    assert_response :success
   end
 
   test "should get new" do

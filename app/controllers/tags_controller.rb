@@ -3,6 +3,10 @@ class TagsController < ApplicationController
 
   def index
     @tags = Current.family.tags.alphabetically
+    @tag_ids_with_transactions = Tagging.where(tag_id: @tags.select(:id), taggable_type: "Transaction")
+                                        .distinct
+                                        .pluck(:tag_id)
+                                        .to_set
 
     render layout: "settings"
   end
