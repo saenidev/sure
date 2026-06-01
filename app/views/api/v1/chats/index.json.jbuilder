@@ -3,8 +3,8 @@
 json.chats @chats do |chat|
   json.id chat.id
   json.title chat.title
-  json.last_message_at chat.messages.ordered.first&.created_at&.iso8601
-  json.message_count chat.messages.count
+  json.last_message_at @last_message_at_by_chat_id[chat.id]&.iso8601
+  json.message_count @message_count_by_chat_id.fetch(chat.id, 0)
   json.error chat.presentable_error_message
   json.created_at chat.created_at.iso8601
   json.updated_at chat.updated_at.iso8601
