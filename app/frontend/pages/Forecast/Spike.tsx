@@ -1,19 +1,21 @@
-// Forecast V2 Inertia page (spike slice A4).
+// Forecast V2 Inertia page (spike slices A4 + A5).
 //
 // Receives the typed read-model-shaped props from
 // `ForecastV2SpikeController#show` and renders the first-viewport shell: the
-// plan label, a freshness pill, and a placeholder for the local D3 scrub mock
-// (built in slice A5). It uses only Sure design tokens (text-primary,
-// bg-container, border-primary, etc.) and an inline SVG glyph — no raw palette
-// colors. The user-facing plan + metric labels are localized server-side and
-// passed through props; the spike formats the short freshness status token
-// client-side (real i18n for the freshness lifecycle lands in Stage C).
+// plan label, a freshness pill, and the local D3 scrub mock (slice A5). It uses
+// only Sure design tokens (text-primary, bg-container, border-primary, etc.) and
+// an inline SVG glyph — no raw palette colors. The user-facing plan + metric
+// labels are localized server-side and passed through props; the spike formats
+// the short freshness status token client-side (real i18n for the freshness
+// lifecycle lands in Stage C).
 //
-// This module owns only ephemeral, first-viewport presentation. The local
-// no-network scrub interaction state arrives in A5.
+// This page owns only ephemeral, first-viewport presentation. The local
+// no-network scrub interaction state lives inside `ProjectionScrubMock`, which
+// owns its own interaction region.
 
 import { Head } from "@inertiajs/react";
 import type { JSX } from "react";
+import ProjectionScrubMock from "../../forecast/components/ProjectionScrubMock";
 import type {
 	ForecastSpikeProps,
 	FreshnessLifecycle,
@@ -101,6 +103,7 @@ export default function Spike({
 	periodKeys,
 	currentPeriodKey,
 	series,
+	metrics,
 	freshness,
 }: ForecastSpikeProps): JSX.Element {
 	return (
@@ -131,27 +134,35 @@ export default function Spike({
 				<FreshnessPill freshness={freshness} />
 			</header>
 
-			{/* Placeholder for the local D3 scrub mock built in slice A5. It renders
-			    the preloaded period series with zero-network pointer/keyboard period
-			    selection. For now we surface the data contract the scrub will own so
-			    the page is non-blank and the prop wiring is provable. */}
-			<section
-				data-testid="forecast-scrub-placeholder"
-				aria-label="Projection scrub (placeholder)"
-				className="flex flex-col gap-3 rounded-xl border border-primary bg-container p-5"
+			{/* Local D3 scrub mock (slice A5): renders the preloaded period series and
+			    drives the active marker + selected metric value from pointer movement
+			    and arrow keys with ZERO network requests. */}
+			<ProjectionScrubMock
+				periodKeys={periodKeys}
+				series={series}
+				currentPeriodKey={currentPeriodKey}
+				currency={plan.currency}
+			/>
+
+			{/* First-viewport metric strip seeded from the server's preloaded props.
+			    Prefigures the Stage C `MetricStrip`; here it just confirms the metric
+			    prop wiring renders alongside the scrub region. */}
+			<dl
+				data-testid="forecast-metric-strip"
+				className="grid grid-cols-1 gap-3 sm:grid-cols-2"
 			>
-				<div className="flex items-center justify-between gap-2">
-					<h2 className="text-sm font-medium text-primary">Projection</h2>
-					<span className="text-xs text-subdued">
-						{periodKeys.length} periods · selected {currentPeriodKey}
-					</span>
-				</div>
-				<div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-primary bg-surface-inset">
-					<span className="text-sm text-subdued">
-						Scrub mock placeholder ({series.length} points) — A5
-					</span>
-				</div>
-			</section>
+				{metrics.map((entry) => (
+					<div
+						key={entry.key}
+						className="flex flex-col gap-1 rounded-xl border border-primary bg-container p-4"
+					>
+						<dt className="truncate text-xs text-subdued">{entry.label}</dt>
+						<dd className="truncate text-lg font-semibold tabular-nums text-primary">
+							{plan.currency} {entry.value}
+						</dd>
+					</div>
+				))}
+			</dl>
 		</div>
 	);
 }

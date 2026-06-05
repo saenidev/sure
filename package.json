@@ -22,12 +22,14 @@
 	"license": "ISC",
 	"dependencies": {
 		"@inertiajs/react": "^3.3.1",
+		"d3": "^7.9.0",
 		"react": "^19.2.7",
 		"react-dom": "^19.2.7"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.3",
 		"@inertiajs/vite": "^3.3.1",
+		"@types/d3": "^7.4.3",
 		"@types/react": "^19.2.17",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^6.0.2",
