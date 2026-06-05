@@ -124,3 +124,7 @@ scripts/
 .claude_settings.json
 .security-key
 logs/security/
+
+# Local agent/test artifacts
+.playwright-cli/
+/output/
