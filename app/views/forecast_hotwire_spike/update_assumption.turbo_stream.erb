@@ -1,8 +1,8 @@
 <%# Scoped save: patch ONLY these regions. The page shell never reloads. %>
 <%= turbo_stream.replace "forecast-spike-data" do %><%= render "chart_data", plan: @plan %><% end %>
-<%= turbo_stream.replace "forecast-spike-metrics" do %><%= render "metric_strip", plan: @plan, index: @selected_index %><% end %>
-<%= turbo_stream.replace "forecast-spike-explanation" do %><%= render "explanation", plan: @plan, index: @selected_index %><% end %>
+<%= turbo_stream.replace "forecast-spike-metrics" do %><%= render "metric_strip", plan: @plan, index: @selected_index, symbol: @currency_symbol %><% end %>
+<%= turbo_stream.replace "forecast-spike-explanation" do %><%= render "explanation", plan: @plan, index: @selected_index, symbol: @currency_symbol %><% end %>
 <% if @edited_card %>
-  <%= turbo_stream.replace "forecast-spike-card-#{@edited_card[:key]}" do %><%= render "assumption_card", card: @edited_card, index: @selected_index %><% end %>
+  <%= turbo_stream.replace "forecast-spike-card-#{@edited_card[:key]}" do %><%= render "assumption_card", card: @edited_card, index: @selected_index, symbol: @currency_symbol %><% end %>
 <% end %>
 <%= turbo_stream.replace "forecast-spike-freshness" do %><%= render "freshness", state: "fresh" %><% end %>

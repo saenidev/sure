@@ -1,5 +1,6 @@
-<%# locals: (plan:, index:) — JS rewrites these spans on scrub; server replaces the
-    whole strip on save. Both write to the same metric targets. %>
+<%# locals: (plan:, index:, symbol: "$") — JS rewrites these spans on scrub;
+    server replaces the whole strip on save. Both write to the same metric targets. %>
+<% sym = local_assigns.fetch(:symbol, "$") %>
 <% p = plan.period(index) %>
 <div id="forecast-spike-metrics" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
   <% ForecastSpike::Plan::METRIC_LABELS.each do |key, label| %>
@@ -7,7 +8,7 @@
       <div class="text-secondary text-xs"><%= label %></div>
       <div class="text-primary font-medium tabular-nums text-sm"
            data-forecast-spike-target="metric" data-metric-key="<%= key %>">
-        <%= key == :runway_days ? "#{p[:metrics][key]} d" : number_to_currency(p[:metrics][key], precision: 0) %>
+        <%= key == :runway_days ? "#{p[:metrics][key]} d" : number_to_currency(p[:metrics][key], unit: sym, precision: 0) %>
       </div>
     </div>
   <% end %>

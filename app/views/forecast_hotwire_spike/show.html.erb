@@ -1,7 +1,8 @@
 <%# THROWAWAY Hotwire viability spike. See ForecastHotwireSpikeController. %>
 <div class="p-4 max-w-[1100px] mx-auto"
      data-controller="forecast-spike"
-     data-forecast-spike-selected-index-value="<%= @selected_index %>">
+     data-forecast-spike-selected-index-value="<%= @selected_index %>"
+     data-forecast-spike-currency-value="<%= @currency_code %>">
 
   <%= render "chart_data", plan: @plan %>
 
@@ -9,7 +10,7 @@
   <div class="flex items-start justify-between gap-3 mb-4">
     <div>
       <h1 class="text-primary text-xl font-medium">Forecast — Hotwire spike</h1>
-      <p class="text-secondary text-sm">Local chart scrub + scoped Turbo Stream save. No Inertia, no Vite.</p>
+      <p class="text-secondary text-sm">Seeded from your connected accounts. Local scrub + scoped Turbo Stream save, no Inertia/Vite.</p>
     </div>
     <%= render "freshness", state: "fresh" %>
   </div>
@@ -49,14 +50,14 @@
 
   <%# metric strip (partial owns #forecast-spike-metrics) %>
   <div class="mb-4">
-    <%= render "metric_strip", plan: @plan, index: @selected_index %>
+    <%= render "metric_strip", plan: @plan, index: @selected_index, symbol: @currency_symbol %>
   </div>
 
   <%# lower: explanation + assumptions %>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <div class="bg-container border border-primary rounded-xl p-4">
       <h2 class="text-primary font-medium mb-3">Why this period</h2>
-      <%= render "explanation", plan: @plan, index: @selected_index %>
+      <%= render "explanation", plan: @plan, index: @selected_index, symbol: @currency_symbol %>
     </div>
 
     <div class="bg-container border border-primary rounded-xl p-4">
@@ -65,9 +66,24 @@
         <%= button_to "Reset", forecast_hotwire_spike_reset_path,
               class: "text-secondary text-xs underline" %>
       </div>
+
+      <%# provenance: real starting balances from connected accounts %>
+      <% o = @plan.opening_summary %>
+      <div class="border border-primary rounded-lg p-3 mb-2">
+        <div class="text-secondary text-xs uppercase tracking-wide mb-2">Starting balances · from your connected accounts</div>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+          <% { "Cash" => :cash, "Portfolio" => :portfolio, "Other assets" => :other_assets, "Debt" => :debt, "Net worth" => :net_worth }.each do |label, key| %>
+            <div class="flex justify-between">
+              <span class="text-secondary"><%= label %></span>
+              <span class="tabular-nums text-primary"><%= number_to_currency(o[key], unit: @currency_symbol, precision: 0) %></span>
+            </div>
+          <% end %>
+        </div>
+      </div>
+
       <div class="space-y-2">
         <% @plan.assumption_cards.each do |card| %>
-          <%= render "assumption_card", card: card, index: @selected_index %>
+          <%= render "assumption_card", card: card, index: @selected_index, symbol: @currency_symbol %>
         <% end %>
       </div>
     </div>

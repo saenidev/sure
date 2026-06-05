@@ -1,4 +1,5 @@
-<%# locals: (card:, index:) — root owns its id so a save can replace just this card. %>
+<%# locals: (card:, index:, symbol: "$") — root owns its id so a save can replace just this card. %>
+<% sym = local_assigns.fetch(:symbol, "$") %>
 <div id="forecast-spike-card-<%= card[:key] %>"
      class="border border-primary rounded-lg p-3 flex items-start gap-3">
   <%= icon(card[:icon], size: "sm") %>
@@ -16,7 +17,7 @@
         <%= f.hidden_field :key, value: card[:key] %>
         <%= f.hidden_field :period_index, value: index,
               data: { forecast_spike_target: "periodIndex" } %>
-        <span class="text-secondary text-xs">$</span>
+        <span class="text-secondary text-xs"><%= sym %></span>
         <%= f.number_field :value, value: card[:value], step: 100, min: 0,
               class: "w-28 rounded-md border border-primary bg-surface px-2 py-1 text-sm text-primary" %>
         <%= f.submit "Save",

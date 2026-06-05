@@ -2,79 +2,29 @@
 
 # THROWAWAY SPIKE — delete with the rest of forecast_hotwire_spike.
 #
-# A self-contained, deterministic mock "plan" that derives a 10-year monthly
-# projection FROM a handful of editable assumptions. The point of the spike is
-# to prove the Hotwire *interaction substrate* (local chart scrub + scoped
-# Turbo Stream save) — NOT the real engine — so the math here is intentionally
-# simple and uses plain floats rounded for display. The real Forecast V2 engine
-# must use decimal arithmetic and typed packets (see the V2 design spec); none
-# of this code is a template for that.
+# A deterministic projection seeded from the family's REAL connected data:
+# opening balances come from the balance sheet (cash / portfolio / other assets /
+# debt) and the monthly income & spending seeds come from the income statement.
+# The user can then edit the cash-flow assumptions and watch the curve recompute.
 #
-# What matters: editing an assumption genuinely re-derives the curve, so "live
-# recompute" in the UI is real, not faked.
+# The point of the spike is the Hotwire *interaction substrate* (local chart
+# scrub + scoped Turbo Stream save) — NOT the real engine — so the math is
+# intentionally simple (plain floats rounded for display). The real Forecast V2
+# engine must use decimal arithmetic and typed packets; none of this is a
+# template for that.
 module ForecastSpike
   class Plan
     START_DATE = Date.new(2026, 6, 1)
     MONTHS = 120
 
-    OPENING = { cash: 25_000.0, portfolio: 75_000.0, debt: 30_000.0 }.freeze
     PORTFOLIO_RETURN_ANNUAL = 0.06
     DEBT_APR = 0.069
+    INCOME_GROWTH_ANNUAL = 0.03
+    SPENDING_INFLATION_ANNUAL = 0.025
 
-    DEFAULTS = {
-      salary_monthly: 9_500.0,
-      salary_growth_annual: 0.03,
-      living_monthly: 5_200.0,
-      living_inflation_annual: 0.025,
-      rent_monthly: 2_800.0,
-      debt_payment_monthly: 600.0
-    }.freeze
-
-    # Only salary is wired to an inline editor in the spike; the rest are shown
-    # as static cards. Add more here if you want to edit them live too.
-    EDITABLE = %i[salary_monthly].freeze
-
-    def initialize(overrides = {})
-      @inputs = DEFAULTS.merge(sanitize(overrides))
-    end
-
-    attr_reader :inputs
-
-    # [{ key:, label:, index:, metrics: {...}, explanation: [...], active: [...] }]
-    def periods
-      @periods ||= build_periods
-    end
-
-    def period(index)
-      i = index.to_i.clamp(0, MONTHS - 1)
-      periods[i]
-    end
-
-    # Cards for the assumption rail.
-    def assumption_cards
-      [
-        { key: :salary_monthly, kind: "salary", icon: "briefcase",
-          name: "Primary salary",
-          amount_summary: money(@inputs[:salary_monthly]) + " / mo",
-          behavior_summary: "#{pct(@inputs[:salary_growth_annual])} annual growth",
-          editable: true, value: @inputs[:salary_monthly].round },
-        { key: :living_monthly, kind: "living_expense", icon: "shopping-cart",
-          name: "Living expenses",
-          amount_summary: money(@inputs[:living_monthly]) + " / mo",
-          behavior_summary: "#{pct(@inputs[:living_inflation_annual])} inflation",
-          editable: false },
-        { key: :rent_monthly, kind: "living_expense", icon: "house",
-          name: "Rent",
-          amount_summary: money(@inputs[:rent_monthly]) + " / mo",
-          behavior_summary: "Fixed monthly",
-          editable: false },
-        { key: :debt_payment_monthly, kind: "debt_payment", icon: "landmark",
-          name: "Debt payment",
-          amount_summary: money(@inputs[:debt_payment_monthly]) + " / mo",
-          behavior_summary: "#{pct(DEBT_APR)} APR on #{money(OPENING[:debt])}",
-          editable: false }
-      ]
-    end
+    OPENING_DEFAULTS = { cash: 0.0, portfolio: 0.0, other_assets: 0.0, debt: 0.0 }.freeze
+    SEED_DEFAULTS = { income_monthly: 0.0, spending_monthly: 0.0, debt_payment_monthly: 0.0 }.freeze
+    EDITABLE = %i[income_monthly spending_monthly debt_payment_monthly].freeze
 
     METRIC_LABELS = {
       net_worth: "Net worth",
@@ -86,28 +36,68 @@ module ForecastSpike
       runway_days: "Runway"
     }.freeze
 
+    def initialize(opening: {}, seeds: {}, overrides: {}, currency: "$")
+      @opening = OPENING_DEFAULTS.merge(opening.slice(*OPENING_DEFAULTS.keys))
+      @seeds = SEED_DEFAULTS.merge(seeds.slice(*SEED_DEFAULTS.keys)).merge(sanitize(overrides))
+      @currency = currency
+    end
+
+    attr_reader :opening, :seeds
+
+    def periods
+      @periods ||= build_periods
+    end
+
+    def period(index)
+      periods[index.to_i.clamp(0, MONTHS - 1)]
+    end
+
+    def opening_summary
+      net_worth = @opening[:cash] + @opening[:portfolio] + @opening[:other_assets] - @opening[:debt]
+      @opening.merge(net_worth: net_worth)
+    end
+
+    def assumption_cards
+      [
+        { key: :income_monthly, kind: "income", icon: "trending-up",
+          name: "Monthly income",
+          amount_summary: "#{money(@seeds[:income_monthly])} / mo",
+          behavior_summary: "#{pct(INCOME_GROWTH_ANNUAL)} annual growth",
+          editable: true, value: @seeds[:income_monthly].round },
+        { key: :spending_monthly, kind: "spending", icon: "shopping-cart",
+          name: "Monthly spending",
+          amount_summary: "#{money(@seeds[:spending_monthly])} / mo",
+          behavior_summary: "#{pct(SPENDING_INFLATION_ANNUAL)} inflation",
+          editable: true, value: @seeds[:spending_monthly].round },
+        { key: :debt_payment_monthly, kind: "debt_payment", icon: "landmark",
+          name: "Debt payment",
+          amount_summary: "#{money(@seeds[:debt_payment_monthly])} / mo",
+          behavior_summary: "#{pct(DEBT_APR)} APR on opening debt",
+          editable: true, value: @seeds[:debt_payment_monthly].round }
+      ]
+    end
+
     private
 
       def build_periods
-        cash = OPENING[:cash]
-        portfolio = OPENING[:portfolio]
-        debt = OPENING[:debt]
+        cash = @opening[:cash]
+        portfolio = @opening[:portfolio]
+        debt = @opening[:debt]
+        other = @opening[:other_assets]
 
         Array.new(MONTHS) do |m|
           yf = m / 12.0
-          salary  = @inputs[:salary_monthly]  * ((1 + @inputs[:salary_growth_annual])**yf)
-          living  = @inputs[:living_monthly]  * ((1 + @inputs[:living_inflation_annual])**yf)
-          rent    = @inputs[:rent_monthly]
+          income   = @seeds[:income_monthly]   * ((1 + INCOME_GROWTH_ANNUAL)**yf)
+          spending = @seeds[:spending_monthly] * ((1 + SPENDING_INFLATION_ANNUAL)**yf)
 
           debt += debt * (DEBT_APR / 12.0)
-          pay = [ debt, @inputs[:debt_payment_monthly] ].min
+          pay = [ debt, @seeds[:debt_payment_monthly] ].min
           debt -= pay
 
           portfolio += portfolio * (PORTFOLIO_RETURN_ANNUAL / 12.0)
 
-          spending = living + rent
-          cash += salary - spending - pay
-          net_worth = cash + portfolio - debt
+          cash += income - spending - pay
+          net_worth = cash + portfolio + other - debt
           runway = spending.positive? ? (cash / (spending / 30.0)) : 0.0
 
           date = START_DATE >> m
@@ -118,19 +108,17 @@ module ForecastSpike
             metrics: {
               net_worth: net_worth.round,
               liquid_cash: cash.round,
-              income: salary.round,
+              income: income.round,
               spending: spending.round,
               debt_balance: debt.round,
               portfolio_value: portfolio.round,
               runway_days: runway.round
             },
             explanation: [
-              { kind: "income",  label: "Salary",          amount: salary.round },
-              { kind: "expense", label: "Living expenses", amount: -living.round },
-              { kind: "expense", label: "Rent",            amount: -rent.round },
-              { kind: "debt",    label: "Debt payment",    amount: -pay.round }
-            ],
-            active: %w[salary_monthly living_monthly rent_monthly debt_payment_monthly]
+              { kind: "income",  label: "Income",       amount: income.round },
+              { kind: "expense", label: "Spending",     amount: -spending.round },
+              { kind: "debt",    label: "Debt payment", amount: -pay.round }
+            ]
           }
         end
       end
@@ -145,7 +133,8 @@ module ForecastSpike
       end
 
       def money(n)
-        "$" + n.round.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse
+        sign = n.negative? ? "-" : ""
+        "#{sign}#{@currency}#{n.abs.round.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse}"
       end
 
       def pct(n)

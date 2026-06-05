@@ -15,7 +15,7 @@ export default class extends Controller {
     "chart", "data", "metric", "explanation", "selectedLabel",
     "scrubLatency", "scrubNetwork", "saveLatency", "loadCount", "periodIndex",
   ];
-  static values = { selectedIndex: Number };
+  static values = { selectedIndex: Number, currency: String };
 
   connect() {
     this.#wrapFetch();
@@ -77,7 +77,15 @@ export default class extends Controller {
 
     const x = d3.scaleLinear().domain([0, data.length - 1]).range([m.l, w - m.r]);
     const ys = data.map((d) => d.metrics.net_worth);
-    const y = d3.scaleLinear().domain([Math.min(...ys), Math.max(...ys)]).nice().range([h - m.b, m.t]);
+    let lo = Math.min(...ys);
+    let hi = Math.max(...ys);
+    if (lo === hi) {
+      // Flat/zero real data — pad so the scale isn't degenerate.
+      const pad = Math.abs(lo) * 0.1 + 1;
+      lo -= pad;
+      hi += pad;
+    }
+    const y = d3.scaleLinear().domain([lo, hi]).nice().range([h - m.b, m.t]);
 
     const svg = d3.select(el).append("svg").attr("width", w).attr("height", h);
 
@@ -198,7 +206,12 @@ export default class extends Controller {
 
   #fmt(key, val) {
     if (key === "runway_days") return `${val} d`;
-    return val.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+    const currency = this.hasCurrencyValue && this.currencyValue ? this.currencyValue : "USD";
+    try {
+      return val.toLocaleString(undefined, { style: "currency", currency, maximumFractionDigits: 0 });
+    } catch (_) {
+      return val.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
   }
 
   #setFreshness(state) {
