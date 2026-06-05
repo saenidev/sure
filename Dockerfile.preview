@@ -23,8 +23,15 @@ ENV RAILS_ENV="development" \
 # Build stage
 FROM base AS build
 
+# Install gem build packages and the Vite frontend toolchain (Node 24 + npm)
+ARG NODE_MAJOR=24
 RUN apt-get update -qq \
-    && apt-get install --no-install-recommends -y build-essential libpq-dev git pkg-config libyaml-dev \
+    && apt-get install --no-install-recommends -y build-essential libpq-dev git pkg-config libyaml-dev ca-certificates gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update -qq \
+    && apt-get install --no-install-recommends -y nodejs \
     && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 COPY .ruby-version Gemfile Gemfile.lock ./
@@ -32,12 +39,21 @@ RUN bundle install \
     && rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git \
     && bundle exec bootsnap precompile --gemfile -j 0
 
+# Install JS dependencies for the Vite build (reproducible from the lockfile)
+COPY package.json package-lock.json ./
+RUN npm ci
+
 COPY . .
 
 RUN bundle exec bootsnap precompile -j 0 app/ lib/
 
-# Precompile assets
+# Precompile assets. This runs the Vite production build and emits compiled
+# assets under public/vite.
 RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
+
+# Drop Node build dependencies so the final runtime image carries only the
+# compiled Vite assets (public/vite) and never needs the Vite dev server.
+RUN rm -rf node_modules
 
 # Final stage
 FROM base
