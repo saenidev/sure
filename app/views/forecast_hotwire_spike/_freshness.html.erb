@@ -1,0 +1,8 @@
+<%# locals: (state:) — "fresh" | "recomputing". JS flips it to recomputing on submit;
+    the server response replaces it back to fresh. %>
+<% recomputing = state == "recomputing" %>
+<span id="forecast-spike-freshness"
+      class="inline-flex items-center gap-1.5 rounded-full border border-primary px-2.5 py-1 text-xs <%= recomputing ? "text-secondary" : "text-green-600" %>">
+  <span class="w-1.5 h-1.5 rounded-full bg-current <%= "animate-pulse" if recomputing %>"></span>
+  <%= recomputing ? "Recomputing…" : "Fresh" %>
+</span>

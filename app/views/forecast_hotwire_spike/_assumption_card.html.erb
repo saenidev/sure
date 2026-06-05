@@ -1,0 +1,27 @@
+<%# locals: (card:, index:) — root owns its id so a save can replace just this card. %>
+<div id="forecast-spike-card-<%= card[:key] %>"
+     class="border border-primary rounded-lg p-3 flex items-start gap-3">
+  <%= icon(card[:icon], size: "sm") %>
+  <div class="flex-1 min-w-0">
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-primary font-medium text-sm"><%= card[:name] %></span>
+      <span class="text-secondary text-xs uppercase tracking-wide"><%= card[:kind] %></span>
+    </div>
+    <div class="text-primary text-sm"><%= card[:amount_summary] %></div>
+    <div class="text-secondary text-xs"><%= card[:behavior_summary] %></div>
+
+    <% if card[:editable] %>
+      <%= form_with url: forecast_hotwire_spike_assumption_path, method: :patch,
+            class: "mt-2 flex items-center gap-2" do |f| %>
+        <%= f.hidden_field :key, value: card[:key] %>
+        <%= f.hidden_field :period_index, value: index,
+              data: { forecast_spike_target: "periodIndex" } %>
+        <span class="text-secondary text-xs">$</span>
+        <%= f.number_field :value, value: card[:value], step: 100, min: 0,
+              class: "w-28 rounded-md border border-primary bg-surface px-2 py-1 text-sm text-primary" %>
+        <%= f.submit "Save",
+              class: "rounded-md border border-primary bg-surface px-3 py-1 text-xs text-primary cursor-pointer hover:bg-container" %>
+      <% end %>
+    <% end %>
+  </div>
+</div>

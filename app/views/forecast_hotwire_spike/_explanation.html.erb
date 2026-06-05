@@ -1,0 +1,12 @@
+<%# locals: (plan:, index:) — JS rewrites this list on scrub; server replaces it on save. %>
+<% p = plan.period(index) %>
+<ul id="forecast-spike-explanation" class="space-y-1" data-forecast-spike-target="explanation">
+  <% p[:explanation].each do |line| %>
+    <li class="flex items-center justify-between text-sm">
+      <span class="text-secondary"><%= line[:label] %></span>
+      <span class="tabular-nums <%= line[:amount].negative? ? "text-red-500" : "text-green-600" %>">
+        <%= number_to_currency(line[:amount], precision: 0) %>
+      </span>
+    </li>
+  <% end %>
+</ul>

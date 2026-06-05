@@ -1,0 +1,5 @@
+<%# locals: (plan:) — JSON island the chart reads via textContent + the Turbo
+    Stream swaps on save. Not html_safe on purpose: Rails escapes it, and the
+    browser decodes entities back to valid JSON when JS reads textContent. %>
+<div id="forecast-spike-data" hidden
+     data-forecast-spike-target="data"><%= plan.periods.to_json %></div>
