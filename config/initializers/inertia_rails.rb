@@ -7,6 +7,11 @@
 # client performs a full reload whenever a deploy ships new compiled assets,
 # instead of silently running stale JavaScript against a newer server.
 InertiaRails.configure do |config|
+  # Opt in to the Inertia 4.0 protocol behavior now: always include an `errors`
+  # hash on responses (empty when there are no validation errors). Silences the
+  # transitional deprecation warning and keeps the client contract stable.
+  config.always_include_errors_hash = true
+
   config.version = lambda do
     paths = ViteRuby.instance.config.manifest_paths
     next nil if paths.blank?

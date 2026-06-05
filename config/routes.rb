@@ -295,6 +295,14 @@ Rails.application.routes.draw do
   patch "forecast_hotwire_spike/assumption", to: "forecast_hotwire_spike#update_assumption", as: :forecast_hotwire_spike_assumption
   post "forecast_hotwire_spike/reset",       to: "forecast_hotwire_spike#reset",             as: :forecast_hotwire_spike_reset
 
+  # THROWAWAY viability spike — proves Forecast V2 can run as a route-scoped
+  # Inertia/Vite/React workspace inside the existing Rails app. Authenticated and
+  # family-scoped like /forecast, but standalone (NOT nested in `resource
+  # :forecast`) and NOT in primary nav. The controller returns only typed,
+  # read-model-shaped mock props and never touches the V1 Forecast::Workspace /
+  # engine / run groups. Delete with the ForecastV2SpikeController + Inertia page.
+  get "forecast_v2_spike", to: "forecast_v2_spike#show"
+
   # Lazy-loaded body for a single workspace tab (ForecastsController#tab). Only
   # the active tab renders eagerly on the show page; the rest fetch here when
   # first shown. Defined standalone (not nested in `resource :forecast`) so the

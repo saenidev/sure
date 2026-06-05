@@ -1,0 +1,7 @@
+---
+en:
+  forecast_v2_spike:
+    show:
+      metric_cash: Cash
+      metric_net_worth: Net worth
+      plan_label: Forecast V2 spike
