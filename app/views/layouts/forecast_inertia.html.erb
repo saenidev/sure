@@ -1,0 +1,50 @@
+<%# Dedicated Forecast V2 Inertia layout (spike slice A3).
+
+  Layout decision (per blueprint "Layout Decision" and spec "Add a
+  forecast-specific Inertia root template or layout"): Forecast V2 renders the
+  Inertia/Vite/React workspace through a DEDICATED layout rather than the full
+  app shell (`layouts/application`).
+
+  Why dedicated, not the app shell:
+  - The app shell pins a ~84px left nav, a ≤320px left account sidebar, AND a
+    ≤400px right-side chat container. With the chat open the workspace is
+    squeezed into a narrow middle column — exactly the "chat-width" concern the
+    blueprint calls out. The Forecast V2 chart/scrub workspace needs the full
+    content width.
+  - The app shell's `_htmldoc` also mounts `turbo_frame_tag "modal"` /
+    `turbo_frame_tag "drawer"` and Turbo morphing chrome around the page. We do
+    NOT want Turbo to own modal/drawer/frame state inside the Inertia root; the
+    React client owns ephemeral interaction state instead.
+
+  What this layout still preserves (the auth/privacy chrome the blueprint
+  requires) by reusing `shared/_htmldoc` (which renders `shared/_head`):
+  - CSRF meta tags + CSP meta tag.
+  - Tailwind design-system stylesheet + functional tokens.
+  - Dark-mode check + privacy-mode check (no-flash inline scripts).
+  - Flash notification tray (`render_flash_notifications`).
+  - `turbo_stream_from Current.family` for server-pushed family updates.
+  - Authentication context: this layout is only served from controllers that
+    inherit ApplicationController, so Current.user / Current.family are scoped.
+
+  Vite asset loading follows the Vite Rails helpers' dev/prod split:
+  - Development: `vite_client_tag` + `vite_react_refresh_tag` enable HMR and
+    React Fast Refresh (both no-op outside the dev server).
+  - Production: `vite_typescript_tag` resolves the compiled, fingerprinted
+    entrypoint from the Vite build manifest produced during `assets:precompile`.
+
+  The final dedicated-vs-shell decision record (desktop + mobile screenshots,
+  the right-side-chat narrowness evidence) is captured in slice A8. %>
+<%= render "layouts/shared/htmldoc" do %>
+  <%# Full-width Inertia workspace root: no app nav, sidebars, or right-side
+      chat so the Forecast V2 workspace gets the entire viewport width. %>
+  <main id="main" class="h-full w-full overflow-y-auto bg-surface">
+    <%= yield %>
+  </main>
+
+  <%# Vite client + React Refresh (development only; both render nothing in
+      production), then the compiled Forecast entrypoint (production-resolved via
+      the Vite manifest). Module scripts load correctly from the end of <body>. %>
+  <%= vite_client_tag %>
+  <%= vite_react_refresh_tag %>
+  <%= vite_typescript_tag "application" %>
+<% end %>

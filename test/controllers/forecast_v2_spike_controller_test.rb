@@ -25,6 +25,35 @@ class ForecastV2SpikeControllerTest < ActionDispatch::IntegrationTest
     assert_inertia_component "Forecast/Spike"
   end
 
+  test "renders through the dedicated forecast_inertia layout with Vite tags and privacy/dark-mode checks" do
+    sign_in @user
+    get forecast_v2_spike_path
+
+    assert_response :success
+
+    # Dedicated forecast_inertia layout reuses shared/_head, so the auth/privacy
+    # chrome the blueprint requires is preserved. (csrf_meta_tags emits nothing
+    # in the test env because allow_forgery_protection is off, so we assert on
+    # the always-present Tailwind stylesheet + viewport meta from shared/_head.)
+    assert_select "link[rel=stylesheet][href*=tailwind]", { minimum: 1 },
+      "expected the Tailwind stylesheet from shared/_head"
+    assert_select "meta[name=viewport]", { minimum: 1 }, "expected the viewport meta from shared/_head"
+    assert_match "localStorage.getItem('privacyMode')", response.body,
+      "expected privacy-mode no-flash check in the rendered layout"
+    assert_match "localStorage.theme === 'dark'", response.body,
+      "expected dark-mode no-flash check in the rendered layout"
+
+    # Vite asset tag (compiled entrypoint resolved via the Vite manifest in the
+    # test environment; the dev-only client + react-refresh tags are no-ops here).
+    assert_select "script[type=module][src*=vite-test]", { minimum: 1 },
+      "expected a Vite-built module script tag in the rendered layout"
+
+    # The dedicated layout deliberately omits the full application shell: no left
+    # app nav, no right-side chat container that would squeeze the workspace.
+    assert_select "#chat-container", { count: 0 },
+      "expected no right-side chat container in the dedicated forecast layout"
+  end
+
   test "exposes only typed read-model-shaped props" do
     sign_in @user
     get forecast_v2_spike_path

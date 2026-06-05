@@ -31,11 +31,13 @@ class ForecastV2SpikeController < ApplicationController
     anchor = Date.current.beginning_of_month
     currency = Current.family.primary_currency_code
 
-    # layout: false for this slice. The forecast Inertia layout decision (app
-    # shell vs. a dedicated forecast_inertia layout) is the explicit deliverable
-    # of slice A3; until then we render the bare Inertia root so this controller
-    # never depends on the heavy importmap/Turbo application chrome.
-    render inertia: "Forecast/Spike", layout: false, props: {
+    # The dedicated `forecast_inertia` layout (slice A3) hosts the Inertia root.
+    # It reuses shared/_htmldoc + shared/_head (CSRF/CSP meta, Tailwind tokens,
+    # dark-mode + privacy-mode checks, flash tray, turbo_stream_from
+    # Current.family) and loads Vite assets, but deliberately omits the full
+    # application nav/sidebars/right-side chat so the Forecast V2 workspace gets
+    # the entire viewport width instead of a narrow chat-squeezed column.
+    render inertia: "Forecast/Spike", layout: "forecast_inertia", props: {
       plan: plan_prop(currency),
       currentPeriodKey: period_key(anchor),
       periodKeys: period_keys(anchor),
