@@ -72,6 +72,14 @@ coverage
 # Ignore node related files
 node_modules
 
+# Vite Ruby (Forecast V2 Inertia/React frontend)
+/public/vite
+/public/vite-dev
+/public/vite-test
+/public/vite-ssr
+/tmp/cache/vite
+*.local
+
 compose.yml
 
 plaid_test_accounts/

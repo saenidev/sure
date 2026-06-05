@@ -193,6 +193,7 @@ GEM
       dotenv (= 3.1.8)
       railties (>= 6.1)
     drb (2.2.3)
+    dry-cli (1.4.1)
     ed25519 (1.4.0)
     email_validator (2.2.4)
       activemodel
@@ -318,6 +319,8 @@ GEM
       actionpack (>= 6.0.0)
       activesupport (>= 6.0.0)
       railties (>= 6.0.0)
+    inertia_rails (3.21.1)
+      railties (>= 6)
     inline_svg (1.10.0)
       activesupport (>= 3.0)
       nokogiri (>= 1.6)
@@ -550,6 +553,8 @@ GEM
       base64 (>= 0.1.0)
       logger (>= 1.6.0)
       rack (>= 3.0.0, < 4)
+    rack-proxy (0.8.2)
+      rack
     rack-session (2.1.2)
       base64 (>= 0.1.0)
       rack (>= 3.0.0)
@@ -814,6 +819,15 @@ GEM
       activesupport (>= 5.2.0, < 8.1)
       concurrent-ruby (~> 1)
       method_source (~> 1.0)
+    vite_rails (3.11.0)
+      railties (>= 5.1, < 9)
+      vite_ruby (~> 3.0, >= 3.2.2)
+    vite_ruby (3.10.2)
+      dry-cli (>= 0.7, < 2)
+      logger (~> 1.6)
+      mutex_m
+      rack-proxy (~> 0.6, >= 0.6.1)
+      zeitwerk (~> 2.2)
     web-console (4.2.1)
       actionview (>= 6.0.0)
       activemodel (>= 6.0.0)
@@ -887,6 +901,7 @@ DEPENDENCIES
   i18n-tasks
   image_processing (>= 1.2)
   importmap-rails
+  inertia_rails (~> 3.21)
   inline_svg
   jbuilder
   jwt
@@ -950,6 +965,7 @@ DEPENDENCIES
   vcr
   vernier
   view_component
+  vite_rails (~> 3.11)
   web-console
   webauthn (~> 3.4)
   webmock

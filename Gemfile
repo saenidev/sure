@@ -19,6 +19,10 @@ gem "propshaft"
 gem "tailwindcss-rails"
 gem "lucide-rails"
 
+# Forecast V2 Inertia/Vite frontend (route-scoped; does not replace importmap)
+gem "inertia_rails", "~> 3.21"
+gem "vite_rails", "~> 3.11"
+
 # Hotwire + UI
 gem "stimulus-rails"
 gem "turbo-rails"

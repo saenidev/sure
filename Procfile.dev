@@ -1,3 +1,4 @@
 web: bundle exec ${DEBUG:+rdbg -O -n -c --} bin/rails server
 css: bundle exec bin/rails tailwindcss:watch 2>/dev/null
 worker: bundle exec sidekiq
+vite: bin/vite dev
