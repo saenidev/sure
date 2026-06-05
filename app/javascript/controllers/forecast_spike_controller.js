@@ -17,10 +17,17 @@ export default class extends Controller {
   ];
   static values = { selectedIndex: Number, currency: String };
 
-  connect() {
-    this.#wrapFetch();
+  initialize() {
+    // Stimulus fires dataTargetConnected BEFORE connect() for targets present on
+    // first render, so seed state here (initialize runs first). Otherwise the
+    // initial #redraw dereferences this.periods[undefined] and throws, which
+    // aborts controller setup and leaves the whole workspace inert.
     this.periods = [];
     this.selectedIndex = this.selectedIndexValue || 0;
+  }
+
+  connect() {
+    this.#wrapFetch();
 
     // Full-page-render counter: survives Turbo Stream updates (no reconnect),
     // only bumps on a real full navigation/reload.
@@ -128,9 +135,10 @@ export default class extends Controller {
   }
 
   #placeMarker() {
-    if (!this._marker) return;
+    const p = this.periods[this.selectedIndex];
+    if (!this._marker || !p) return;
     const px = this._x(this.selectedIndex);
-    const py = this._y(this.periods[this.selectedIndex].metrics.net_worth);
+    const py = this._y(p.metrics.net_worth);
     this._marker.attr("x1", px).attr("x2", px);
     this._dot.attr("cx", px).attr("cy", py);
   }
