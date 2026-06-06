@@ -71,7 +71,11 @@ export interface ProjectionChartSummaryRow {
 export interface UseProjectionChartArgs {
 	/** Chronologically ordered period keys (the keyboard axis the marker walks). */
 	readonly periodKeys: readonly PeriodKey[];
-	/** Compact, chart-ready band series (one point per period, value may be null). */
+	/**
+	 * The active metric's compact band series (one point per period, value may be
+	 * null). The component resolves this locally from the preloaded `metric_series`
+	 * when the metric selector changes — switching metrics is ZERO network.
+	 */
 	readonly series: readonly ProjectionBandPoint[];
 	/** The currently selected period from the shared store (drives the marker). */
 	readonly selectedPeriodKey: PeriodKey | null;

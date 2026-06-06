@@ -190,6 +190,8 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 					band={band}
 					selectedPeriodKey={workspace.selectedPeriodKey}
 					onSelectPeriod={workspace.selectPeriod}
+					selectedMetric={workspace.selectedMetric}
+					onSelectMetric={workspace.selectMetric}
 					regionKey={FORECAST_REGIONS.chart}
 					cacheKey={cacheKeys.chart}
 				/>

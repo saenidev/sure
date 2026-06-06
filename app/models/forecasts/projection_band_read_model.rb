@@ -16,6 +16,12 @@ module Forecasts
   class ProjectionBandReadModel
     DEFAULT_METRIC = "net_worth"
 
+    # The metrics the chart's metric selector can switch between, in display
+    # order. Mirrors the selected-period strip so the chart and inspector agree
+    # on which metrics exist. Every key here resolves to `forecasts.metrics.<key>`
+    # in the client copy table.
+    CHARTABLE_METRICS = SelectedPeriodReadModel::METRIC_KEYS
+
     attr_reader :cache, :periods, :selected_metric, :selected_marker
 
     # `periods` must already be loaded (e.g. `cache.forecast_projection_periods
@@ -32,8 +38,10 @@ module Forecasts
       {
         selected_metric: selected_metric,
         selected_marker: selected_marker,
+        available_metrics: available_metrics,
         period_keys: period_keys,
         series: series,
+        metric_series: metric_series,
         freshness: freshness
       }
     end
@@ -43,15 +51,38 @@ module Forecasts
         periods.map(&:period_key)
       end
 
+      # The chartable metric keys actually present in the indexed period rows, in
+      # display order. The selector only offers metrics with data so switching
+      # never points at an empty series. Always includes the selected metric.
+      def available_metrics
+        present = CHARTABLE_METRICS.select do |key|
+          periods.any? { |period| (period.metrics || {}).key?(key) }
+        end
+        present.include?(selected_metric) ? present : ([ selected_metric ] + present)
+      end
+
       # One compact point per period: the period key plus the selected metric's
       # decimal-string value read directly from the indexed row's metrics jsonb.
       # No float conversion, no formatting — the client formats for display.
       def series
+        series_for(selected_metric)
+      end
+
+      # Every chartable metric's compact series, keyed by metric. The chart's
+      # metric selector re-points to one of these LOCALLY (zero network) — the
+      # period rows already carry all metrics, so this adds no per-period query.
+      def metric_series
+        available_metrics.each_with_object({}) do |key, acc|
+          acc[key] = series_for(key)
+        end
+      end
+
+      def series_for(metric_key)
         periods.map do |period|
           metrics = period.metrics || {}
           {
             period_key: period.period_key,
-            value: metrics[selected_metric]
+            value: metrics[metric_key]
           }
         end
       end

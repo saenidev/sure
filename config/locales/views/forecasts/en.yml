@@ -43,6 +43,7 @@ en:
       label: "Projection chart"
       empty: "No projection series to chart yet."
       scrubber_label: "Projection scrubber"
+      metric_selector_label: "Chart metric"
       selected_period: "Selected period %{period}, value %{value}."
       summary_caption: "Projected %{metric} for each period."
       summary_period: "Period"

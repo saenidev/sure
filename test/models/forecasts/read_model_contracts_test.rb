@@ -123,6 +123,34 @@ class Forecasts::ReadModelContractsTest < ActiveSupport::TestCase
     refute payload[:series].any? { |p| p.is_a?(ActiveRecord::Base) }
   end
 
+  test "ProjectionBandReadModel preloads every chartable metric series for local switching" do
+    payload = Forecasts::ProjectionBandReadModel.new(
+      cache: @cache,
+      periods: @periods,
+      selected_metric: "net_worth"
+    ).to_h
+
+    # The selector offers exactly the chartable metrics present in the rows, in
+    # the shared display order, and always includes the selected metric.
+    assert payload.key?(:available_metrics)
+    assert_includes payload[:available_metrics], "net_worth"
+    assert_includes payload[:available_metrics], "liquid_cash"
+    refute payload[:available_metrics].include?("not_a_metric")
+
+    # Each available metric carries its own compact per-period series so the chart
+    # re-points LOCALLY (no per-metric query, no network) when the metric changes.
+    assert payload.key?(:metric_series)
+    payload[:available_metrics].each do |metric|
+      points = payload[:metric_series][metric]
+      assert_equal @periods.length, points.length, "#{metric} series length"
+      assert_equal @periods.first.period_key, points.first[:period_key]
+      assert_equal @periods.first.metrics[metric], points.first[:value]
+    end
+
+    # The top-level `series` matches the selected metric's preloaded series.
+    assert_equal payload[:metric_series]["net_worth"], payload[:series]
+  end
+
   test "ProjectionBandReadModel defaults the selected marker to the first period" do
     payload = Forecasts::ProjectionBandReadModel.new(
       cache: @cache, periods: @periods

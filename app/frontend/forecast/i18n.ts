@@ -54,6 +54,7 @@ const COPY: Readonly<Record<string, string>> = {
 	"forecasts.chart.label": "Projection chart",
 	"forecasts.chart.empty": "No projection series to chart yet.",
 	"forecasts.chart.scrubber_label": "Projection scrubber",
+	"forecasts.chart.metric_selector_label": "Chart metric",
 	"forecasts.chart.selected_period":
 		"Selected period %{period}, value %{value}.",
 	"forecasts.chart.summary_caption": "Projected %{metric} for each period.",

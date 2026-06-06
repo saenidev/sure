@@ -228,12 +228,19 @@ export interface ProjectionBandPoint {
  * `Forecasts::ProjectionBandReadModel#to_h` — answers "what should the main chart
  * and selected-period control show?". The compact preloaded period index the
  * client scrubs locally (no network).
+ *
+ * `series` is the selected metric's compact series (first paint); `metric_series`
+ * carries every chartable metric's series so the metric selector re-points the
+ * chart LOCALLY with zero network. `available_metrics` is the ordered set of
+ * metric keys the selector offers (each resolves to `forecasts.metrics.<key>`).
  */
 export interface ProjectionBandReadModel {
 	readonly selected_metric: string;
 	readonly selected_marker: PeriodKey | null;
+	readonly available_metrics: readonly string[];
 	readonly period_keys: readonly PeriodKey[];
 	readonly series: readonly ProjectionBandPoint[];
+	readonly metric_series: Readonly<Record<string, readonly ProjectionBandPoint[]>>;
 	readonly freshness: ProjectionFreshness;
 }
 

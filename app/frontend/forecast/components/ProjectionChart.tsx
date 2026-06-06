@@ -70,11 +70,60 @@ function DataSummaryTable({
 				{rows.map((row) => (
 					<tr key={row.periodKey}>
 						<th scope="row">{row.periodKey}</th>
-						<td>{formatValue(row.value)}</td>
+						{/* privacy-sensitive: the sr-only / DOM-inspectable value must blur
+						    consistently with the visible value cell when privacy mode is on. */}
+						<td className="privacy-sensitive">{formatValue(row.value)}</td>
 					</tr>
 				))}
 			</tbody>
 		</table>
+	);
+}
+
+// The chart-header metric selector: a token-styled segmented control over the
+// band's available metrics. Selecting a metric dispatches `onSelectMetric` (the
+// workspace store's `selectMetric`); the chart re-points its series LOCALLY from
+// the preloaded `metric_series`, so switching metrics issues ZERO network. Each
+// option's label resolves through the client copy table (`forecasts.metrics.*`).
+function MetricSelector({
+	metrics,
+	selectedMetric,
+	onSelectMetric,
+}: {
+	readonly metrics: readonly string[];
+	readonly selectedMetric: string;
+	readonly onSelectMetric: (metric: string) => void;
+}): JSX.Element | null {
+	if (metrics.length <= 1) {
+		return null;
+	}
+	return (
+		<div
+			data-testid="forecast-chart-metric-selector"
+			role="group"
+			aria-label={ft("forecasts.chart.metric_selector_label")}
+			className="flex flex-wrap items-center gap-1 rounded-lg bg-surface-inset p-0.5"
+		>
+			{metrics.map((metric) => {
+				const isSelected = metric === selectedMetric;
+				return (
+					<button
+						key={metric}
+						type="button"
+						data-testid={`forecast-chart-metric-${metric}`}
+						aria-pressed={isSelected}
+						onClick={() => onSelectMetric(metric)}
+						className={
+							isSelected
+								? "rounded-md bg-container px-2.5 py-1 text-xs font-medium text-primary shadow-xs"
+								: "rounded-md px-2.5 py-1 text-xs font-medium text-subdued hover:text-primary"
+						}
+					>
+						{ft(`forecasts.metrics.${metric}`)}
+					</button>
+				);
+			})}
+		</div>
 	);
 }
 
@@ -85,6 +134,10 @@ export interface ProjectionChartProps {
 	readonly selectedPeriodKey: string | null;
 	/** Reports a settled, locally-resolved selection up to the workspace store. */
 	readonly onSelectPeriod: (periodKey: string) => void;
+	/** The active metric from the shared store (drives which series is plotted). */
+	readonly selectedMetric: string;
+	/** Reports a metric switch up to the workspace store (`selectMetric`). */
+	readonly onSelectMetric: (metric: string) => void;
 	/** Stable region id for scoped patches / tests. */
 	readonly regionKey?: string;
 	/** Stable cache key (plan version + scenario stack) for scoped patches. */
@@ -95,19 +148,38 @@ export default function ProjectionChart({
 	band,
 	selectedPeriodKey,
 	onSelectPeriod,
+	selectedMetric,
+	onSelectMetric,
 	regionKey = "forecast-projection-chart",
 	cacheKey,
 }: ProjectionChartProps): JSX.Element {
+	// The metrics the selector offers, always including the band's preloaded
+	// selected metric so it never disappears from the control.
+	const availableMetrics =
+		band.available_metrics.length > 0
+			? band.available_metrics
+			: [band.selected_metric];
+	// Resolve the ACTIVE metric LOCALLY: honor the store's selection when its
+	// series is preloaded, otherwise fall back to the band's preloaded metric so
+	// the chart never points at a series it has no data for (no network).
+	const activeMetric =
+		band.metric_series[selectedMetric] !== undefined
+			? selectedMetric
+			: band.selected_metric;
+	// The active metric's compact series, resolved from the preloaded per-metric
+	// map (zero network) with the first-paint `series` as the fallback.
+	const activeSeries = band.metric_series[activeMetric] ?? band.series;
+
 	const chart = useProjectionChart({
 		periodKeys: band.period_keys,
-		series: band.series,
+		series: activeSeries,
 		selectedPeriodKey,
 		onSelectPeriod,
 	});
 
 	// A human-ish metric label for the summary caption: the read model carries a
 	// metric KEY (e.g. "net_worth"); reuse the client copy table when present.
-	const metricLabel = ft(`forecasts.metrics.${band.selected_metric}`);
+	const metricLabel = ft(`forecasts.metrics.${activeMetric}`);
 
 	if (!chart.hasData) {
 		return (
@@ -140,14 +212,21 @@ export default function ProjectionChart({
 			data-testid={regionKey}
 			data-region={regionKey}
 			data-cache-key={cacheKey}
-			data-selected-metric={band.selected_metric}
+			data-selected-metric={activeMetric}
 			aria-label={ft("forecasts.chart.label")}
 			className="flex flex-col gap-3 rounded-xl border border-primary bg-container p-4 sm:p-5"
 		>
-			<header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-				<h2 className="text-sm font-medium text-primary">
-					{ft("forecasts.chart.label")}
-				</h2>
+			<header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+				<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+					<h2 className="text-sm font-medium text-primary">
+						{ft("forecasts.chart.label")}
+					</h2>
+					<MetricSelector
+						metrics={availableMetrics}
+						selectedMetric={activeMetric}
+						onSelectMetric={onSelectMetric}
+					/>
+				</div>
 				<dl className="flex min-w-0 items-baseline gap-2">
 					<dt className="shrink-0 text-xs text-subdued">{selectedPeriod}</dt>
 					<dd
@@ -225,8 +304,10 @@ export default function ProjectionChart({
 			</div>
 
 			{/* Live region announcing the selected period for screen readers, mirroring
-			    the marker so assistive tech stays in sync as it scrubs. */}
-			<p className="sr-only" aria-live="polite">
+			    the marker so assistive tech stays in sync as it scrubs. privacy-sensitive
+			    so the announced money value blurs consistently with the visible value
+			    cell when privacy mode is on (the value is otherwise DOM-inspectable). */}
+			<p className="privacy-sensitive sr-only" aria-live="polite">
 				{ft("forecasts.chart.selected_period", {
 					period: selectedPeriod,
 					value: selectedValue,
