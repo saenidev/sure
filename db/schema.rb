@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_01_103000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_06_000005) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -939,6 +939,42 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_103000) do
     t.index ["forecast_scenario_id"], name: "idx_on_forecast_scenario_id_0b376e70e4"
   end
 
+  create_table "forecast_assumptions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_plan_id", null: false
+    t.uuid "family_id", null: false
+    t.string "kind", null: false
+    t.string "name", null: false
+    t.string "status", default: "active", null: false
+    t.date "starts_on"
+    t.date "ends_on"
+    t.uuid "starts_at_milestone_id"
+    t.uuid "ends_at_milestone_id"
+    t.string "currency"
+    t.decimal "amount", precision: 19, scale: 4
+    t.jsonb "params", default: {}, null: false
+    t.string "source_record_type"
+    t.uuid "source_record_id"
+    t.string "origin", default: "user_created", null: false
+    t.string "confidence"
+    t.string "review_state", default: "confirmed", null: false
+    t.jsonb "source_refs", default: {}, null: false
+    t.datetime "derived_at"
+    t.string "derivation_version"
+    t.string "schema_version", default: "forecast-assumption-v1", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["ends_at_milestone_id"], name: "index_forecast_assumptions_on_ends_at_milestone_id"
+    t.index ["family_id", "source_record_type", "source_record_id"], name: "idx_forecast_assumptions_source_record"
+    t.index ["family_id"], name: "index_forecast_assumptions_on_family_id"
+    t.index ["forecast_plan_id", "kind"], name: "index_forecast_assumptions_on_forecast_plan_id_and_kind"
+    t.index ["forecast_plan_id", "origin", "review_state"], name: "idx_forecast_assumptions_origin_review"
+    t.index ["forecast_plan_id", "starts_on"], name: "index_forecast_assumptions_on_forecast_plan_id_and_starts_on"
+    t.index ["forecast_plan_id", "status"], name: "index_forecast_assumptions_on_forecast_plan_id_and_status"
+    t.index ["forecast_plan_id"], name: "index_forecast_assumptions_on_forecast_plan_id"
+    t.index ["starts_at_milestone_id"], name: "index_forecast_assumptions_on_starts_at_milestone_id"
+  end
+
   create_table "forecast_budget_overrides", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "family_id", null: false
     t.uuid "forecast_scenario_id"
@@ -1210,6 +1246,20 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_103000) do
     t.index ["forecast_scenario_id"], name: "index_forecast_goals_on_forecast_scenario_id"
   end
 
+  create_table "forecast_milestones", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_plan_id", null: false
+    t.string "name", null: false
+    t.string "kind", null: false
+    t.date "date"
+    t.string "person_key"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["forecast_plan_id", "date"], name: "index_forecast_milestones_on_forecast_plan_id_and_date"
+    t.index ["forecast_plan_id", "kind"], name: "index_forecast_milestones_on_forecast_plan_id_and_kind"
+    t.index ["forecast_plan_id"], name: "index_forecast_milestones_on_forecast_plan_id"
+  end
+
   create_table "forecast_months", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "forecast_run_id", null: false
     t.date "period_start_on", null: false
@@ -1233,6 +1283,26 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_103000) do
     t.datetime "updated_at", null: false
     t.index ["forecast_run_id", "period_start_on", "scenario_stack_key"], name: "idx_forecast_months_run_period_stack", unique: true
     t.index ["forecast_run_id"], name: "index_forecast_months_on_forecast_run_id"
+  end
+
+  create_table "forecast_plans", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.string "name", null: false
+    t.string "status", default: "active", null: false
+    t.date "horizon_start_on", null: false
+    t.date "horizon_end_on", null: false
+    t.string "reporting_currency", null: false
+    t.jsonb "settings", default: {}, null: false
+    t.jsonb "source_policy", default: {}, null: false
+    t.integer "current_plan_version", default: 1, null: false
+    t.string "schema_version", default: "forecast-plan-v1", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "created_at"], name: "index_forecast_plans_on_family_id_and_created_at"
+    t.index ["family_id", "current_plan_version"], name: "index_forecast_plans_on_family_id_and_current_plan_version"
+    t.index ["family_id", "status"], name: "index_forecast_plans_on_family_id_and_status"
+    t.index ["family_id"], name: "index_forecast_plans_on_family_id"
   end
 
   create_table "forecast_reviews", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1307,6 +1377,35 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_103000) do
     t.index ["forecast_run_group_id", "scenario_stack_key"], name: "idx_forecast_runs_group_stack", unique: true
     t.index ["forecast_run_group_id"], name: "index_forecast_runs_on_forecast_run_group_id"
     t.index ["user_id"], name: "index_forecast_runs_on_user_id"
+  end
+
+  create_table "forecast_scenario_layer_assumptions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_scenario_layer_id", null: false
+    t.uuid "forecast_assumption_id", null: false
+    t.string "operation", null: false
+    t.jsonb "override_params", default: {}, null: false
+    t.boolean "enabled", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["forecast_assumption_id"], name: "idx_on_forecast_assumption_id_62b99911e5"
+    t.index ["forecast_scenario_layer_id", "forecast_assumption_id", "operation"], name: "idx_forecast_layer_assumption_operation", unique: true
+  end
+
+  create_table "forecast_scenario_layers", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_plan_id", null: false
+    t.string "name", null: false
+    t.text "description"
+    t.string "status", default: "active", null: false
+    t.integer "position", default: 0, null: false
+    t.string "color_token"
+    t.uuid "base_layer_id"
+    t.jsonb "settings", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["base_layer_id"], name: "index_forecast_scenario_layers_on_base_layer_id"
+    t.index ["forecast_plan_id", "base_layer_id"], name: "idx_forecast_scenario_layers_plan_base"
+    t.index ["forecast_plan_id", "status", "position"], name: "idx_forecast_scenario_layers_plan_status_pos"
+    t.index ["forecast_plan_id"], name: "index_forecast_scenario_layers_on_forecast_plan_id"
   end
 
   create_table "forecast_scenarios", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -2513,6 +2612,10 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_103000) do
   add_foreign_key "forecast_account_liquidity_settings", "accounts", on_delete: :cascade
   add_foreign_key "forecast_account_liquidity_settings", "families"
   add_foreign_key "forecast_account_liquidity_settings", "forecast_scenarios"
+  add_foreign_key "forecast_assumptions", "families", on_delete: :cascade
+  add_foreign_key "forecast_assumptions", "forecast_milestones", column: "ends_at_milestone_id", on_delete: :nullify
+  add_foreign_key "forecast_assumptions", "forecast_milestones", column: "starts_at_milestone_id", on_delete: :nullify
+  add_foreign_key "forecast_assumptions", "forecast_plans", on_delete: :cascade
   add_foreign_key "forecast_budget_overrides", "categories", on_delete: :cascade
   add_foreign_key "forecast_budget_overrides", "families"
   add_foreign_key "forecast_budget_overrides", "forecast_scenarios", on_delete: :cascade
@@ -2547,7 +2650,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_103000) do
   add_foreign_key "forecast_goal_evaluations", "forecast_runs", on_delete: :cascade
   add_foreign_key "forecast_goals", "families"
   add_foreign_key "forecast_goals", "forecast_scenarios"
+  add_foreign_key "forecast_milestones", "forecast_plans", on_delete: :cascade
   add_foreign_key "forecast_months", "forecast_runs", on_delete: :cascade
+  add_foreign_key "forecast_plans", "families", on_delete: :cascade
   add_foreign_key "forecast_reviews", "families", on_delete: :cascade
   add_foreign_key "forecast_reviews", "forecast_run_groups", on_delete: :cascade
   add_foreign_key "forecast_reviews", "users", on_delete: :nullify
@@ -2557,6 +2662,10 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_01_103000) do
   add_foreign_key "forecast_runs", "families", on_delete: :cascade
   add_foreign_key "forecast_runs", "forecast_run_groups", on_delete: :cascade
   add_foreign_key "forecast_runs", "users", on_delete: :nullify
+  add_foreign_key "forecast_scenario_layer_assumptions", "forecast_assumptions", on_delete: :cascade
+  add_foreign_key "forecast_scenario_layer_assumptions", "forecast_scenario_layers", on_delete: :cascade
+  add_foreign_key "forecast_scenario_layers", "forecast_plans", on_delete: :cascade
+  add_foreign_key "forecast_scenario_layers", "forecast_scenario_layers", column: "base_layer_id", on_delete: :nullify
   add_foreign_key "forecast_scenarios", "families", on_delete: :cascade
   add_foreign_key "forecast_scenarios", "forecast_scenarios", column: "parent_scenario_id", on_delete: :nullify
   add_foreign_key "forecast_scenarios", "users", column: "created_by_user_id", on_delete: :nullify
