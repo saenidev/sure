@@ -8,6 +8,7 @@ en:
         assistant: Assistant
         budgets: Budgets
         forecast: Forecast
+        forecast_v2: Forecast V2
         home: Home
         reports: Reports
         transactions: Transactions

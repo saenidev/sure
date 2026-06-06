@@ -32,6 +32,17 @@ class LayoutAccessibilityTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "data-route-preloader-paths-value"
   end
 
+  test "application layout sidebar renders a nav link to the Forecast V2 workspace" do
+    get root_path
+    assert_response :ok
+
+    forecast_v2_label = I18n.t("layouts.application.nav.forecast_v2")
+
+    assert_select "a[href=\"#{forecast_v2_path}\"]" do
+      assert_select "p", text: forecast_v2_label
+    end
+  end
+
   test "settings layout renders skip-link pointing at #main and a <main> with id=\"main\"" do
     get settings_profile_path
     assert_response :ok
