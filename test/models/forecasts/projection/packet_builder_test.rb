@@ -275,6 +275,35 @@ class Forecasts::Projection::PacketBuilderTest < ActiveSupport::TestCase
     assert_equal @snapshot.source_snapshot_hash, packet.source_snapshot_hash
   end
 
+  # The recompute coordinator keys caches on a packet's source_snapshot_hash, and
+  # that hash MUST equal the hash the snapshot builder stored at write time (over
+  # the in-memory Ruby payload). The builder, however, reads the payload back from
+  # JSONB (`snapshot_payload`), so the hash contract only holds if the round-trip
+  # — BigDecimal->decimal string, integer/date/symbol-key normalization — is
+  # stable. Build from the RELOADED snapshot so the Postgres round-trip (not just
+  # in-memory attribute coercion) is the thing under test; a payload type that
+  # silently changed across the round-trip would split the cache key and serve a
+  # stale projection.
+  test "matches the stored hash after the snapshot payload round-trips through JSONB" do
+    # The baseline dylan_family snapshot carries values whose JSON types must be
+    # preserved across the round-trip: UUID/string ids, decimal-string money, an
+    # ISO8601 as_of, and a bare integer (recurring expected_day_of_month). If any
+    # of these came back with a different type the hash would drift.
+    reloaded = Forecasts::SourceSnapshot.find(@snapshot.id)
+
+    packet = Forecasts::Projection::PacketBuilder.new(plan: @plan, source_snapshot: reloaded).build
+
+    # The hash the builder derives from the reloaded JSONB payload equals the hash
+    # the builder STORED over the in-memory payload at write time.
+    assert_equal reloaded.source_snapshot_hash, packet.source_snapshot_hash
+    # And it equals the hash recomputed from the payload as read back from the DB,
+    # proving the round-trip — not in-memory state — is what backs the contract.
+    assert_equal(
+      Forecasts::Projection.stable_hash(Forecasts::Projection.deep_symbolize(reloaded.snapshot_payload)),
+      packet.source_snapshot_hash
+    )
+  end
+
   # --- Determinism ---------------------------------------------------------
 
   test "same plan version + snapshot hash yields the same packet hash" do
