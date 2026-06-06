@@ -294,6 +294,45 @@ class Forecasts::AssumptionsControllerUpdateTest < ActionDispatch::IntegrationTe
     end
   end
 
+  # Regression (F6): every stable field error code the form emits must resolve to
+  # localized client copy under forecasts.editor.errors.<code>, never the raw key
+  # string. unknown_currency / not_permitted were previously emitted by the form
+  # but absent from that map, so the React drawer surfaced the literal
+  # "forecasts.editor.errors.unknown_currency".
+  test "an unsupported currency returns a localizable unknown_currency field error" do
+    with_v2_enabled do
+      plan, salary = warm_plan_and_salary
+
+      patch forecast_assumption_url(salary),
+        params: valid_salary_params(salary, plan).merge(currency: "ZZZ")
+
+      assert_response :unprocessable_entity
+      code = response.parsed_body.dig("errors", "currency")
+      assert_equal "unknown_currency", code
+      assert_localized_editor_error(code)
+    end
+  end
+
+  test "an inaccessible category returns a localizable not_permitted field error" do
+    with_v2_enabled do
+      plan, living = warm_plan_and_living_expense
+
+      # A category that belongs to another family is not in family.categories, so the
+      # form records a not_permitted reference error rather than persisting it.
+      other_family = users(:empty).family
+      refute_equal @family.id, other_family.id, "fixture sanity: distinct families"
+      foreign_category = other_family.categories.create!(name: "Foreign")
+
+      patch forecast_assumption_url(living),
+        params: valid_living_expense_params(living, plan).merge(category_ids: [ foreign_category.id ])
+
+      assert_response :unprocessable_entity
+      code = response.parsed_body.dig("errors", "category_ids")
+      assert_equal "not_permitted", code
+      assert_localized_editor_error(code)
+    end
+  end
+
   # --- Family scoping -------------------------------------------------------
 
   test "never trusts a family_id param: saving another family's assumption 404s" do
@@ -358,6 +397,21 @@ class Forecasts::AssumptionsControllerUpdateTest < ActionDispatch::IntegrationTe
   end
 
   private
+    # Asserts a stable field error code resolves to localized client copy under
+    # forecasts.editor.errors.<code> (the key the React drawer localizes via
+    # ft("forecasts.editor.errors.<code>")) — i.e. the user sees real copy, never
+    # the raw key string. Guards against a code the form emits but the editor copy
+    # table omits (F6).
+    def assert_localized_editor_error(code)
+      key = "forecasts.editor.errors.#{code}"
+      assert I18n.exists?(key),
+        "expected localized client copy for error code #{code.inspect} at #{key}"
+      message = I18n.t(key)
+      assert message.present?, "localized message for #{key} must not be blank"
+      refute_equal key, message,
+        "error code #{code.inspect} surfaced the raw i18n key instead of localized copy"
+    end
+
     # Opens the workspace once (load-or-create plan + ensure fresh cache via the
     # shared loading seam) so the salary assumption + a current cache exist, then
     # returns [plan, salary_assumption].

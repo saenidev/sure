@@ -19,6 +19,13 @@ en:
         ends_on: "End date"
         starts_at_milestone_id: "Start milestone"
         ends_at_milestone_id: "End milestone"
+      # Terse server-side validation fragments for the stable form error codes the
+      # assumption form objects (Forecasts::Assumptions::BaseForm and subclasses)
+      # emit. This is the canonical enumeration of the code set (asserted by
+      # forecasts/assumptions/salary_form_test.rb); the client-facing copy the
+      # React drawer renders lives under forecasts.editor.errors (mirrored in
+      # app/frontend/forecast/i18n.ts). Both tables must enumerate exactly these
+      # codes — keep them in sync as one error-code contract.
       errors:
         blank: "can't be blank"
         not_a_number: "must be a number"

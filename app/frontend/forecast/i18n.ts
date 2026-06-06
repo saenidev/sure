@@ -222,16 +222,24 @@ const COPY: Readonly<Record<string, string>> = {
 	"forecasts.editor.salary.growth_rate_label": "Growth rate",
 	"forecasts.editor.salary.starts_on_label": "Starts on",
 	"forecasts.editor.salary.ends_on_label": "Ends on",
-	// Stable field error codes -> messages (mirror the SalaryForm error codes).
+	// Stable field error codes -> messages. Mirrors forecasts.editor.errors in
+	// config/locales/views/forecasts/en.yml. Every code the assumption form objects
+	// (Forecasts::Assumptions::BaseForm and subclasses) emit must have an entry here
+	// so a save error never surfaces the raw key string: blank, not_a_number,
+	// not_positive, unknown_currency, inclusion, invalid_date, end_before_start,
+	// invalid_reference, not_permitted, stale_version.
 	"forecasts.editor.errors.blank": "This field is required.",
 	"forecasts.editor.errors.not_a_number": "Enter a valid number.",
 	"forecasts.editor.errors.not_positive": "Enter a value greater than zero.",
+	"forecasts.editor.errors.unknown_currency": "Choose a supported currency.",
 	"forecasts.editor.errors.inclusion": "Choose a valid option.",
 	"forecasts.editor.errors.invalid_date": "Enter a valid date.",
 	"forecasts.editor.errors.end_before_start":
 		"The end date can't be before the start date.",
-	"forecasts.editor.errors.not_found": "That reference could not be found.",
-	"forecasts.editor.errors.stale":
+	"forecasts.editor.errors.invalid_reference": "That reference could not be found.",
+	"forecasts.editor.errors.not_permitted":
+		"You don't have access to that account or category.",
+	"forecasts.editor.errors.stale_version":
 		"This assumption changed since you opened it. Reload and try again.",
 };
 

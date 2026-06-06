@@ -219,16 +219,27 @@ en:
         growth_rate_label: "Growth rate"
         starts_on_label: "Starts on"
         ends_on_label: "Ends on"
-      # Stable field error codes -> messages (mirror the SalaryForm error codes).
+      # Stable field error codes -> client-facing messages. These are the codes the
+      # assumption form objects (Forecasts::Assumptions::BaseForm and subclasses)
+      # emit; the React drawer localizes them via ft("forecasts.editor.errors.<code>").
+      # This map and forecasts_v2.assumptions.errors are ONE error-code contract:
+      # both must enumerate exactly the codes the forms emit (blank, not_a_number,
+      # not_positive, unknown_currency, inclusion, invalid_date, end_before_start,
+      # invalid_reference, not_permitted, stale_version). This namespace owns the
+      # client-facing copy; forecasts_v2.assumptions.errors owns the terse
+      # server-side validation fragments. Keep this map in sync with the mirror in
+      # app/frontend/forecast/i18n.ts.
       errors:
         blank: "This field is required."
         not_a_number: "Enter a valid number."
         not_positive: "Enter a value greater than zero."
+        unknown_currency: "Choose a supported currency."
         inclusion: "Choose a valid option."
         invalid_date: "Enter a valid date."
         end_before_start: "The end date can't be before the start date."
-        not_found: "That reference could not be found."
-        stale: "This assumption changed since you opened it. Reload and try again."
+        invalid_reference: "That reference could not be found."
+        not_permitted: "You don't have access to that account or category."
+        stale_version: "This assumption changed since you opened it. Reload and try again."
     show:
       title: "Forecast"
       description: "Model monthly budget, cash runway, goals, debt, portfolio movement, and life scenarios across the next 36 months."
