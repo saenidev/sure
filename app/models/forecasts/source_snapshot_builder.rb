@@ -105,7 +105,14 @@ module Forecasts
           budgets: budget_rows,
           holdings: holding_rows,
           prices: price_rows,
-          fx_rates: fx_rate_rows
+          fx_rates: fx_rate_rows,
+          # Snapshot-sourced recoverable findings (e.g. excluded foreign accounts
+          # with no usable FX rate) are carried INSIDE the payload — the engine's
+          # only window onto the snapshot. The separate `issue_candidates` column
+          # is for instrumentation; PacketBuilder reads `snapshot_payload`, so a
+          # finding not here never reaches the engine and a flowless excluded
+          # account would be dropped with no issue surfaced.
+          issue_candidates: issue_candidates
         }
       end
 
@@ -177,7 +184,10 @@ module Forecasts
       def budget_rows
         family.budgets
           .where("start_date <= ?", as_of.end_of_month)
-          .order(start_date: :desc)
+          # `id ASC` is a deterministic final tiebreaker: same-dated budgets would
+          # otherwise let the DB pick an arbitrary set of `limit(12)` rows, so the
+          # source_snapshot_hash could differ run-to-run for identical data.
+          .order(start_date: :desc, id: :asc)
           .limit(12)
           .map do |budget|
             {
@@ -212,7 +222,10 @@ module Forecasts
         latest_holdings
           .group_by(&:security_id)
           .map do |security_id, holdings|
-            latest = holdings.max_by(&:date)
+            # `[date, id]` is a deterministic pick: a security held in several
+            # accounts/currencies on the SAME date would otherwise let `max_by`
+            # return whichever row happened to load first, drifting the hash.
+            latest = holdings.max_by { |holding| [ holding.date, holding.id ] }
             {
               security_id: security_id,
               date: date_string(latest.date),
@@ -244,10 +257,19 @@ module Forecasts
       # Currently: a missing_fx_rate candidate per non-reporting currency that has
       # no rate dated on or before as_of. See spec "Source-To-Assumption Mapping"
       # ("Missing rates create `missing_fx_rate` issues").
+      #
+      # Each candidate names the affected account(s) so a FLOWLESS foreign account
+      # (e.g. an opening balance excluded from the totals for want of a rate) still
+      # surfaces in the projection. The engine folds these into result.issues; an
+      # excluded opening-balance account produces no flow and so would otherwise be
+      # dropped from net worth/cash with no issue (breaks "Recover From Missing
+      # Data"). `affected_entity_*` stay currency-keyed for stable issue ids; the
+      # named accounts ride along in `affected_accounts` + `display_name`.
       def issue_candidates
         @issue_candidates ||= foreign_currencies.filter_map do |currency|
           next if latest_fx_rate(currency)
 
+          named = accounts_for_currency(currency)
           {
             code: "missing_fx_rate",
             severity: "error",
@@ -256,9 +278,26 @@ module Forecasts
             target_currency: reporting_currency,
             affected_entity_type: "currency",
             affected_entity_id: currency,
+            affected_accounts: named.map { |account| { id: account.id, name: account.name } },
+            display_name: missing_fx_display_name(currency, named),
             message_key: "forecasts.issues.missing_fx_rate"
           }
         end.sort_by { |candidate| candidate[:currency].to_s }
+      end
+
+      # The visible accounts holding a balance in `currency`, ordered for a
+      # deterministic candidate payload (and hash).
+      def accounts_for_currency(currency)
+        accounts.select { |account| account.currency == currency }.sort_by(&:id)
+      end
+
+      # Names the affected account(s) for the issue context line so the UI never
+      # renders a bare currency code (spec "Issue copy structure": context names
+      # the affected account by display name).
+      def missing_fx_display_name(currency, named)
+        return "Missing #{currency} to #{reporting_currency} exchange rate" if named.empty?
+
+        "Missing #{currency} to #{reporting_currency} exchange rate for #{named.map(&:name).join(', ')}"
       end
 
       # --- Freshness / versions -------------------------------------------------
@@ -326,7 +365,10 @@ module Forecasts
         @fx_rate_cache[currency] = ExchangeRate
           .where(from_currency: currency, to_currency: reporting_currency)
           .where("date <= ?", as_of)
-          .order(date: :desc)
+          # `id ASC` final tiebreaker: two rates dated the same day would
+          # otherwise be picked nondeterministically, drifting the snapshot hash
+          # (and the converted opening balances) for identical data.
+          .order(date: :desc, id: :asc)
           .first
       end
 
@@ -341,12 +383,15 @@ module Forecasts
           rows = Holding
             .where(account_id: included_account_ids)
             .where("date <= ?", as_of)
-            .order(date: :desc)
+            # `id ASC` is the deterministic final tiebreaker alongside the
+            # in-memory `[date, id]` pick below: same-dated duplicate holdings
+            # would otherwise resolve to an arbitrary row and drift the hash.
+            .order(date: :desc, id: :asc)
             .to_a
 
           rows
             .group_by { |holding| [ holding.account_id, holding.security_id, holding.currency ] }
-            .map { |_key, group| group.max_by(&:date) }
+            .map { |_key, group| group.max_by { |holding| [ holding.date, holding.id ] } }
         end
       end
 

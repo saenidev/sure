@@ -150,6 +150,60 @@ class Forecasts::SourceSnapshotBuilderTest < ActiveSupport::TestCase
     assert_equal "JPY", missing[:currency]
   end
 
+  test "picks a deterministic security price when a security is held same-dated in two accounts" do
+    # The SAME security held on the SAME date in two accounts yields two same-dated
+    # rows when price_rows groups by security_id; `max_by(&:date)` alone is a tie.
+    # The `[date, id]` pick resolves it to the highest-id holding deterministically.
+    security = securities(:aapl)
+    date = @as_of - 3.days
+    holdings = [ "A1", "A2" ].each_with_index.map do |label, index|
+      account = @family.accounts.create!(
+        name: "Brokerage #{label}",
+        balance: 0,
+        currency: "USD",
+        accountable: Investment.new
+      )
+      account.holdings.create!(
+        security: security,
+        date: date,
+        qty: 1,
+        price: 100 + index, # different price per account so the tie is observable
+        amount: 100 + index,
+        currency: "USD"
+      )
+    end
+
+    payload = Forecasts::SourceSnapshotBuilder.new(plan: @plan, as_of: @as_of).send(:compute)[:payload]
+    price_row = payload[:prices].find { |p| p[:security_id] == security.id }
+    refute_nil price_row
+
+    winner = holdings.max_by(&:id)
+    assert_equal winner.price.to_d.to_s("F"), price_row[:price],
+      "the same-dated tie must resolve to the highest-id holding deterministically"
+  end
+
+  test "carries issue candidates into the snapshot payload for the engine" do
+    foreign = @family.accounts.create!(
+      name: "Yen Cash",
+      balance: 500_000,
+      currency: "JPY",
+      accountable: Depository.new
+    )
+
+    snapshot = build
+    payload = snapshot.snapshot_payload.deep_symbolize_keys
+
+    # PacketBuilder reads ONLY snapshot_payload, so a candidate not embedded here
+    # never reaches the engine and a flowless excluded account would be dropped.
+    assert payload.key?(:issue_candidates), "the payload must embed issue candidates for the engine"
+    candidate = payload[:issue_candidates].find { |c| c[:code] == "missing_fx_rate" }
+    refute_nil candidate
+    assert_equal "JPY", candidate[:currency]
+    # The candidate names the excluded account so the UI never shows a bare code.
+    assert_includes candidate[:affected_accounts].map { |a| a[:id] }, foreign.id
+    assert_match(/Yen Cash/, candidate[:display_name])
+  end
+
   test "no missing-FX candidate when every foreign account has a rate" do
     @family.accounts.create!(
       name: "Pound Cash",

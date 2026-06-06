@@ -247,6 +247,70 @@ class Forecasts::Projection::PeriodSimulatorTest < ActiveSupport::TestCase
     assert_equal "4000.00", jan[:metrics][:spending]
   end
 
+  # A FLOWLESS excluded foreign account (an opening balance the snapshot dropped
+  # for want of a usable rate) surfaces ONLY via a snapshot issue candidate
+  # carried inside the payload — there is no flow to trigger the per-period FX
+  # path. The simulator must fold that candidate into result.issues and downgrade
+  # status, or the account silently vanishes from net worth/cash.
+  test "snapshot issue candidate surfaces as a missing_fx_rate issue with no flow" do
+    snapshot = source_snapshot(
+      issue_candidates: [
+        {
+          code: "missing_fx_rate",
+          severity: "error",
+          source: "source_snapshot",
+          currency: "JPY",
+          target_currency: "USD",
+          affected_entity_type: "currency",
+          affected_entity_id: "JPY",
+          affected_accounts: [ { id: "acct-1", name: "Yen Cash" } ],
+          display_name: "Missing JPY to USD exchange rate for Yen Cash",
+          message_key: "forecasts.issues.missing_fx_rate"
+        }
+      ]
+    )
+
+    # No foreign flow at all — only USD salary + spending.
+    result = simulate(ledger: salary_and_expense_ledger, snapshot: snapshot)
+
+    assert_equal "issue_limited", result.status
+    issue = result.issues.find { |i| i.code == "missing_fx_rate" }
+    refute_nil issue, "the flowless snapshot candidate must surface as a result issue"
+    assert_equal "error", issue.severity
+    assert_equal "source_snapshot", issue.source
+    assert_nil issue.period, "a snapshot-level candidate is not period-scoped"
+    assert_match(/Yen Cash/, issue.display_name, "the issue must name the excluded account")
+  end
+
+  # A snapshot candidate (no flow) and a per-period FX issue (a flow) for the
+  # SAME currency are distinct findings and must coexist, not collide on key.
+  test "snapshot candidate and per-period FX issue for the same currency coexist" do
+    snapshot = source_snapshot(
+      issue_candidates: [
+        {
+          code: "missing_fx_rate",
+          severity: "error",
+          source: "source_snapshot",
+          currency: "EUR",
+          target_currency: "USD",
+          affected_entity_type: "currency",
+          affected_entity_id: "EUR",
+          display_name: "Missing EUR to USD exchange rate for Euro Cash",
+          message_key: "forecasts.issues.missing_fx_rate"
+        }
+      ]
+    )
+
+    result = simulate(ledger: foreign_salary_ledger, snapshot: snapshot)
+
+    fx_issues = result.issues.select { |i| i.code == "missing_fx_rate" }
+    assert_operator fx_issues.length, :>=, 2,
+      "the snapshot candidate (period nil) and a per-period FX issue must both appear"
+    assert(fx_issues.any? { |i| i.period.nil? }, "the snapshot candidate has no period")
+    assert(fx_issues.any? { |i| i.period == "2026-01" }, "the flow-based FX issue is period-scoped")
+    assert_equal fx_issues.map(&:id).uniq.length, fx_issues.length, "issue ids must be unique"
+  end
+
   test "present FX rate converts foreign flows into the reporting currency" do
     snapshot = source_snapshot(
       fx_rates: [

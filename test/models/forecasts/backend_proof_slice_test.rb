@@ -307,6 +307,39 @@ class Forecasts::BackendProofSliceTest < ActiveSupport::TestCase
       "a missing-FX flow must not project as a clean result"
   end
 
+  # A FLOWLESS excluded foreign account (an opening balance the snapshot dropped
+  # for want of a usable rate, with NO recurring/assumption flow in that currency)
+  # must still surface a missing_fx_rate issue end-to-end: in the engine result
+  # AND in the persisted cache issue summary. Without folding snapshot issue
+  # candidates into the result, the account silently vanishes from net worth/cash
+  # with no issue (breaks "Recover From Missing Data").
+  test "a flowless excluded foreign account surfaces missing_fx_rate in result and cache" do
+    Forecasts::ConnectedFamilyProof.add_unconvertible_foreign_account(family: @family)
+
+    plan = build_default_plan
+    source_snapshot = build_snapshot(plan)
+    packet = Forecasts::Projection::PacketBuilder.new(
+      plan: plan, source_snapshot: source_snapshot
+    ).build
+
+    # There is NO JPY flow (the family has only USD salary + living expense), so
+    # the per-period FX path never fires; the issue can only come from the
+    # snapshot candidate folded into the result.
+    assert(packet.assumptions.none? { |a| a[:params][:currency].to_s == "JPY" },
+      "the proof family has no JPY flow; the issue must come from the snapshot, not a flow")
+
+    result = Forecasts::Projection::Engine.call(packet)
+    assert_includes result.issues.map(&:code), "missing_fx_rate",
+      "a flowless excluded foreign account must still surface a missing_fx_rate result issue"
+    refute_equal "clean", result.status, "an excluded account downgrades status from clean"
+
+    cache = recompute(plan, source_snapshot)
+    summary = cache.issue_summary
+    assert_includes summary["codes"].keys, "missing_fx_rate",
+      "the persisted cache issue summary must carry the snapshot-sourced issue"
+    assert_operator summary["issue_count"], :>=, 1
+  end
+
   # --- Golden-fixture-style provenance recorded on the cache --------------
 
   test "the persisted cache records packet/engine/scenario provenance" do

@@ -91,6 +91,7 @@ module Forecasts
       end
 
       def simulate
+        emit_snapshot_issue_candidates
         balances = opening_balances
         periods = period_windows.map do |window|
           simulate_period(window, balances)
@@ -308,6 +309,66 @@ module Forecasts
         end
 
         # --- Issues ---------------------------------------------------------
+
+        # Folds snapshot-sourced issue candidates (carried INSIDE the snapshot
+        # payload) into the simulator's issue list so they reach result.issues and
+        # downgrade status to `issue_limited`. This is the seam that surfaces a
+        # FLOWLESS excluded account: the source snapshot builder excludes a foreign
+        # account with no usable FX rate from the opening-balance totals and records
+        # a `missing_fx_rate` candidate; with no flow, the per-period missing-FX
+        # path never fires, so without this fold the account would silently vanish
+        # from net worth/cash (breaks "Recover From Missing Data"). Each candidate
+        # is emitted once with `period: nil` (snapshot-level, not period-scoped) and
+        # a deterministic stable id, so it coexists with any per-period FX issue for
+        # the same currency rather than colliding with it.
+        def emit_snapshot_issue_candidates
+          snapshot_issue_candidates.each do |candidate|
+            next if candidate[:code].to_s.empty?
+
+            issue = plan_issue_from_candidate(candidate)
+            next if @issue_keys.key?(issue.id)
+
+            @issue_keys[issue.id] = true
+            @issues << issue
+          end
+        end
+
+        def snapshot_issue_candidates
+          Array(@snapshot[:issue_candidates]).map { |candidate| symbolize(candidate) }
+        end
+
+        # Builds a PlanIssue from a snapshot candidate, mapping its currency-keyed
+        # facets and named accounts onto the issue contract. Only `missing_fx_rate`
+        # currently flows from the snapshot; the structure stays generic so later
+        # source findings (missing prices, debt terms) ride the same seam.
+        def plan_issue_from_candidate(candidate)
+          currency = candidate[:currency]
+          Forecasts::Projection::PlanIssue.new(
+            code: candidate[:code],
+            severity: candidate[:severity].presence || "error",
+            source: candidate[:source].presence || "source_snapshot",
+            period: nil,
+            affected_entity_type: candidate[:affected_entity_type].presence || "currency",
+            affected_entity_id: candidate[:affected_entity_id].presence || currency,
+            display_name: candidate[:display_name].presence ||
+              "Missing #{currency} to #{reporting_currency} exchange rate",
+            message_key: candidate[:message_key].presence || "forecasts.issues.#{candidate[:code]}",
+            impact: snapshot_candidate_impact(candidate),
+            actions: %w[fetch_rates enter_fallback_rate exclude_account change_reporting_currency],
+            debug_context: {
+              from_currency: currency,
+              to_currency: candidate[:target_currency].presence || reporting_currency,
+              affected_account_ids: Array(candidate[:affected_accounts]).map { |account| account[:id] },
+              source: "source_snapshot"
+            }
+          )
+        end
+
+        # Impact line for a snapshot-excluded foreign account: the affected
+        # account's balance is left out of cash/net worth until a rate exists.
+        def snapshot_candidate_impact(_candidate)
+          "Cash and net worth are shown without this account until an exchange rate is available."
+        end
 
         # Records a structured missing_fx_rate issue once per (currency, period).
         # Severity is `error` (output renders only with exclusions/held values).

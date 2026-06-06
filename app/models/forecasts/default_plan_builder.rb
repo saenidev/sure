@@ -154,14 +154,18 @@ module Forecasts
       # latest budget that has started on or before as_of.
       def current_budget
         @current_budget ||= begin
+          # `id ASC` is a deterministic final tiebreaker: two budgets sharing the
+          # latest start_date would otherwise be picked nondeterministically, so
+          # the derived living_expense (and its source_record_id) could differ
+          # run-to-run for identical data.
           containing = family.budgets
             .where("start_date <= ? AND end_date >= ?", as_of, as_of)
-            .order(start_date: :desc)
+            .order(start_date: :desc, id: :asc)
             .first
 
           containing || family.budgets
             .where("start_date <= ?", as_of)
-            .order(start_date: :desc)
+            .order(start_date: :desc, id: :asc)
             .first
         end
       end
