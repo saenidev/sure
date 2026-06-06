@@ -3,6 +3,21 @@ require "fileutils"
 require "open3"
 
 class DockerEntrypointTest < ActiveSupport::TestCase
+  test "prepares database before server boot by default" do
+    with_entrypoint_app do |app_dir, calls_path|
+      _stdout, _stderr, status = Open3.capture3(
+        { "ENTRYPOINT_CALLS_PATH" => calls_path.to_s },
+        Rails.root.join("bin/docker-entrypoint").to_s,
+        "./bin/rails",
+        "server",
+        chdir: app_dir.to_s
+      )
+
+      assert status.success?
+      assert_equal [ "db:prepare", "server" ], calls_path.read.lines.map(&:strip)
+    end
+  end
+
   test "skips database preparation when boot prepare is disabled" do
     with_entrypoint_app do |app_dir, calls_path|
       _stdout, _stderr, status = Open3.capture3(
