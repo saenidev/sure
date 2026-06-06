@@ -55,10 +55,9 @@ services:
       # concurrency, so this only affects request serving, not background jobs.
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       RAILS_MAX_THREADS: ${RAILS_MAX_THREADS:-5}
-      # Dokploy deploys should run migrations explicitly when needed; skipping
-      # db:prepare here keeps replacement web containers from spending startup
-      # time on database prep before Puma can accept traffic.
-      RUN_DB_PREPARE_ON_BOOT: ${RUN_DB_PREPARE_ON_BOOT:-false}
+      # Run db:prepare by default so Dokploy deploys apply pending migrations
+      # before the web process starts serving the newly deployed code.
+      RUN_DB_PREPARE_ON_BOOT: ${RUN_DB_PREPARE_ON_BOOT:-true}
     depends_on:
       db:
         condition: service_healthy
