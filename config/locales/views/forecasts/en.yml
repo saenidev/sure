@@ -1,5 +1,37 @@
 en:
   forecasts:
+    # Forecast V2 Inertia/React workspace (slice C3). These strings are the
+    # canonical source for the client copy table mirrored in
+    # app/frontend/forecast/i18n.ts: the React island has no Rails `t()` at
+    # render time, so server-localized props plus this keyed table cover its copy.
+    workspace:
+      title: "Forecast"
+      plan_version: "Plan v%{version}"
+      scenario_stack: "Scenario stack"
+      baseline: "Baseline"
+      metric_strip_label: "Key metrics"
+      no_metrics: "No metrics for this period yet."
+      as_of: "as of %{date}"
+      not_computed: "not computed yet"
+      no_period_selected: "Select a period"
+    # Projection freshness lifecycle labels (FreshnessIndicator).
+    freshness:
+      fresh: "Up to date"
+      stale: "Out of date"
+      recomputing: "Recomputing"
+      failed: "Projection failed"
+      superseded: "Superseded"
+      uncomputed: "Not computed"
+      source_limited: "Limited by source data"
+    # Selected-period metric strip labels (SelectedPeriodReadModel label_keys).
+    metrics:
+      net_worth: "Net worth"
+      liquid_cash: "Liquid cash"
+      income: "Income"
+      spending: "Spending"
+      debt_balance: "Debt"
+      portfolio_value: "Portfolio"
+      runway_days: "Cash runway"
     show:
       title: "Forecast"
       description: "Model monthly budget, cash runway, goals, debt, portfolio movement, and life scenarios across the next 36 months."

@@ -126,3 +126,232 @@ export interface ForecastSpikeProps {
 	readonly privacy: PrivacyState;
 	readonly freshness: FreshnessState;
 }
+
+// ---------------------------------------------------------------------------
+// Forecast V2 first-viewport read models (slice C3).
+//
+// These interfaces type the REAL props `ForecastsController#show` serializes for
+// the `Forecast/Workspace` Inertia page (assembled in slice C2 by
+// `Forecasts::WorkspaceLoading#forecast_v2_workspace_props`). Each interface maps
+// 1:1 to a Ruby read-model `#to_h` (B13), so the keys are the read models'
+// snake_case keys exactly as Inertia serializes them — Inertia is NOT configured
+// to camelize, so the wire shape is the Ruby hash shape. The only camelCase keys
+// are the top-level region names the controller sets directly (`selectedPeriod`,
+// `assumptionGroups`).
+//
+// Money is always a decimal string plus a currency context, never a JS float
+// (matching the V2 projection-result contract). The server threads the run/as-of
+// date, so these props are deterministic and the client renders the first
+// viewport with zero network requests.
+//
+// Read-model boundary: these are presentation slices only. They never carry raw
+// engine packets, full projection-result JSON, editor form values, or per-card /
+// per-trace queries — those belong to later JSON endpoints and editor read
+// models.
+// ---------------------------------------------------------------------------
+
+/**
+ * The full projection-freshness lifecycle the `FreshnessIndicator` must cover.
+ * `fresh | stale | recomputing | failed | superseded` are the
+ * `Forecasts::ProjectionCache` statuses; `uncomputed` is emitted before the first
+ * cache exists; `source-limited` is the source-limited remediation state from the
+ * spec's component contract.
+ */
+export type FreshnessLifecycleState =
+	| "fresh"
+	| "stale"
+	| "recomputing"
+	| "failed"
+	| "superseded"
+	| "uncomputed"
+	| "source-limited";
+
+/**
+ * The shell/region freshness facet shared by `PlanReadModel`,
+ * `ProjectionBandReadModel`, and `SelectedPeriodReadModel` (`#freshness` and the
+ * top-level `freshness` region). Pairs the lifecycle state with the ISO-8601
+ * instant the projection was computed (`null` before the first projection).
+ */
+export interface ProjectionFreshness {
+	readonly state: FreshnessLifecycleState;
+	readonly projected_at: string | null;
+}
+
+/** The live scenario-stack summary on the plan shell (key + bounded layer keys). */
+export interface ScenarioStackSummary {
+	readonly key: string;
+	readonly layers: readonly string[];
+}
+
+/** The privacy-mode facet the shell frames (ephemeral, client-owned truth). */
+export interface PlanPrivacyState {
+	readonly blurred: boolean;
+}
+
+/** Privacy-safe issue summary stored on the cache row (counts + codes only). */
+export interface LatestIssueSummary {
+	readonly status: string;
+	readonly issue_count: number;
+	readonly codes: Readonly<Record<string, number>>;
+}
+
+/**
+ * `Forecasts::PlanReadModel#to_h` — answers "what plan is open and what shell
+ * frames it?". Plan identity, lens nav, scenario-stack summary, freshness,
+ * privacy, shell actions, and the latest issue summary. No chart series, no card
+ * detail, no raw packets.
+ */
+export interface PlanReadModel {
+	readonly id: string;
+	readonly name: string;
+	readonly reporting_currency: string;
+	readonly plan_version: number;
+	readonly active_lens: string;
+	readonly lenses: readonly string[];
+	readonly scenario_stack: ScenarioStackSummary;
+	readonly freshness: ProjectionFreshness;
+	readonly privacy: PlanPrivacyState;
+	readonly actions: readonly string[];
+	readonly latest_issue_summary: LatestIssueSummary;
+}
+
+/**
+ * One compact chart point from `ProjectionBandReadModel#series`: a period key and
+ * the selected metric's decimal-string value (`null` if absent for the period).
+ */
+export interface ProjectionBandPoint {
+	readonly period_key: PeriodKey;
+	readonly value: MoneyString | null;
+}
+
+/**
+ * `Forecasts::ProjectionBandReadModel#to_h` — answers "what should the main chart
+ * and selected-period control show?". The compact preloaded period index the
+ * client scrubs locally (no network).
+ */
+export interface ProjectionBandReadModel {
+	readonly selected_metric: string;
+	readonly selected_marker: PeriodKey | null;
+	readonly period_keys: readonly PeriodKey[];
+	readonly series: readonly ProjectionBandPoint[];
+	readonly freshness: ProjectionFreshness;
+}
+
+/**
+ * One metric-strip entry from `SelectedPeriodReadModel#metrics`: a stable key, an
+ * i18n `label_key` (the client localizes — the read model never formats UI
+ * strings), and the period's value (decimal string for money, integer string for
+ * runway, `null` when absent).
+ */
+export interface SelectedPeriodMetric {
+	readonly key: string;
+	readonly label_key: string;
+	readonly value: MoneyString | null;
+}
+
+/** One trace-backed explanation line for the selected period. */
+export interface SelectedPeriodExplanationLine {
+	readonly kind: string;
+	readonly amount: MoneyString | null;
+	readonly currency: string | null;
+	readonly direction: string | null;
+	readonly explanation_key: string | null;
+	readonly source: string;
+}
+
+/** One privacy-safe period issue line (code + severity + i18n message key). */
+export interface SelectedPeriodIssueLine {
+	readonly code: string;
+	readonly severity: string;
+	readonly message_key: string;
+}
+
+/**
+ * `Forecasts::SelectedPeriodReadModel#to_h` — answers "what explains the
+ * currently selected period?". Seeded for the default period; `null` before any
+ * period is projected (the inspector opens on a "select a period" state).
+ */
+export interface SelectedPeriodReadModel {
+	readonly period_key: PeriodKey;
+	readonly granularity: string;
+	readonly selected_metric: string;
+	readonly metrics: readonly SelectedPeriodMetric[];
+	readonly active_assumption_ids: readonly string[];
+	readonly explanation: readonly SelectedPeriodExplanationLine[];
+	readonly issues: readonly SelectedPeriodIssueLine[];
+	readonly freshness: ProjectionFreshness;
+}
+
+/** A structured, client-formatted summary line on an assumption card. */
+export interface AssumptionCardSummary {
+	readonly key: string;
+	readonly [field: string]: string | null | undefined;
+}
+
+/** Provenance/review badge code shown on an assumption card. */
+export type AssumptionCardBadge =
+	| "review_suggested"
+	| "derived"
+	| "low_confidence"
+	| "disabled";
+
+/** One assumption card from `AssumptionGroupReadModel` (scannable summary only). */
+export interface AssumptionCard {
+	readonly id: string;
+	readonly kind: string;
+	readonly icon: string;
+	readonly title: string;
+	readonly amount_summary: AssumptionCardSummary;
+	readonly time_summary: AssumptionCardSummary;
+	readonly behavior_summary: AssumptionCardSummary;
+	readonly source_summary: AssumptionCardSummary;
+	readonly status_badges: readonly string[];
+	readonly active_in_period: boolean;
+	readonly actions: readonly string[];
+}
+
+/** One assumption group (kind header + its cards). */
+export interface AssumptionGroup {
+	readonly kind: string;
+	readonly title_key: string;
+	readonly cards: readonly AssumptionCard[];
+}
+
+/**
+ * `Forecasts::AssumptionGroupReadModel#to_h` — answers "which assumptions are
+ * visible and scannable?".
+ */
+export interface AssumptionGroupReadModel {
+	readonly groups: readonly AssumptionGroup[];
+}
+
+/**
+ * `Forecasts::IssueReadModel#to_h` — one privacy-safe, user-facing plan/source
+ * issue (no UUIDs, no debug context). The first-viewport `issues` region is an
+ * array of these.
+ */
+export interface IssueReadModel {
+	readonly code: string;
+	readonly severity: string;
+	readonly source: string;
+	readonly period: string | null;
+	readonly title: string | null;
+	readonly affected_output: string | null;
+	readonly impact: string | null;
+	readonly message_key: string | null;
+	readonly actions: readonly string[];
+}
+
+/**
+ * The full typed first-viewport prop bag `ForecastsController#show` (V2) passes
+ * to the `Forecast/Workspace` Inertia page. Each region is one read model.
+ * `selectedPeriod` is `null` before any period is projected.
+ */
+export interface ForecastWorkspaceProps {
+	readonly plan: PlanReadModel;
+	readonly band: ProjectionBandReadModel;
+	readonly selectedPeriod: SelectedPeriodReadModel | null;
+	readonly assumptionGroups: AssumptionGroupReadModel;
+	readonly issues: readonly IssueReadModel[];
+	readonly freshness: ProjectionFreshness;
+}
