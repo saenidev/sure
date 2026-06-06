@@ -156,6 +156,18 @@ const COPY: Readonly<Record<string, string>> = {
 	"forecasts.issue_panel.action_reorder_layers": "Reorder layers",
 	"forecasts.issue_panel.action_view": "View details",
 
+	// Stable issue-code titles (spec "Issue Code Catalog"). The IssuePanel renders
+	// these localized titles from an issue's message_key so the visible copy is
+	// never the raw engine code. Mirror config/locales/views/forecasts/en.yml.
+	"forecasts.issues.missing_fx_rate": "Missing exchange rate",
+	"forecasts.issues.missing_security_price": "Missing security price",
+	"forecasts.issues.stale_source_data": "Source data is out of date",
+	"forecasts.issues.insufficient_history": "Not enough history yet",
+	"forecasts.issues.missing_debt_terms": "Missing debt terms",
+	"forecasts.issues.invalid_assumption_params": "Assumption needs attention",
+	"forecasts.issues.account_rule_conflict": "Conflicting account rules",
+	"forecasts.issues.scenario_layer_conflict": "Conflicting scenario layers",
+
 	// Typed assumption editor drawer (AssumptionEditor / useAssumptionEditor,
 	// slice C7). The only interactive editor in the MVP is the salary form.
 	"forecasts.editor.title": "Edit assumption",

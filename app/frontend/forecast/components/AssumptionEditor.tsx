@@ -17,13 +17,18 @@
 // `useAssumptionEditor`; this component is presentational. Tokens only — no raw
 // palette; copy resolves through the client i18n table (`ft`). Money inputs carry
 // `privacy-sensitive` so the app-wide privacy toggle blurs them with no
-// forecast-specific JS. The actual save (PATCH) lands in slice C8; here Save is
-// wired to the provided `onSave` seam (no-op until C8).
+// forecast-specific JS. Save collects the form values and drives the typed PATCH
+// save (`useAssumptionEditor.save`, slice C8); on a committed save it hands the
+// changed-region patch to `onSaved` so the parent patches scoped regions without a
+// full reload (the patch fold + recompute orchestration stay in the parent).
 
 import { type JSX, useEffect, useRef } from "react";
 import type { UseAssumptionEditorResult } from "../hooks/useAssumptionEditor";
 import { ft } from "../i18n";
-import type { EditorPrefillReadModel } from "../types/readModels";
+import type {
+	EditorPrefillReadModel,
+	SavedAssumptionPatch,
+} from "../types/readModels";
 
 // One field in a composed form schema. `options` makes it a select; otherwise the
 // `type` drives an <input>. `param` reads/writes the value from the prefill's
@@ -130,18 +135,27 @@ export interface AssumptionEditorProps {
 	/** The drawer lifecycle handle from `useAssumptionEditor`. */
 	readonly editor: UseAssumptionEditorResult;
 	/**
-	 * The save seam. Wired to the typed PATCH save in slice C8; until then the
-	 * caller may pass a no-op. Receives the version token the save must echo back.
+	 * The plan version the workspace currently observes, echoed back on save so the
+	 * server can reject a stale edit (spec "Live Recompute Model", "Conflict
+	 * Handling"). Owned by the shared workspace store, passed in here.
 	 */
-	readonly onSave?: (args: {
-		assumptionId: string;
-		versionToken: number | null;
-	}) => void;
+	readonly planVersion: number;
+	/**
+	 * Notified AFTER a save commits (HTTP 200) with the typed changed-region patch
+	 * (slice C8). The parent folds the patch into the workspace store + scoped
+	 * regions (saved card, inspector, freshness) WITHOUT a full reload, then closes
+	 * the drawer. The save itself (PATCH + typed errors/conflicts) is owned by
+	 * `useAssumptionEditor.save`; this component only collects the form values and
+	 * drives it (spec "Frontend module responsibility rules": editor lifecycle and
+	 * recompute orchestration stay separate — the parent owns the patch fold).
+	 */
+	readonly onSaved?: (patch: SavedAssumptionPatch) => void;
 }
 
 export default function AssumptionEditor({
 	editor,
-	onSave,
+	planVersion,
+	onSaved,
 }: AssumptionEditorProps): JSX.Element | null {
 	const titleId = "forecast-assumption-editor-title";
 	const panelRef = useRef<HTMLDivElement>(null);
@@ -197,14 +211,38 @@ export default function AssumptionEditor({
 			})
 		: ft("forecasts.editor.scenario_baseline");
 
-	const handleSave = (event: React.FormEvent): void => {
+	// Collect the form values and drive the typed PATCH save (slice C8). On a
+	// committed save (status "saved") notify the parent with the changed-region
+	// patch so it patches scoped regions, then close the drawer. Invalid / conflict
+	// outcomes keep the drawer open — `useAssumptionEditor.save` already set the
+	// typed field/summary errors the form renders.
+	const handleSave = (event: React.FormEvent<HTMLFormElement>): void => {
 		event.preventDefault();
-		if (prefill) {
-			onSave?.({
-				assumptionId: prefill.assumption_id,
-				versionToken: editor.versionToken,
-			});
+		if (!prefill) {
+			return;
 		}
+
+		const formData = new FormData(event.currentTarget);
+		const values: Record<string, string> = {};
+		for (const [name, value] of formData.entries()) {
+			if (typeof value === "string") {
+				values[name] = value;
+			}
+		}
+
+		void editor
+			.save({
+				assumptionId: prefill.assumption_id,
+				kind: prefill.form_key,
+				values,
+				planVersion,
+			})
+			.then((outcome) => {
+				if (outcome.status === "saved") {
+					onSaved?.(outcome.patch);
+					editor.requestClose(true);
+				}
+			});
 	};
 
 	return (
@@ -265,6 +303,7 @@ export default function AssumptionEditor({
 
 					{editor.lifecycle === "ready" && prefill ? (
 						<form
+							id="forecast-assumption-editor-form"
 							data-testid="forecast-assumption-editor-form"
 							onSubmit={handleSave}
 							onChange={() => editor.setDirty(true)}

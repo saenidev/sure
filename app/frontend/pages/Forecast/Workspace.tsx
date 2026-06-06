@@ -18,7 +18,7 @@
 // only — no raw palette.
 
 import { Head } from "@inertiajs/react";
-import type { JSX } from "react";
+import { type JSX, useCallback, useState } from "react";
 import AssumptionEditor from "../../forecast/components/AssumptionEditor";
 import AssumptionGroup from "../../forecast/components/AssumptionGroup";
 import ForecastPlanShell from "../../forecast/components/ForecastPlanShell";
@@ -38,6 +38,7 @@ import { ft } from "../../forecast/i18n";
 import type {
 	AssumptionGroupReadModel,
 	ForecastWorkspaceProps,
+	SavedAssumptionPatch,
 } from "../../forecast/types/readModels";
 
 // The assumption rail: the stable region the shell scopes for patches, holding
@@ -81,17 +82,64 @@ function AssumptionRail({
 	);
 }
 
+// Folds a committed save's `saved_card` into the assumption groups, replacing the
+// card with the matching id (or, if the assumption changed group, moving it).
+// Other cards are untouched — a save patches only its scoped card region, never the
+// whole rail (spec "Patch budget"). Groups whose cards all moved away are dropped.
+function applySavedCard(
+	groups: AssumptionGroupReadModel,
+	patch: SavedAssumptionPatch,
+): AssumptionGroupReadModel {
+	const savedCard = patch.saved_card;
+	if (!savedCard) {
+		return groups;
+	}
+
+	const nextGroups = groups.groups
+		.map((group) => ({
+			...group,
+			cards: group.cards.map((card) =>
+				card.id === savedCard.id ? savedCard : card,
+			),
+		}))
+		.filter((group) => group.cards.length > 0);
+
+	return { ...groups, groups: nextGroups };
+}
+
 export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 	const { plan, band, selectedPeriod } = props;
 	const workspace = useForecastWorkspace(props);
 	const cacheKeys = workspace.regionCacheKeys;
 
+	// The assumption rail reflects SERVER truth: it starts from the preloaded props
+	// and is patched in place when a save commits (the saved card replaces its prior
+	// version). The shared store owns version tokens + freshness; this owns only the
+	// scoped card region the save patches.
+	const [assumptionGroups, setAssumptionGroups] =
+		useState<AssumptionGroupReadModel>(props.assumptionGroups);
+
 	// The typed editor drawer (slice C7): opens from an assumption card and
 	// composes the salary form. Opening fetches GET /forecast/assumptions/:id/edit
 	// for one EditorPrefillReadModel; it owns NONE of plan/period/scenario state
 	// (those stay in `workspace`), so opening/closing the drawer preserves the
-	// selected period + scenario stack. The PATCH save lands in slice C8.
+	// selected period + scenario stack. The PATCH save is driven from the drawer
+	// (slice C8) and its changed-region patch is folded in by `handleSaved` below.
 	const editor = useAssumptionEditor();
+
+	// Fold a committed save's typed changed-region patch (slice C8) into the
+	// workspace WITHOUT a full reload: the shared store takes the new plan version +
+	// scenario stack + freshness (recomputing -> fresh), which recompute the scoped
+	// region cache keys, and the saved card replaces its prior version in the rail.
+	// The selected-period inspector + metric strip re-derive from the new cache keys
+	// via usePeriodPayloadCache. No region outside the patch is touched.
+	const handleSaved = useCallback(
+		(patch: SavedAssumptionPatch): void => {
+			workspace.applyAssumptionPatch(patch);
+			setAssumptionGroups((groups) => applySavedCard(groups, patch));
+		},
+		[workspace],
+	);
 
 	// Serve the selected-period detail from the preloaded seed + local cache,
 	// fetching GET /forecast/periods/:period_key only on a settled cache miss
@@ -153,7 +201,7 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 					    that read like financial-planning language. Every card payload is
 					    preloaded by AssumptionGroupReadModel — no per-card fetch. */}
 					<AssumptionRail
-						assumptionGroups={props.assumptionGroups}
+						assumptionGroups={assumptionGroups}
 						regionKey={FORECAST_REGIONS.assumptions}
 						cacheKey={cacheKeys.assumptions}
 						onEditCard={(cardId) =>
@@ -177,8 +225,14 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 
 			{/* Typed editor drawer (C7): the only interactive editor in the MVP is the
 			    salary form. It renders OVER the workspace, so opening/closing preserves
-			    the selected period + scenario stack. The save (PATCH) lands in C8. */}
-			<AssumptionEditor editor={editor} />
+			    the selected period + scenario stack. Save (PATCH, C8) echoes the observed
+			    plan version; the committed changed-region patch is folded in by
+			    `handleSaved` (scoped regions only, no full reload). */}
+			<AssumptionEditor
+				editor={editor}
+				planVersion={workspace.planVersion}
+				onSaved={handleSaved}
+			/>
 		</>
 	);
 }

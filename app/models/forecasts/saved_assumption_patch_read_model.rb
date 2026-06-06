@@ -91,18 +91,16 @@ module Forecasts
       end
 
       # The issue panel region: the privacy-safe issue summary codes stored on the
-      # cache row, shaped through the IssueReadModel (no per-issue query).
+      # cache row, mapped through the stable IssueCatalog to structured, localized
+      # issues (severity + message_key title + remediation actions) and shaped by
+      # the IssueReadModel (no per-issue query) — consistent with the first-viewport
+      # issue panel.
       def issues
         codes = cache&.issue_summary&.dig("codes") || {}
         codes.keys.map do |code|
-          Forecasts::IssueReadModel.new(issue: {
-            code: code,
-            severity: "limited",
-            source: "projection",
-            message_key: "forecasts.issues.#{code}",
-            display_name: code,
-            actions: []
-          }).to_h
+          Forecasts::IssueReadModel.new(
+            issue: Forecasts::IssueCatalog.issue_hash(code)
+          ).to_h
         end
       end
 

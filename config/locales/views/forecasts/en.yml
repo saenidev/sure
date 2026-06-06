@@ -148,6 +148,20 @@ en:
       action_edit_account_rules: "Edit account rules"
       action_reorder_layers: "Reorder layers"
       action_view: "View details"
+    # Stable issue-code titles (spec "Issue Code Catalog"). These are the localized,
+    # human titles the IssuePanel renders from an issue's message_key so the visible
+    # copy is never the raw engine code. Client-resolved (mirrored in
+    # app/frontend/forecast/i18n.ts). Keyed by the same codes Forecasts::IssueCatalog
+    # maps to severity + remediation actions.
+    issues:
+      missing_fx_rate: "Missing exchange rate"
+      missing_security_price: "Missing security price"
+      stale_source_data: "Source data is out of date"
+      insufficient_history: "Not enough history yet"
+      missing_debt_terms: "Missing debt terms"
+      invalid_assumption_params: "Assumption needs attention"
+      account_rule_conflict: "Conflicting account rules"
+      scenario_layer_conflict: "Conflicting scenario layers"
     # Typed assumption editor drawer (AssumptionEditor / useAssumptionEditor, slice
     # C7). The only interactive editor in the MVP is the salary form. These keys are
     # client-resolved (the React drawer has no Rails `t()` at render time) and are

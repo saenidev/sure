@@ -120,19 +120,16 @@ module Forecasts
 
       # Privacy-safe issue summary list for the issue panel, built from the cache's
       # stored issue summary codes (NO per-issue query, spec "Render plan issues:
-      # no per-issue queries"). Each code is shaped by the IssueReadModel so the
-      # client renders localized, privacy-safe copy.
+      # no per-issue queries"). Each code is mapped through the stable IssueCatalog
+      # to a STRUCTURED, localized issue (severity + message_key title + remediation
+      # actions) and shaped by the IssueReadModel — so the panel renders human copy
+      # and remediation, never the raw code as the visible title.
       def issue_props(cache)
         codes = cache&.issue_summary&.dig("codes") || {}
         codes.keys.map do |code|
-          Forecasts::IssueReadModel.new(issue: {
-            code: code,
-            severity: "limited",
-            source: "projection",
-            message_key: "forecasts.issues.#{code}",
-            display_name: code,
-            actions: []
-          }).to_h
+          Forecasts::IssueReadModel.new(
+            issue: Forecasts::IssueCatalog.issue_hash(code)
+          ).to_h
         end
       end
 
