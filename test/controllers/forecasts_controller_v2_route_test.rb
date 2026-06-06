@@ -64,6 +64,28 @@ class ForecastsControllerV2RouteTest < ActionDispatch::IntegrationTest
       inertia.props.dig(:freshness, :state)
   end
 
+  test "renders when an existing living expense stores a flat actualization policy" do
+    plan = Forecasts::DefaultPlanBuilder.new(family: @family, as_of: Date.current).build
+    living = plan.forecast_assumptions.for_kind("living_expense").first
+    assert_not_nil living, "expected the connected budget to derive a living_expense"
+
+    living.update!(
+      params: living.params.merge(
+        "inflation_policy" => "flat",
+        "inflation_rate" => nil,
+        "actualization_policy" => "offset"
+      )
+    )
+
+    assert_no_difference -> { Forecasts::Plan.where(family: @family).count } do
+      get forecast_v2_url
+    end
+
+    assert_response :success
+    assert_inertia_component "Forecast/Workspace"
+    assert_equal "fresh", inertia.props.dig(:freshness, :state)
+  end
+
   test "is idempotent: opening /forecast_v2 repeatedly creates exactly one plan" do
     assert_difference -> { Forecasts::Plan.where(family: @family).count }, 1 do
       get forecast_v2_url
