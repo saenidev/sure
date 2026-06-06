@@ -133,7 +133,9 @@ module Forecasts
         # net_ratio is the optional gross→take-home fraction. It is only
         # meaningful for a gross salary; a missing value is allowed (the engine
         # defaults it to 1.0 so net == gross). When supplied it must be a
-        # positive number (a fraction of gross pay that lands as cash).
+        # FRACTION in (0, 1]: <= 0 is meaningless, and > 1 would model take-home
+        # ABOVE gross (the expander applies grown * net_ratio uncapped), the exact
+        # inverse of net pay — so both bounds are rejected.
         def validate_net_ratio
           if net_ratio == :invalid
             add_error(:net_ratio, "not_a_number")
@@ -142,7 +144,11 @@ module Forecasts
 
           return if net_ratio.nil?
 
-          add_error(:net_ratio, "not_positive") if net_ratio <= 0
+          if net_ratio <= 0
+            add_error(:net_ratio, "not_positive")
+          elsif net_ratio > 1
+            add_error(:net_ratio, "not_a_fraction")
+          end
         end
 
         def validate_enums

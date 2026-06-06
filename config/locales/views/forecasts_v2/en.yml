@@ -30,6 +30,7 @@ en:
         blank: "can't be blank"
         not_a_number: "must be a number"
         not_positive: "must be greater than zero"
+        not_a_fraction: "must be between 0 and 1"
         unknown_currency: "is not a supported currency"
         inclusion: "is not a valid option"
         invalid_date: "is not a valid date"

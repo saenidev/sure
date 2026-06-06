@@ -48,6 +48,10 @@ module Forecasts
         severity: "blocking",
         actions: %w[fix_fields]
       },
+      "invalid_milestone_reference" => {
+        severity: "blocking",
+        actions: %w[choose_valid_milestone choose_date]
+      },
       "unknown_assumption_kind" => {
         severity: "blocking",
         actions: %w[remove_assumption]

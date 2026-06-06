@@ -73,6 +73,9 @@ const ACTION_LABEL_KEY: Readonly<Record<string, string>> = {
   edit_assumption: "forecasts.issue_panel.action_edit_assumption",
   edit_account_rules: "forecasts.issue_panel.action_edit_account_rules",
   reorder_layers: "forecasts.issue_panel.action_reorder_layers",
+  remove_assumption: "forecasts.issue_panel.action_remove_assumption",
+  choose_valid_milestone: "forecasts.issue_panel.action_choose_valid_milestone",
+  choose_date: "forecasts.issue_panel.action_choose_date",
 };
 
 function actionLabel(action: string): string {

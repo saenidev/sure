@@ -155,6 +155,10 @@ const COPY: Readonly<Record<string, string>> = {
   "forecasts.issue_panel.action_edit_assumption": "Edit assumption",
   "forecasts.issue_panel.action_edit_account_rules": "Edit account rules",
   "forecasts.issue_panel.action_reorder_layers": "Reorder layers",
+  "forecasts.issue_panel.action_remove_assumption": "Remove assumption",
+  "forecasts.issue_panel.action_choose_valid_milestone":
+    "Choose a valid milestone",
+  "forecasts.issue_panel.action_choose_date": "Use a fixed date",
   "forecasts.issue_panel.action_view": "View details",
 
   // Stable issue-code titles (spec "Issue Code Catalog"). The IssuePanel renders
@@ -166,6 +170,8 @@ const COPY: Readonly<Record<string, string>> = {
   "forecasts.issues.insufficient_history": "Not enough history yet",
   "forecasts.issues.missing_debt_terms": "Missing debt terms",
   "forecasts.issues.invalid_assumption_params": "Assumption needs attention",
+  "forecasts.issues.invalid_milestone_reference": "Invalid milestone reference",
+  "forecasts.issues.unknown_assumption_kind": "Unknown assumption type",
   "forecasts.issues.account_rule_conflict": "Conflicting account rules",
   "forecasts.issues.scenario_layer_conflict": "Conflicting scenario layers",
 
@@ -231,6 +237,7 @@ const COPY: Readonly<Record<string, string>> = {
   "forecasts.editor.errors.blank": "This field is required.",
   "forecasts.editor.errors.not_a_number": "Enter a valid number.",
   "forecasts.editor.errors.not_positive": "Enter a value greater than zero.",
+  "forecasts.editor.errors.not_a_fraction": "Enter a value between 0 and 1.",
   "forecasts.editor.errors.unknown_currency": "Choose a supported currency.",
   "forecasts.editor.errors.inclusion": "Choose a valid option.",
   "forecasts.editor.errors.invalid_date": "Enter a valid date.",

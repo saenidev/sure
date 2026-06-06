@@ -220,6 +220,20 @@ class Forecasts::Assumptions::SalaryFormTest < ActiveSupport::TestCase
     assert_includes form.error_codes_for(:net_ratio), "not_positive"
   end
 
+  test "net_ratio above 1 emits not_a_fraction (cannot model take-home above gross)" do
+    form = build_form(input: valid_input("gross_or_net" => "gross", "net_ratio" => "1.5"))
+
+    assert_not form.valid?
+    assert_includes form.error_codes_for(:net_ratio), "not_a_fraction"
+  end
+
+  test "net_ratio of exactly 1 is allowed (net == gross)" do
+    form = build_form(input: valid_input("gross_or_net" => "gross", "net_ratio" => "1"))
+
+    assert form.valid?, form.errors.full_messages.to_sentence
+    assert_equal BigDecimal("1"), form.params_object.net_ratio
+  end
+
   # --- invalid references ----------------------------------------------------
 
   test "milestone reference from another plan emits invalid_reference" do

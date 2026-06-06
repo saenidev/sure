@@ -148,6 +148,9 @@ en:
       action_edit_assumption: "Edit assumption"
       action_edit_account_rules: "Edit account rules"
       action_reorder_layers: "Reorder layers"
+      action_remove_assumption: "Remove assumption"
+      action_choose_valid_milestone: "Choose a valid milestone"
+      action_choose_date: "Use a fixed date"
       action_view: "View details"
     # Stable issue-code titles (spec "Issue Code Catalog"). These are the localized,
     # human titles the IssuePanel renders from an issue's message_key so the visible
@@ -161,6 +164,8 @@ en:
       insufficient_history: "Not enough history yet"
       missing_debt_terms: "Missing debt terms"
       invalid_assumption_params: "Assumption needs attention"
+      invalid_milestone_reference: "Invalid milestone reference"
+      unknown_assumption_kind: "Unknown assumption type"
       account_rule_conflict: "Conflicting account rules"
       scenario_layer_conflict: "Conflicting scenario layers"
     # Typed assumption editor drawer (AssumptionEditor / useAssumptionEditor, slice
@@ -234,6 +239,7 @@ en:
         blank: "This field is required."
         not_a_number: "Enter a valid number."
         not_positive: "Enter a value greater than zero."
+        not_a_fraction: "Enter a value between 0 and 1."
         unknown_currency: "Choose a supported currency."
         inclusion: "Choose a valid option."
         invalid_date: "Enter a valid date."
