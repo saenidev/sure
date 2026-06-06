@@ -79,9 +79,9 @@
   "expected": {
     "engine_version": "forecast_v2.1",
     "schema_version": 1,
-    "input_packet_hash": "5a7885963c2a40e57f66be59cf7c918eb5153265204990dec1502c29ca7a4f5d",
-    "source_snapshot_hash": "b4834595f914e27a8c897561a194803274418f3c6c1013e418df0c7b8199c566",
-    "scenario_stack_hash": "65bcf66ecca1a8691df8388e159d7fb2d7502aeb1d4019210217c50eac6565fe",
+    "input_packet_hash": "1065347cf6784b1392d7a2d11ae1cc20b8b4de79c815ec3fe8f41bcd75980faf",
+    "source_snapshot_hash": "530020158bbf8b6d4fd669f987963b695a659d3dd3738d79b58dd94ef52a9182",
+    "scenario_stack_hash": "fbe0ad360b78314aec4483f5d61e1f6cac0dfaa07e1f0da7ffc5a973246806eb",
     "plan_version": 7,
     "status": "clean",
     "period_count": 36,
