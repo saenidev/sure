@@ -54,6 +54,31 @@ class ForecastV2SpikeControllerTest < ActionDispatch::IntegrationTest
       "expected no right-side chat container in the dedicated forecast layout"
   end
 
+  test "serializes the initial Inertia page as a JSON script element the client can read" do
+    sign_in @user
+    get forecast_v2_spike_path
+
+    assert_response :success
+
+    # The installed @inertiajs/core client reads the initial page ONLY from a
+    # `<script type="application/json" data-page="app">` element
+    # (getInitialPageFromDOM). With the gem's default `data-page`-attribute
+    # rendering the React root silently fails to hydrate, so this guards the
+    # server/client contract the spike system test (A7) depends on.
+    assert_select "script[type='application/json'][data-page='app']", { count: 1 },
+      "expected the initial Inertia page serialized as a JSON script element"
+    assert_select "div#app", { count: 1 }, "expected the Inertia mount div"
+    assert_select "div#app[data-page]", { count: 0 },
+      "initial page must live in the script element, not a data-page attribute"
+
+    page_node = css_select("script[type='application/json'][data-page='app']").first
+    page_payload = JSON.parse(page_node.text)
+    assert_equal "Forecast/Spike", page_payload["component"],
+      "expected the script payload to name the Forecast/Spike component"
+    assert page_payload.dig("props", "plan", "label").present?,
+      "expected the script payload to carry the typed plan label prop"
+  end
+
   test "exposes only typed read-model-shaped props" do
     sign_in @user
     get forecast_v2_spike_path
