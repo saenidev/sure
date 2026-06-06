@@ -122,6 +122,37 @@ class Forecasts::AssumptionsControllerUpdateTest < ActionDispatch::IntegrationTe
     end
   end
 
+  # --- Living expense save: actualization_policy normalization --------------
+
+  # Regression: LivingExpenseForm persists actualization_policy as a flat string
+  # ("none"/"replace"/"offset"), but the living_expense expander reads it as a
+  # typed hash. Before the packet-builder normalization + expander coercion, the
+  # synchronous recompute on a living_expense PATCH raised an uncaught TypeError
+  # (not InvalidExpansionError, which the engine rescues) and returned a 500.
+  test "saving a living_expense edit recomputes without a 500" do
+    with_v2_enabled do
+      plan, living = warm_plan_and_living_expense
+
+      patch forecast_assumption_url(living), params: valid_living_expense_params(living, plan)
+
+      assert_response :success
+      assert_equal "application/json", response.media_type
+      assert_equal "fresh", response.parsed_body.dig("freshness", "state")
+    end
+  end
+
+  test "saving a living_expense persists the flat actualization_policy" do
+    with_v2_enabled do
+      plan, living = warm_plan_and_living_expense
+
+      patch forecast_assumption_url(living),
+        params: valid_living_expense_params(living, plan).merge(actualization_policy: "offset")
+
+      assert_response :success
+      assert_equal "offset", living.reload.params["actualization_policy"]
+    end
+  end
+
   # --- Recompute: runs synchronously within budget --------------------------
 
   test "a within-budget save recomputes synchronously and returns fresh projection regions" do
@@ -336,6 +367,35 @@ class Forecasts::AssumptionsControllerUpdateTest < ActionDispatch::IntegrationTe
       plan = Forecasts::Plan.where(family: @family).sole
       salary = plan.forecast_assumptions.for_kind("salary").first
       [ plan, salary ]
+    end
+
+    # Same warm-up, but returns the source-derived living_expense assumption the
+    # default plan builds from the connected budget.
+    def warm_plan_and_living_expense
+      get forecast_url
+      assert_response :success
+      plan = Forecasts::Plan.where(family: @family).sole
+      living = plan.forecast_assumptions.for_kind("living_expense").first
+      assert_not_nil living, "expected a source-derived living_expense assumption"
+      [ plan, living ]
+    end
+
+    # A full, valid LivingExpenseForm param set: the required typed fields the
+    # form coerces + validates (note actualization_policy is a flat string),
+    # anchored on the current plan/lock versions for the optimistic checks.
+    def valid_living_expense_params(living, plan)
+      {
+        kind: "living_expense",
+        name: living.name,
+        amount: living.amount.to_s,
+        currency: living.currency || "USD",
+        frequency: "monthly",
+        inflation_policy: "flat",
+        actualization_policy: "none",
+        category_ids: [],
+        expected_lock_version: living.lock_version,
+        plan_version: plan.current_plan_version
+      }
     end
 
     # A full, valid SalaryForm param set for the given salary assumption: the

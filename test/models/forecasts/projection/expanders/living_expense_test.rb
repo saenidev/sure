@@ -153,6 +153,37 @@ class Forecasts::Projection::Expanders::LivingExpenseTest < ActiveSupport::TestC
     assert_equal %w[cat-housing cat-utilities], hash[:category_ids]
   end
 
+  # --- Defensive policy coercion -------------------------------------------
+
+  # The persisted form shape stores actualization_policy/inflation_policy as flat
+  # strings; the packet builder normalizes them to typed hashes, but the expander
+  # reads `policy[:type]`, so a bare string would raise a TypeError that escapes
+  # the engine's expander rescue (which only catches InvalidExpansionError).
+  # Coerce defensively so a flat-string policy never crashes expansion.
+  # A bare string can't carry a `[:type]`, so the expander coerces it to an empty
+  # policy hash (type "") rather than raising. The packet builder is responsible
+  # for translating the persisted flat string into a typed hash that preserves
+  # the chosen type; this test only guards the crash invariant.
+  test "a flat-string actualization_policy does not crash expansion" do
+    flows = nil
+    assert_nothing_raised do
+      flows = expand(params: living_expense_params(actualization_policy: "none"))
+    end
+
+    assert_equal 6, flows.length
+    assert_equal "", flows.first.to_h.dig(:metadata, :actualization_policy_type)
+  end
+
+  test "a flat-string inflation_policy does not crash expansion" do
+    flows = nil
+    assert_nothing_raised do
+      flows = expand(params: living_expense_params(inflation_policy: "flat"))
+    end
+
+    assert_equal 6, flows.length
+    assert_equal "", flows.first.to_h.dig(:metadata, :inflation_policy_type)
+  end
+
   # --- Determinism ---------------------------------------------------------
 
   test "expansion is deterministic for the same params and context" do

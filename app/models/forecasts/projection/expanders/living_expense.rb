@@ -55,11 +55,21 @@ module Forecasts
           end
 
           def inflation_policy
-            @inflation_policy ||= symbolize(params[:inflation_policy] || {})
+            @inflation_policy ||= policy_hash(params[:inflation_policy])
           end
 
           def actualization_policy
-            @actualization_policy ||= symbolize(params[:actualization_policy] || {})
+            @actualization_policy ||= policy_hash(params[:actualization_policy])
+          end
+
+          # Policies are read as typed hashes (`policy[:type]`). The packet
+          # builder normalizes the persisted flat-string form shape into hashes,
+          # but coerce defensively here so a non-hash value can never raise a
+          # TypeError that escapes the engine's expander rescue (which only
+          # catches InvalidExpansionError).
+          def policy_hash(value)
+            symbolized = symbolize(value || {})
+            symbolized.is_a?(Hash) ? symbolized : {}
           end
 
           def inflation_factor(start_on, occurrence_on)

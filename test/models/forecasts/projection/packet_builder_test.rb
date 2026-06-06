@@ -161,6 +161,36 @@ class Forecasts::Projection::PacketBuilderTest < ActiveSupport::TestCase
     assert_equal "net", params[:gross_or_net]
   end
 
+  # LivingExpenseForm persists actualization_policy as a flat STRING
+  # ("none"/"replace"/"offset"), but the living_expense expander reads it as a
+  # typed hash (`actualization_policy[:type]`). The builder is the seam that
+  # translates the form shape into the engine shape, so a saved living_expense
+  # recomputes without raising a TypeError.
+  test "normalizes a saved flat actualization_policy into the engine's typed hash" do
+    living = add_living_expense(
+      params: { "frequency" => "monthly", "inflation_policy" => "flat", "actualization_policy" => "offset" }
+    )
+
+    assumption = build.assumptions.find { |a| a[:id] == living.id }
+
+    assert_equal({ type: "offset" }, assumption.dig(:params, :actualization_policy))
+    assert_equal({ type: "none" }, assumption.dig(:params, :inflation_policy))
+  end
+
+  test "a saved living_expense with a flat actualization_policy recomputes without raising" do
+    add_salary
+    add_living_expense(
+      params: { "frequency" => "monthly", "inflation_policy" => "flat", "actualization_policy" => "none" }
+    )
+
+    # Before the fix this raised an uncaught TypeError (not InvalidExpansionError),
+    # so the engine could not produce a result at all.
+    result = nil
+    assert_nothing_raised { result = Forecasts::Projection::Engine.call(build) }
+    assert_kind_of Forecasts::Projection::Result, result
+    assert_equal "4000.00", result.periods.first[:metrics][:spending]
+  end
+
   # --- Milestones ----------------------------------------------------------
 
   test "resolves milestones into deterministic dates for the engine" do

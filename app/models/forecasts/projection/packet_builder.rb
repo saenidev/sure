@@ -198,7 +198,21 @@ module Forecasts
           normalized = {}
           normalized[:growth_policy] = engine_policy(base[:growth_policy], base[:growth_rate]) if base.key?(:growth_policy)
           normalized[:inflation_policy] = engine_policy(base[:inflation_policy], base[:inflation_rate]) if base.key?(:inflation_policy)
+          normalized[:actualization_policy] = engine_type_policy(base[:actualization_policy]) if base.key?(:actualization_policy)
           normalized
+        end
+
+        # Maps a rate-less policy (e.g. living_expense's `actualization_policy`)
+        # into the engine's typed policy hash. The form persists it as a flat
+        # string (`none` / `replace` / `offset`) but the expander reads
+        # `actualization_policy[:type]`, so a bare string crashes with a
+        # TypeError. Translate it here at the seam, preserving the chosen type. A
+        # value already stored as a hash (legacy/test shape) is passed through.
+        def engine_type_policy(policy)
+          return policy if policy.is_a?(Hash)
+          return { type: "none" } if policy.blank?
+
+          { type: policy.to_s }
         end
 
         # Maps one persisted policy value into the engine's typed policy hash. A
