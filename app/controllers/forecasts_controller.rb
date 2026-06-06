@@ -1,4 +1,10 @@
 class ForecastsController < ApplicationController
+  # The V2 path shares the family-scoped load-or-create-plan + ensure-cache +
+  # first-viewport prop assembly with the rest of the Forecasts:: namespace
+  # (Forecasts::BaseController). #show stays on ApplicationController so the
+  # untouched V1 surface keeps rendering for everyone not on V2.
+  include Forecasts::WorkspaceLoading
+
   # /forecast is gated behind a feature CHECK, not a separate mounted route.
   #
   # Why a feature check (and not a `/forecast_v2` mount): the spec ("V1
@@ -53,15 +59,17 @@ class ForecastsController < ApplicationController
       render :show
     end
 
-    # V2 path. Slice C1 only owns the GATE: it proves the V2 branch is reached and
-    # renders a working, family-scoped Inertia surface (the proven Forecast/Spike
-    # page) so enabling the flag never leaves a broken screen. Slice C2 replaces
-    # this with the real load-or-create plan + cache + first-viewport read-model
-    # props on the Forecast/Workspace component. It must NOT touch V1
-    # Forecast::Workspace / engine / run-group state.
+    # V2 path (slice C2). Load-or-create the family's default plan, ensure a
+    # current projection cache (built through the recompute coordinator only on a
+    # cold load), and render the V2 Inertia workspace (Forecast/Workspace, built
+    # in C3) with first-viewport props assembled from the per-surface read models.
+    #
+    # All orchestration lives in the shared Forecasts::WorkspaceLoading seam so the
+    # controller stays skinny and never runs projection math inline. It must NOT
+    # touch V1 Forecast::Workspace / engine / run-group state.
     def render_forecast_v2
-      render inertia: "Forecast/Spike", layout: "forecast_inertia", props: {
-        plan: { id: "v2_gate", currency: Current.family.primary_currency_code }
-      }
+      render inertia: "Forecast/Workspace",
+             layout: "forecast_inertia",
+             props: forecast_v2_workspace_props
     end
 end

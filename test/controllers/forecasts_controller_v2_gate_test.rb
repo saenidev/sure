@@ -68,7 +68,7 @@ class ForecastsControllerV2GateTest < ActionDispatch::IntegrationTest
         get forecast_url
 
         assert_response :success
-        assert_inertia_component "Forecast/Spike"
+        assert_inertia_component "Forecast/Workspace"
         assert_select "div#app", { count: 1 }, "expected the Inertia mount on the V2 surface"
       end
     end
@@ -82,7 +82,7 @@ class ForecastsControllerV2GateTest < ActionDispatch::IntegrationTest
         get forecast_url
 
         assert_response :success
-        assert_inertia_component "Forecast/Spike"
+        assert_inertia_component "Forecast/Workspace"
       end
     end
   end
@@ -95,7 +95,7 @@ class ForecastsControllerV2GateTest < ActionDispatch::IntegrationTest
         get forecast_url
 
         assert_response :success
-        assert_inertia_component "Forecast/Spike"
+        assert_inertia_component "Forecast/Workspace"
       end
     end
   end
@@ -106,7 +106,7 @@ class ForecastsControllerV2GateTest < ActionDispatch::IntegrationTest
         get forecast_url
 
         assert_response :success
-        assert_equal @family.primary_currency_code, inertia.props.dig(:plan, :currency)
+        assert_equal @family.primary_currency_code, inertia.props.dig(:plan, :reporting_currency)
       end
     end
   end
