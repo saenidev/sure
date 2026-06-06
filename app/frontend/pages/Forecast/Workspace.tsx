@@ -141,6 +141,19 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 		[workspace],
 	);
 
+	// The single editor-open path shared by the assumption rail AND the
+	// selected-period inspector. Opening the typed editor drawer IN PLACE preserves
+	// the selected period + scenario stack (the editor owns none of that state), so
+	// neither affordance ever navigates away from /forecast. The inspector chip and
+	// the card edit button pass distinct invoker ids so focus returns to whichever
+	// control opened the drawer (spec "Editor Contracts").
+	const openAssumptionEditor = useCallback(
+		(assumptionId: string, invokerId: string): void => {
+			editor.open({ assumptionId, invokerId });
+		},
+		[editor],
+	);
+
 	// Serve the selected-period detail from the preloaded seed + local cache,
 	// fetching GET /forecast/periods/:period_key only on a settled cache miss
 	// (debounced). The workspace store reports SETTLED selections only, so chart
@@ -194,6 +207,12 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 							refresh={period.refresh}
 							regionKey={FORECAST_REGIONS.inspector}
 							cacheKey={cacheKeys.inspector}
+							onOpenAssumption={(assumptionId) =>
+								openAssumptionEditor(
+									assumptionId,
+									`forecast-inspector-assumption-${assumptionId}`,
+								)
+							}
 						/>
 					</div>
 
@@ -205,10 +224,10 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 						regionKey={FORECAST_REGIONS.assumptions}
 						cacheKey={cacheKeys.assumptions}
 						onEditCard={(cardId) =>
-							editor.open({
-								assumptionId: cardId,
-								invokerId: `forecast-assumption-edit-${cardId}`,
-							})
+							openAssumptionEditor(
+								cardId,
+								`forecast-assumption-edit-${cardId}`,
+							)
 						}
 					/>
 				</div>

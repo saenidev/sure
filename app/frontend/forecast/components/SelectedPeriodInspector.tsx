@@ -123,9 +123,11 @@ function IssueLine({
 function PeriodDetail({
 	payload,
 	regionKey,
+	onOpenAssumption,
 }: {
 	readonly payload: SelectedPeriodReadModel;
 	readonly regionKey: string;
+	readonly onOpenAssumption?: (assumptionId: string) => void;
 }): JSX.Element {
 	const metricEntries = metricsToStripEntries(payload.metrics);
 	return (
@@ -181,15 +183,18 @@ function PeriodDetail({
 					<ul className="flex flex-wrap gap-2">
 						{payload.active_assumption_ids.map((id) => (
 							<li key={id}>
-								<a
-									href={`/forecast/assumptions/${id}/edit`}
+								<button
+									type="button"
+									id={`forecast-inspector-assumption-${id}`}
 									data-testid={`forecast-assumption-link-${id}`}
-									className="inline-flex rounded-full border border-primary bg-surface px-3 py-1 text-xs font-medium text-primary hover:bg-container"
+									onClick={() => onOpenAssumption?.(id)}
+									disabled={onOpenAssumption === undefined}
+									className="inline-flex rounded-full border border-primary bg-surface px-3 py-1 text-xs font-medium text-primary hover:bg-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-60"
 								>
 									{ft("forecasts.inspector.assumption_link", {
 										id: id.slice(0, 8),
 									})}
-								</a>
+								</button>
 							</li>
 						))}
 					</ul>
@@ -227,6 +232,14 @@ export interface SelectedPeriodInspectorProps {
 	readonly regionKey?: string;
 	/** Stable region cache key (plan version + scenario stack) for patch targets. */
 	readonly cacheKey?: string;
+	/**
+	 * Opens the type-specific editor drawer for an active assumption IN PLACE
+	 * (spec "Editor Contracts": "must not navigate away from /forecast"). Wired to
+	 * the same `editor.open` handler the assumption cards use, so clicking an
+	 * assumption here never leaves the workspace or loses the selected period /
+	 * scenario stack. When omitted, the chips render disabled (no navigation).
+	 */
+	readonly onOpenAssumption?: (assumptionId: string) => void;
 }
 
 export default function SelectedPeriodInspector({
@@ -235,6 +248,7 @@ export default function SelectedPeriodInspector({
 	refresh,
 	regionKey = "forecast-selected-period",
 	cacheKey,
+	onOpenAssumption,
 }: SelectedPeriodInspectorProps): JSX.Element {
 	const isError = status === "error";
 	const isLoadingFirst = status === "loading" && payload === null;
@@ -274,7 +288,11 @@ export default function SelectedPeriodInspector({
 					{ft("forecasts.inspector.no_period")}
 				</p>
 			) : payload ? (
-				<PeriodDetail payload={payload} regionKey={regionKey} />
+				<PeriodDetail
+					payload={payload}
+					regionKey={regionKey}
+					onOpenAssumption={onOpenAssumption}
+				/>
 			) : null}
 		</section>
 	);
