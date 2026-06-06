@@ -177,6 +177,49 @@ class Forecasts::Assumptions::SalaryFormTest < ActiveSupport::TestCase
     assert_nil form.params_object.growth_rate
   end
 
+  # --- net_ratio (gross take-home) ------------------------------------------
+
+  test "a gross salary persists its net_ratio so the engine reduces take-home" do
+    form = build_form(input: valid_input("gross_or_net" => "gross", "net_ratio" => "0.7"))
+
+    assert form.valid?, -> { form.errors.inspect }
+    assert_equal BigDecimal("0.7"), form.params_object.net_ratio
+    # And it serializes as a decimal string the engine can rehydrate.
+    assert_equal "0.7", form.assumption_attributes[:params]["net_ratio"]
+  end
+
+  test "a net salary ignores net_ratio and omits it from persisted params" do
+    # net == gross for a net salary, so a stray net_ratio must not leak through
+    # and silently cut cash impact.
+    form = build_form(input: valid_input("gross_or_net" => "net", "net_ratio" => "0.7"))
+
+    assert form.valid?, -> { form.errors.inspect }
+    assert_nil form.params_object.net_ratio
+    assert_not form.assumption_attributes[:params].key?("net_ratio")
+  end
+
+  test "a gross salary without a net_ratio omits it (engine defaults net == gross)" do
+    form = build_form(input: valid_input("gross_or_net" => "gross"))
+
+    assert form.valid?, -> { form.errors.inspect }
+    assert_nil form.params_object.net_ratio
+    assert_not form.assumption_attributes[:params].key?("net_ratio")
+  end
+
+  test "non-numeric net_ratio emits not_a_number" do
+    form = build_form(input: valid_input("gross_or_net" => "gross", "net_ratio" => "abc"))
+
+    assert_not form.valid?
+    assert_includes form.error_codes_for(:net_ratio), "not_a_number"
+  end
+
+  test "non-positive net_ratio emits not_positive" do
+    form = build_form(input: valid_input("gross_or_net" => "gross", "net_ratio" => "0"))
+
+    assert_not form.valid?
+    assert_includes form.error_codes_for(:net_ratio), "not_positive"
+  end
+
   # --- invalid references ----------------------------------------------------
 
   test "milestone reference from another plan emits invalid_reference" do

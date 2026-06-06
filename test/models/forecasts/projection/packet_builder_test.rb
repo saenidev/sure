@@ -164,6 +164,34 @@ class Forecasts::Projection::PacketBuilderTest < ActiveSupport::TestCase
     assert_equal "net", params[:gross_or_net]
   end
 
+  # A gross salary's net_ratio must reach the expander so its cash impact is the
+  # take-home (net) amount, not the full gross. Before the fix the form/params/
+  # builder never threaded net_ratio, so the engine projected full gross as cash.
+  test "threads a gross salary's net_ratio into the engine params and reduces cash income" do
+    salary = add_salary(
+      amount: 10_000,
+      params: {
+        "person_key" => "primary", "frequency" => "monthly",
+        "gross_or_net" => "gross", "net_ratio" => "0.70"
+      }
+    )
+
+    assumption = build.assumptions.find { |a| a[:id] == salary.id }
+    assert_equal "0.7", assumption.dig(:params, :net_ratio)
+
+    # End to end: the engine projects take-home (7000), not the full gross.
+    result = Forecasts::Projection::Engine.call(build)
+    assert_equal "7000.00", result.periods.first[:metrics][:income]
+  end
+
+  test "a net salary carries no net_ratio so the engine projects the full amount" do
+    salary = add_salary
+
+    params = build.assumptions.find { |a| a[:id] == salary.id }[:params]
+
+    assert_not params.key?(:net_ratio)
+  end
+
   # LivingExpenseForm persists actualization_policy as a flat STRING
   # ("none"/"replace"/"offset"), but the living_expense expander reads it as a
   # typed hash (`actualization_policy[:type]`). The builder is the seam that

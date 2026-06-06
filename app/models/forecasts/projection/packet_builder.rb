@@ -240,7 +240,22 @@ module Forecasts
           params[:amount] = decimal_string(assumption.amount) unless assumption.amount.nil?
           params[:currency] = assumption.currency.presence || plan.reporting_currency
           params[:frequency] = frequency_for(assumption)
+          net_ratio = net_ratio_for(assumption)
+          params[:net_ratio] = net_ratio unless net_ratio.nil?
           params
+        end
+
+        # A salary's optional gross→take-home fraction. The form persists it in
+        # the typed params only for gross salaries; thread it through (normalized
+        # to a decimal string) so the salary expander reduces the gross salary's
+        # cash impact (spec salary row, "Assumption Params Contracts"). Absent for
+        # net/derived salaries, leaving the engine's net == gross default intact.
+        def net_ratio_for(assumption)
+          stored = (assumption.params || {})
+          raw = stored["net_ratio"] || stored[:net_ratio]
+          return nil if raw.nil? || raw == ""
+
+          decimal_string(raw)
         end
 
         def frequency_for(assumption)

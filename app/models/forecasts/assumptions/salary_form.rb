@@ -25,13 +25,14 @@ module Forecasts
       RATE_BASED_GROWTH_POLICIES = %w[fixed_rate].freeze
 
       attr_reader :name, :amount, :currency, :person_key, :gross_or_net,
-                  :frequency, :growth_policy, :growth_rate, :cash_account_id,
-                  :starts_on, :ends_on, :starts_at_milestone_id,
+                  :frequency, :growth_policy, :growth_rate, :net_ratio,
+                  :cash_account_id, :starts_on, :ends_on, :starts_at_milestone_id,
                   :ends_at_milestone_id
 
       validate :validate_required_fields
       validate :validate_amount
       validate :validate_growth_rate
+      validate :validate_net_ratio
       validate :validate_enums
       validate :validate_currency_field
       validate :validate_dates
@@ -49,6 +50,7 @@ module Forecasts
           frequency: frequency,
           growth_policy: growth_policy,
           growth_rate: rate_based_growth? ? growth_rate_decimal : nil,
+          net_ratio: persisted_net_ratio,
           cash_account_id: cash_account_id,
           start_anchor: anchor_for(date: starts_on, milestone_id: starts_at_milestone_id),
           end_anchor: anchor_for(date: ends_on, milestone_id: ends_at_milestone_id)
@@ -82,6 +84,7 @@ module Forecasts
           @frequency = string_value(:frequency)
           @growth_policy = string_value(:growth_policy)
           @growth_rate = decimal_value(:growth_rate)
+          @net_ratio = decimal_value(:net_ratio)
           @cash_account_id = string_value(:cash_account_id)
           @starts_on = date_value(:starts_on)
           @ends_on = date_value(:ends_on)
@@ -127,6 +130,21 @@ module Forecasts
           end
         end
 
+        # net_ratio is the optional gross→take-home fraction. It is only
+        # meaningful for a gross salary; a missing value is allowed (the engine
+        # defaults it to 1.0 so net == gross). When supplied it must be a
+        # positive number (a fraction of gross pay that lands as cash).
+        def validate_net_ratio
+          if net_ratio == :invalid
+            add_error(:net_ratio, "not_a_number")
+            return
+          end
+
+          return if net_ratio.nil?
+
+          add_error(:net_ratio, "not_positive") if net_ratio <= 0
+        end
+
         def validate_enums
           add_error(:gross_or_net, "inclusion") if gross_or_net.present? && GROSS_OR_NET.exclude?(gross_or_net)
           add_error(:frequency, "inclusion") if frequency.present? && FREQUENCIES.exclude?(frequency)
@@ -166,6 +184,15 @@ module Forecasts
 
         def growth_rate_decimal
           growth_rate.is_a?(BigDecimal) ? growth_rate : nil
+        end
+
+        # Only a gross salary carries a net_ratio (the engine ignores it for a
+        # net salary, where net == gross). Returning nil for net salaries keeps
+        # their persisted params byte-identical to before this field existed.
+        def persisted_net_ratio
+          return nil unless gross_or_net == "gross"
+
+          net_ratio.is_a?(BigDecimal) ? net_ratio : nil
         end
 
         def starts_on_date
