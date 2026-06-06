@@ -51,10 +51,12 @@ class User < ApplicationRecord
   validates :password, length: { minimum: 8 }, allow_nil: true
   normalizes :email, with: ->(email) { email.strip.downcase }
   normalizes :unconfirmed_email, with: ->(email) { email&.strip&.downcase }
+  normalizes :locale, with: ->(locale) { locale.presence }
 
   normalizes :first_name, :last_name, with: ->(value) { value.strip.presence }
 
   enum :role, { guest: "guest", member: "member", admin: "admin", super_admin: "super_admin" }, validate: true
+  attribute :ui_layout, :string
   enum :ui_layout, { dashboard: "dashboard", intro: "intro" }, validate: true, prefix: true
 
   # Users who have opted into preview features (see #preview_features_enabled?).
@@ -160,8 +162,16 @@ class User < ApplicationRecord
     when "external"
       Assistant::External.available_for?(self)
     else
-      ENV["OPENAI_ACCESS_TOKEN"].present? || Setting.openai_access_token.present?
+      openai_configured? || anthropic_configured?
     end
+  end
+
+  def openai_configured?
+    Provider::Openai.configured?
+  end
+
+  def anthropic_configured?
+    Provider::Anthropic.configured?
   end
 
   def ai_enabled?

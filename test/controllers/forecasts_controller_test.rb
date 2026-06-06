@@ -107,7 +107,7 @@ class ForecastsControllerTest < ActionDispatch::IntegrationTest
     get forecast_url(tab: "scenarios")
 
     assert_response :success
-    assert_select "button[data-id=inputs].bg-white"
+    assert_select "button[data-id=inputs].tab-item-active"
     assert_select "turbo-frame#forecast_tab_inputs"
   end
 

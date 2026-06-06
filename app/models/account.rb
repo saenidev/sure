@@ -2,7 +2,10 @@ class Account < ApplicationRecord
   include AASM, Syncable, Monetizable, Chartable, Linkable, Enrichable, Anchorable, Reconcileable, TaxTreatable
 
   before_validation :assign_default_owner, if: -> { owner_id.blank? }
+
   before_destroy :capture_account_statement_ids_to_move
+  before_destroy :cleanup_transfers
+
   after_destroy_commit :move_account_statements_to_inbox
 
   validates :name, :balance, :currency, presence: true
@@ -28,6 +31,9 @@ class Account < ApplicationRecord
   has_many :debt_payment_allocations, dependent: :destroy
   has_many :debt_reconciliation_matches, dependent: :destroy
   has_many :debt_posting_runs, dependent: :destroy
+  has_many :goal_accounts, dependent: :destroy
+  has_many :goals, through: :goal_accounts
+  has_many :goal_pledges, dependent: :destroy
   # Inverse for recurring transfers where this account is the destination.
   # Account#recurring_transactions only matches account_id; without this
   # association, destroying the destination account would hit the FK
@@ -41,7 +47,11 @@ class Account < ApplicationRecord
 
   enum :classification, { asset: "asset", liability: "liability" }, validate: { allow_nil: true }
 
-  scope :visible, -> { where(status: [ "draft", "active" ]) }
+  VISIBLE_STATUSES = %w[draft active].freeze
+  HISTORICAL_STATUSES = (VISIBLE_STATUSES + %w[disabled]).freeze
+
+  scope :visible, -> { where(status: VISIBLE_STATUSES) }
+  scope :historical, -> { where(status: HISTORICAL_STATUSES) }
   scope :assets, -> { where(classification: "asset") }
   scope :liabilities, -> { where(classification: "liability") }
   scope :alphabetically, -> { order(:name) }
@@ -266,7 +276,9 @@ class Account < ApplicationRecord
     end
 
     def create_from_binance_account(binance_account)
-      create_from_crypto_exchange_account(binance_account, family: binance_account.binance_item.family)
+      account = create_from_crypto_exchange_account(binance_account, family: binance_account.binance_item.family)
+      account.set_opening_anchor_balance(balance: 0)
+      account
     end
 
     def create_from_ibkr_account(ibkr_account)
@@ -289,6 +301,7 @@ class Account < ApplicationRecord
         }
       }
 
+      # Capture the created account in a variable
       create_and_sync(attributes, skip_initial_sync: true)
     end
 
@@ -356,9 +369,24 @@ class Account < ApplicationRecord
   def manual_crypto_exchange?
     accountable_type == "Crypto" &&
       accountable&.subtype == "exchange" &&
-      account_providers.none? &&
+      manual?
+  end
+
+  # True when the account has no live sync provider attached. Mirrors the
+  # `Account.manual` scope so per-instance checks don't drift from the query.
+  def manual?
+    account_providers.none? &&
       plaid_account_id.blank? &&
       simplefin_account_id.blank?
+  end
+
+  # Default GoalPledge kind for this account. Manual accounts get
+  # `manual_save` (resolves on the next valuation), live-synced accounts
+  # get `transfer` (resolves when the synced deposit posts). Keeps the
+  # decision in one place so the new-pledge controller / preview helper
+  # can't disagree on what they're going to save.
+  def default_pledge_kind
+    manual? ? "manual_save" : "transfer"
   end
 
   def logo_url
@@ -580,5 +608,13 @@ class Account < ApplicationRecord
         match_confidence: nil,
         updated_at: Time.current
       )
+    end
+
+    def cleanup_transfers
+      transaction_ids = entries.where(entryable_type: "Transaction").pluck(:entryable_id)
+
+      transfers = Transfer.where(inflow_transaction_id: transaction_ids).or(Transfer.where(outflow_transaction_id: transaction_ids))
+
+      transfers.find_each(&:destroy!)
     end
 end

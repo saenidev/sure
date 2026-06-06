@@ -9,6 +9,7 @@ pin_all_from "app/javascript/controllers", under: "controllers", preload: [ "aut
 pin_all_from "app/components", under: "controllers", to: "", preload: [ "authenticated" ]
 pin_all_from "app/javascript/services", under: "services", to: "services", preload: [ "authenticated" ]
 pin_all_from "app/javascript/utils", under: "utils", to: "utils", preload: [ "authenticated" ]
+pin "utils/sankey_zoom", to: "utils/sankey_zoom.mjs", preload: [ "authenticated" ]
 pin "@github/hotkey", to: "@github--hotkey.js", preload: [ "authenticated" ] # @3.1.1
 pin "@simonwep/pickr", to: "@simonwep--pickr.js", preload: [ "authenticated" ] # @1.9.1
 

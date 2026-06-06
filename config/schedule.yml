@@ -66,3 +66,9 @@ forecast_market_close:
   class: "ForecastMarketCloseSchedulerJob"
   queue: "scheduled"
   description: "Fans out market-close forecast triggers per eligible family; generates only when movement is material"
+
+sweep_expired_goal_pledges:
+  cron: "*/15 * * * *" # every 15 minutes
+  class: "SweepExpiredGoalPledgesJob"
+  queue: "scheduled"
+  description: "Marks goal pledges that passed their 7-day window as expired"
