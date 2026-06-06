@@ -1,5 +1,5 @@
 {
-  "_comment": "Golden fixture for the baseline_salary_living_expenses scenario from the Forecast V2 spec 'Golden Fixture Catalog'. Basic plan correctness: a single net monthly salary, a single monthly living-expense, and the resulting monthly cash and net worth over a 36-month horizon. `input` is the exact packet the golden test feeds to Forecasts::Projection::Engine.call; `expected` records the engine output that must stay stable. REVIEW EXPECTED VALUES INTENTIONALLY when engine semantics change. Do NOT refresh this file as a blind snapshot — a diff here means the projection contract moved and someone must confirm it on purpose.",
+  "_comment": "Golden fixture for the baseline_salary_living_expenses scenario from the Forecast V2 spec 'Golden Fixture Catalog'. Basic plan correctness: a single net monthly salary, a single monthly living-expense, and the resulting monthly cash and net worth over the plan horizon. The horizon 2026-01-01..2029-01-01 is a 36-month span but is INCLUSIVE of the month containing the horizon end (spec 'Period Boundaries': a flow dated on a period boundary belongs to the period containing it), so the engine simulates 37 monthly periods (2026-01..2029-01) and emits 37 salary + 37 living-expense traces. `input` is the exact packet the golden test feeds to Forecasts::Projection::Engine.call; `expected` records the engine output that must stay stable. REVIEW EXPECTED VALUES INTENTIONALLY when engine semantics change. Do NOT refresh this file as a blind snapshot — a diff here means the projection contract moved and someone must confirm it on purpose.",
   "input": {
     "schema_version": 1,
     "engine_version": "forecast_v2.1",
@@ -84,8 +84,8 @@
     "scenario_stack_hash": "fbe0ad360b78314aec4483f5d61e1f6cac0dfaa07e1f0da7ffc5a973246806eb",
     "plan_version": 7,
     "status": "clean",
-    "period_count": 36,
-    "trace_count": 72,
+    "period_count": 37,
+    "trace_count": 74,
     "issue_codes": [],
     "first_period": {
       "key": "2026-01",
@@ -100,15 +100,15 @@
       }
     },
     "last_period": {
-      "key": "2028-12",
+      "key": "2029-01",
       "metrics": {
-        "net_worth": "82000.00",
-        "liquid_cash": "82000.00",
+        "net_worth": "84000.00",
+        "liquid_cash": "84000.00",
         "income": "6000.00",
         "spending": "4000.00",
         "debt_balance": "0.00",
         "portfolio_value": "0.00",
-        "runway_days": 635
+        "runway_days": 650
       }
     },
     "representative_traces": [

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module Forecasts
   module Projection
     # Pure value object for one structured engine/source finding. No
@@ -12,7 +14,7 @@ module Forecasts
       # Severities from the spec "Issue Code Catalog" / severity meanings.
       SEVERITIES = %w[blocking error warning info].freeze
 
-      attr_reader :code, :severity, :source, :period,
+      attr_reader :id, :code, :severity, :source, :period,
         :affected_entity_type, :affected_entity_id, :display_name,
         :message_key, :impact, :actions, :debug_context
 
@@ -30,6 +32,13 @@ module Forecasts
         @impact = attrs[:impact]
         @actions = Array(attrs[:actions]).map(&:to_s).freeze
         @debug_context = (attrs[:debug_context] || {}).freeze
+        # A STABLE, opaque id derived from the issue's identifying facets
+        # (code + period + affected entity), mirroring how Trace ids are derived
+        # from their identifying facets. Period rows reference issues by this id,
+        # so it must be stable across runs and independent of the issue's
+        # position in any array (synthetic positional "issue-N" indexes broke
+        # because the engine prepends expansion issues, shifting every offset).
+        @id = attrs[:id] || derive_id
 
         validate!
         freeze
@@ -37,6 +46,7 @@ module Forecasts
 
       def to_h
         {
+          id: id,
           code: code,
           severity: severity,
           source: source,
@@ -52,6 +62,20 @@ module Forecasts
       end
 
       private
+        # Stable issue key: code, period, and affected entity, hashed to a short,
+        # opaque token (same shape as Trace ids). Determinism comes from the
+        # identifying facets, so two engine runs over the same packet produce the
+        # same id and period `issue_ids` join to real issues.
+        def derive_id
+          parts = [
+            code,
+            period,
+            affected_entity_type,
+            affected_entity_id
+          ]
+          "issue-#{Digest::SHA256.hexdigest(parts.join('|'))[0, 16]}"
+        end
+
         def validate!
           missing = []
           missing << "code" if blank?(code)

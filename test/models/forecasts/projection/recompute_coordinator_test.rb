@@ -10,7 +10,9 @@ require "test_helper"
 #
 # Critical behaviors (spec "Recompute coordinator", "Recompute Job Contract",
 # "Versioning rules"):
-#   - writes exactly one fresh current cache + 36 period rows + trace rows
+#   - writes exactly one fresh current cache + 37 period rows + trace rows
+#     (37 = 36-month span inclusive of the horizon-end month; spec "Period
+#     Boundaries")
 #   - coalesces duplicate keys (idempotent by key)
 #   - marks superseded older caches for the same plan + scenario stack
 #   - a STALE result (older plan_version than the plan's current_plan_version)
@@ -67,11 +69,11 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
 
   # --- Fresh write ---------------------------------------------------------
 
-  test "writes one fresh cache + 36 period rows + trace rows" do
+  test "writes one fresh cache + 37 period rows + trace rows" do
     cache = nil
 
     assert_difference -> { Forecasts::ProjectionCache.count } => 1,
-                      -> { Forecasts::ProjectionPeriod.count } => 36 do
+                      -> { Forecasts::ProjectionPeriod.count } => 37 do
       cache = recompute
     end
 
@@ -86,7 +88,7 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
     assert cache.started_at.present?
     assert cache.finished_at.present?
 
-    assert_equal 36, cache.forecast_projection_periods.count
+    assert_equal 37, cache.forecast_projection_periods.count
     assert cache.forecast_projection_traces.count.positive?,
       "expected trace rows for the salary + living_expense flows"
   end
@@ -106,7 +108,7 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
     cache = recompute
     periods = cache.forecast_projection_periods.ordered.to_a
 
-    assert_equal 36, periods.length
+    assert_equal 37, periods.length
     first = periods.first
 
     assert_equal @plan.id, first.forecast_plan_id

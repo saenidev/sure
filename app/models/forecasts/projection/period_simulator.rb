@@ -30,6 +30,14 @@ module Forecasts
       # an explicit end. The V2 MVP simulates a 36-month monthly horizon.
       DEFAULT_PERIOD_COUNT = 36
 
+      # Sentinel for UNBOUNDED runway: positive liquid cash with zero burn never
+      # runs out, so reporting "0 days" (insolvency) would be wrong. We surface a
+      # large, documented constant instead of infinity so the value stays a plain
+      # integer the UI/series can carry and compare. ~273 years of days — far
+      # beyond any real horizon, unambiguously "effectively infinite" without
+      # introducing Float::INFINITY (which would not be a clean integer/decimal).
+      UNBOUNDED_RUNWAY_DAYS = 99_999
+
       # The order ledger effect categories are applied within a period. Lower
       # applies first. Mirrors spec "Flow Ordering" (steps 2-9); opening (1) and
       # closing (10) are handled by the surrounding balance carry, not by a flow.
@@ -113,13 +121,22 @@ module Forecasts
           end
         end
 
+        # Number of monthly windows to simulate. The horizon is INCLUSIVE of the
+        # month containing `horizon_end`: a flow dated on the horizon-end boundary
+        # belongs to the period containing that date (spec "Period Boundaries"),
+        # and Expanders::Base#occurrence_window clamps occurrences inclusively to
+        # `horizon_end`. Counting the span months (end - start) would drop that
+        # final month, so the boundary flow would be generated but never
+        # simulated/traced. We add one so the horizon-end month is covered and the
+        # two stay in agreement (simulated income trace count == expected
+        # occurrences across the FULL horizon).
         def month_count
           start_on = horizon_start
           end_on = horizon_end
           return @period_count if end_on.nil?
 
-          months = ((end_on.year - start_on.year) * 12) + (end_on.month - start_on.month)
-          [ months, 1 ].max
+          span = ((end_on.year - start_on.year) * 12) + (end_on.month - start_on.month)
+          [ span + 1, 1 ].max
         end
 
         def horizon_start
@@ -176,7 +193,7 @@ module Forecasts
             metrics: metrics.to_h,
             proration: proration_for(window, period_flows),
             trace_ids: [],
-            issue_ids: issue_ids_for(window[:key])
+            issue_ids: []
           }
         end
 
@@ -214,15 +231,20 @@ module Forecasts
         # --- Runway ---------------------------------------------------------
 
         # Days of liquidity: liquid cash divided by an average daily spend for the
-        # period. With no spending the runway is unbounded for this slice, so we
-        # report 0 (no burn) rather than infinity. Integer days, decimal math.
+        # period. Integer days, decimal math. Two boundary cases:
+        #   - No burn (spending <= 0) with positive cash is UNBOUNDED runway, not
+        #     insolvency, so we return UNBOUNDED_RUNWAY_DAYS rather than 0. (A
+        #     literal 0 would falsely signal "out of money" for any no-spend
+        #     month.)
+        #   - Non-positive cash means there is nothing to run on, so runway is 0
+        #     regardless of burn.
         def runway_days(liquid_cash, spending, window)
-          return 0 if spending <= 0
           return 0 if liquid_cash <= 0
+          return UNBOUNDED_RUNWAY_DAYS if spending <= 0
 
           days = BigDecimal(window[:ends_on].day.to_s)
           daily_spend = spending / days
-          return 0 if daily_spend <= 0
+          return UNBOUNDED_RUNWAY_DAYS if daily_spend <= 0
 
           (liquid_cash / daily_spend).floor
         end
@@ -327,12 +349,6 @@ module Forecasts
 
         def missing_fx_impact
           "Income and net worth are shown without this converted value for the affected period."
-        end
-
-        def issue_ids_for(period_key)
-          @issues.each_with_index.select { |issue, _| issue.period == period_key }.map do |_, index|
-            "issue-#{index}"
-          end
         end
 
         # --- Opening balances ------------------------------------------------

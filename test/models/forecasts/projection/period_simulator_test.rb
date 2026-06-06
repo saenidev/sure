@@ -84,13 +84,17 @@ class Forecasts::Projection::PeriodSimulatorTest < ActiveSupport::TestCase
 
   # --- Horizon shape -------------------------------------------------------
 
-  test "produces 36 monthly period rows" do
+  # A horizon of 2026-01-01..2029-01-01 spans 36 calendar months but is
+  # INCLUSIVE of the month containing the horizon end (2029-01): a flow dated on
+  # the horizon-end boundary belongs to the period containing it (spec "Period
+  # Boundaries"), so the simulator covers 37 monthly windows, ending 2029-01.
+  test "produces a monthly period row for every month through the horizon-end month" do
     result = simulate(ledger: salary_and_expense_ledger)
 
-    assert_equal 36, result.periods.length
+    assert_equal 37, result.periods.length
     assert(result.periods.all? { |p| p[:granularity] == "month" })
     assert_equal "2026-01", result.periods.first[:key]
-    assert_equal "2028-12", result.periods.last[:key]
+    assert_equal "2029-01", result.periods.last[:key]
   end
 
   test "each period carries calendar boundaries" do
@@ -142,6 +146,33 @@ class Forecasts::Projection::PeriodSimulatorTest < ActiveSupport::TestCase
     runway = result.periods.first[:metrics][:runway_days]
     assert_kind_of Integer, runway
     assert runway.positive?
+  end
+
+  # Zero burn with positive cash is UNBOUNDED runway, not insolvency. Reporting
+  # 0 days would falsely signal "out of money" for any no-spend month, so the
+  # simulator returns the documented UNBOUNDED_RUNWAY_DAYS sentinel instead.
+  test "runway_days reports the unbounded sentinel when there is cash but no spending" do
+    income_only = Forecasts::Projection::FlowLedger.new([
+      salary_flow(date: HORIZON_START)
+    ])
+
+    result = simulate(ledger: income_only)
+    runway = result.periods.first[:metrics][:runway_days]
+
+    assert_equal Forecasts::Projection::PeriodSimulator::UNBOUNDED_RUNWAY_DAYS, runway
+    refute_equal 0, runway, "no-burn months must not falsely report 0-day runway"
+  end
+
+  # With no cash there is nothing to run on, so runway is 0 regardless of burn —
+  # the sentinel only applies when cash is positive.
+  test "runway_days is 0 when there is no liquid cash, even with no spending" do
+    drained = source_snapshot(
+      opening_balances: { liquid_cash: "0.00", debt_balance: "0.00", portfolio_value: "0.00" }
+    )
+
+    result = simulate(ledger: Forecasts::Projection::FlowLedger.new([]), snapshot: drained)
+
+    assert_equal 0, result.periods.first[:metrics][:runway_days]
   end
 
   test "debt and portfolio metrics default to the opening balances" do

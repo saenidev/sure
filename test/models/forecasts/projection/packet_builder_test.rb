@@ -79,7 +79,10 @@ class Forecasts::Projection::PacketBuilderTest < ActiveSupport::TestCase
     result = Forecasts::Projection::Engine.call(build)
 
     assert_kind_of Forecasts::Projection::Result, result
-    assert_equal 36, result.periods.length
+    # Horizon 2026-06-01..2029-06-01 is a 36-month span but inclusive of the
+    # horizon-end month, so 37 monthly periods are simulated (spec "Period
+    # Boundaries").
+    assert_equal 37, result.periods.length
     assert_equal "6000.00", result.periods.first[:metrics][:income]
     assert_equal "4000.00", result.periods.first[:metrics][:spending]
   end

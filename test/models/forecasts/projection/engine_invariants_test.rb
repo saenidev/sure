@@ -18,7 +18,7 @@ require "test_helper"
 # semantics guarantee.
 class Forecasts::Projection::EngineInvariantsTest < ActiveSupport::TestCase
   HORIZON_START = "2026-01-01"
-  HORIZON_END = "2029-01-01" # 36 months
+  HORIZON_END = "2029-01-01" # 36-month span, inclusive of the horizon-end month (37 periods)
 
   def salary_assumption(overrides = {})
     {
@@ -173,11 +173,96 @@ class Forecasts::Projection::EngineInvariantsTest < ActiveSupport::TestCase
     assert_equal jan_trace_ids, jan[:trace_ids].sort
   end
 
+  # --- Horizon-end month is covered (no off-by-one) ------------------------
+
+  # The simulator's monthly window count and Expanders::Base#occurrence_window
+  # must agree: a monthly assumption with no end anchor emits one occurrence per
+  # month from the start through the month containing the horizon end, and EVERY
+  # one of those occurrences must be simulated and traced. Before the fix the
+  # simulator walked (end - start) = 36 windows while expansion clamped
+  # inclusively to the horizon end, so the final (horizon-end month) flow was
+  # generated but never simulated/traced (36 income traces instead of 37). This
+  # invariant locks the agreement across the FULL horizon.
+  test "every expanded income occurrence across the full horizon is simulated and traced" do
+    result = call(assumptions: [ salary_assumption ])
+
+    # Monthly from 2026-01 through 2029-01 inclusive = 37 occurrences.
+    start_on = Date.parse(HORIZON_START)
+    end_on = Date.parse(HORIZON_END)
+    expected_occurrences =
+      ((end_on.year - start_on.year) * 12) + (end_on.month - start_on.month) + 1
+
+    income_traces = result.traces.select { |trace| trace.category == "income" }
+    assert_equal expected_occurrences, income_traces.length,
+      "every monthly income occurrence through the horizon-end month must be simulated and traced"
+
+    # The horizon-end month itself is a real, simulated period that carries the
+    # boundary occurrence (the bug dropped it entirely).
+    assert_equal "2029-01", result.periods.last[:key]
+    last_period_income_traces = income_traces.select { |t| t.period_key == "2029-01" }
+    assert_equal 1, last_period_income_traces.length,
+      "the horizon-end month must carry its income occurrence"
+
+    # No orphaned trace: every income trace references a simulated period row.
+    period_keys = result.periods.map { |p| p[:key] }.to_set
+    assert(income_traces.all? { |t| period_keys.include?(t.period_key) },
+      "no income trace may reference an unsimulated period")
+  end
+
   test "removing income lowers net worth growth, preserving the cash invariant" do
     with_income = call.periods.last[:metrics][:net_worth]
     without_income = call(assumptions: [ living_expense_assumption ]).periods.last[:metrics][:net_worth]
 
     assert_operator BigDecimal(with_income), :>, BigDecimal(without_income)
+  end
+
+  # --- Period issue_ids reference real combined issues ---------------------
+
+  # Period rows carry `issue_ids`, and the engine joins them to the FINAL
+  # combined issue list by stable PlanIssue id (mirroring attach_trace_ids).
+  # combined_issues PREPENDS expansion issues, so a positional "issue-N" index
+  # into the simulator's issue array would point at the wrong offset / nothing.
+  # This locks: every period issue_id resolves to a real issue, and the period
+  # that has a source issue references it.
+  test "period issue_ids resolve to real combined issues even when expansion issues are prepended" do
+    foreign_salary = salary_assumption(
+      id: "assumption-salary-eur",
+      params: salary_assumption[:params].merge(currency: "EUR")
+    )
+    # A bad-anchor assumption forces a PREPENDED blocking expansion issue, which
+    # would shift any positional issue index off by one.
+    bad_anchor = living_expense_assumption(
+      id: "assumption-bad-anchor",
+      params: living_expense_assumption[:params].merge(start_anchor: { type: "bogus" })
+    )
+
+    result = call(assumptions: [ foreign_salary, bad_anchor ])
+
+    all_issue_ids = result.issues.map(&:id)
+    assert_equal all_issue_ids.uniq, all_issue_ids, "combined issues must have unique ids"
+
+    # Every issue_id referenced by any period must point at a real issue.
+    referenced = result.periods.flat_map { |period| period[:issue_ids] }
+    refute_empty referenced, "expected at least one period to reference a source issue"
+    referenced.each do |id|
+      assert_includes all_issue_ids, id,
+        "period issue_id #{id.inspect} must reference a real combined issue"
+    end
+
+    # The 2026-01 period (where the EUR salary cannot convert) references the
+    # missing_fx_rate issue specifically.
+    fx_issue = result.issues.find { |issue| issue.code == "missing_fx_rate" }
+    refute_nil fx_issue
+    jan = result.periods.find { |period| period[:key] == "2026-01" }
+    assert_includes jan[:issue_ids], fx_issue.id
+
+    # The prepended blocking expansion issue has no period, so it is not joined
+    # to any period row.
+    blocking = result.issues.find { |issue| issue.severity == "blocking" }
+    refute_nil blocking
+    assert_nil blocking.period
+    refute(result.periods.any? { |period| period[:issue_ids].include?(blocking.id) },
+      "a period issue must have a period; null-period issues are not attached")
   end
 
   # --- Missing FX -> plan issue, not exception -----------------------------

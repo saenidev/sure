@@ -11,7 +11,7 @@ require "test_helper"
 # "Pipeline".
 class Forecasts::Projection::EngineTest < ActiveSupport::TestCase
   HORIZON_START = "2026-01-01"
-  HORIZON_END = "2029-01-01" # 36 months
+  HORIZON_END = "2029-01-01" # 36-month span, inclusive of the horizon-end month (37 periods)
 
   def salary_assumption(overrides = {})
     {
@@ -144,12 +144,14 @@ class Forecasts::Projection::EngineTest < ActiveSupport::TestCase
 
   # --- Periods + simulation ------------------------------------------------
 
-  test "produces a 36-month period series" do
+  test "produces a monthly period series through the horizon-end month" do
     result = call
 
-    assert_equal 36, result.periods.length
+    # 2026-01..2029-01 is a 36-month span but inclusive of the horizon-end
+    # month, so 37 monthly periods are simulated (spec "Period Boundaries").
+    assert_equal 37, result.periods.length
     assert_equal "2026-01", result.periods.first[:key]
-    assert_equal "2028-12", result.periods.last[:key]
+    assert_equal "2029-01", result.periods.last[:key]
   end
 
   test "period metrics reflect salary income and living expense spending" do
@@ -172,8 +174,9 @@ class Forecasts::Projection::EngineTest < ActiveSupport::TestCase
   test "builds one trace per flow with required trace fields" do
     result = call
 
-    # 36 salary + 36 living expense occurrences.
-    assert_equal 72, result.traces.length
+    # 37 salary + 37 living expense occurrences (monthly across the inclusive
+    # 2026-01..2029-01 horizon).
+    assert_equal 74, result.traces.length
 
     trace = result.traces.first
     assert_kind_of Forecasts::Projection::Trace, trace
@@ -249,7 +252,7 @@ class Forecasts::Projection::EngineTest < ActiveSupport::TestCase
     result = call(assumptions: [])
 
     assert_equal "clean", result.status
-    assert_equal 36, result.periods.length
+    assert_equal 37, result.periods.length
     assert_empty result.traces
   end
 
@@ -302,7 +305,7 @@ class Forecasts::Projection::EngineTest < ActiveSupport::TestCase
     result = Forecasts::Projection::Engine.call(packet_attributes)
 
     assert_kind_of Forecasts::Projection::Result, result
-    assert_equal 36, result.periods.length
+    assert_equal 37, result.periods.length
   end
 
   test "an invalid packet hash raises the packet validation error" do

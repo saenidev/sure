@@ -54,9 +54,10 @@ module Forecasts
         ledger = build_ledger
         outcome = simulate(ledger)
         traces = build_traces(ledger, outcome.periods)
-        periods = attach_trace_ids(outcome.periods, traces)
-        goals = evaluate_goals(outcome.periods)
         issues = combined_issues(outcome)
+        periods = attach_trace_ids(outcome.periods, traces)
+        periods = attach_issue_ids(periods, issues)
+        goals = evaluate_goals(periods)
         status = derive_status(outcome, issues)
 
         Forecasts::Projection::Result.new(
@@ -245,6 +246,26 @@ module Forecasts
 
           periods.map do |period|
             period.merge(trace_ids: ids_by_period.fetch(period[:key], []))
+          end
+        end
+
+        # Replaces each period row's `issue_ids` with the ids of the COMBINED
+        # issues whose period matches, mirroring attach_trace_ids. The simulator
+        # leaves these empty because the final issue list (expansion issues +
+        # simulator issues) is only assembled here; joining against the combined
+        # list — by stable PlanIssue id, not array offset — keeps period
+        # `issue_ids` pointing at real issues even though combined_issues prepends
+        # expansion issues. Issues with no period (e.g. plan-validation issues)
+        # are not attached to any period row.
+        def attach_issue_ids(periods, issues)
+          ids_by_period = issues.each_with_object(Hash.new { |h, k| h[k] = [] }) do |issue, memo|
+            next if issue.period.nil?
+
+            memo[issue.period] << issue.id
+          end
+
+          periods.map do |period|
+            period.merge(issue_ids: ids_by_period.fetch(period[:key], []))
           end
         end
 
