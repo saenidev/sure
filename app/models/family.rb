@@ -62,6 +62,11 @@ class Family < ApplicationRecord
   has_many :forecast_runs
   has_many :forecast_reviews
 
+  # Forecast V2 (pluralized Forecasts:: namespace; coexists with V1 above)
+  has_many :forecast_plans, class_name: "Forecasts::Plan", dependent: :destroy
+  has_many :forecast_assumptions, class_name: "Forecasts::Assumption", dependent: :destroy
+  has_many :forecast_source_snapshots, class_name: "Forecasts::SourceSnapshot", dependent: :destroy
+
   validates :locale, inclusion: { in: I18n.available_locales.map(&:to_s) }
   validates :date_format, inclusion: { in: DATE_FORMATS.map(&:last) }
   validates :month_start_day, inclusion: { in: 1..28 }
