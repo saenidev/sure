@@ -66,11 +66,48 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
         shell: bash
 
       - name: Lint/Format js code
         run: npm run lint
+
+      - name: Typecheck TypeScript
+        run: npm run typecheck
+
+  assets_precompile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      RAILS_ENV: production
+      SECRET_KEY_BASE_DUMMY: "1"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install JS dependencies
+        run: npm ci
+        shell: bash
+
+      # Drives the Vite production build through Rails. Emits compiled Vite assets
+      # under public/vite, proving the Forecast V2 Inertia/React frontend builds in
+      # the production asset pipeline (not just the dev/test auto-build path).
+      - name: Precompile assets (runs the Vite production build)
+        run: bin/rails assets:precompile
 
   test_unit:
     runs-on: ubuntu-latest
@@ -111,6 +148,18 @@ jobs:
         with:
           ruby-version: .ruby-version
           bundler-cache: true
+
+      # Vite assets are built on demand in the test env (config/vite.json
+      # autoBuild), so the Node toolchain and node_modules must be present.
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install JS dependencies
+        run: npm ci
+        shell: bash
 
       - name: DB setup and smoke test
         run: |
@@ -161,12 +210,30 @@ jobs:
           ruby-version: .ruby-version
           bundler-cache: true
 
+      # System tests render the Forecast V2 Inertia/React page, which Vite builds
+      # on demand in the test env (config/vite.json autoBuild). Node + node_modules
+      # must be present or the spike page (and its no-network scrub test) cannot
+      # hydrate.
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install JS dependencies
+        run: npm ci
+        shell: bash
+
       - name: DB setup and smoke test
         run: |
           bin/rails db:create
           bin/rails db:schema:load
           bin/rails db:seed
 
+      # Runs the full system suite, which includes the Forecast V2 Inertia spike
+      # smoke (test/system/forecast_v2_inertia_spike_test.rb): authenticated mount,
+      # typed Rails props rendered, and local chart scrub with zero network
+      # requests during pointer movement.
       - name: System tests
         run: DISABLE_PARALLELIZATION=true bin/rails test:system
 
