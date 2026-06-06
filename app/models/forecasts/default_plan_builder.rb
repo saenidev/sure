@@ -19,7 +19,10 @@ module Forecasts
   #
   # The build is idempotent (spec "Bootstrap Rules"): reopening `/forecast` must
   # not duplicate plans or assumptions. Plans are keyed by "the family has no
-  # active V2 plan"; derived assumptions are keyed by `(family, source record)`.
+  # active V2 plan". Most derived assumptions are keyed by `(family, source
+  # record)`; the living_expense derivation can switch sources between reopens
+  # (budget -> recurring transaction), so it is additionally keyed by derivation
+  # purpose `(family, plan, kind, source_derived)` to avoid double-counting.
   #
   # Family-scoping is anchored to the family passed in by the caller (which is
   # always `Current.family` at the call site). The builder never reads another
@@ -119,7 +122,19 @@ module Forecasts
       # "Source-To-Assumption Mapping" / derivation precedence). When no current
       # budget exists, fall back to the largest recurring outflow as a spending
       # source. Either way the assumption is medium-confidence and needs review.
+      #
+      # Idempotency here is by derivation purpose, not just the specific source
+      # record: the source can legitimately *change* between reopens (e.g. the
+      # first load derives from a budget, a later load runs after the budget
+      # window or after the budget is deleted and would derive from a recurring
+      # transaction). Keying only on `(source_record_type, source_record_id)`
+      # would let the new source spawn a SECOND living_expense and double-count
+      # spending. The spec ("Bootstrap Rules") requires reopening to never create
+      # duplicate assumptions, so we short-circuit when the plan already carries a
+      # source-derived living_expense from any source.
       def derive_living_expense(plan)
+        return if existing_source_derived?(plan, "living_expense")
+
         budget = current_budget
         if budget
           upsert_derived_assumption(
@@ -213,6 +228,16 @@ module Forecasts
       def existing_for_source(source_record)
         family.forecast_assumptions
           .where(source_record_type: source_record.class.name, source_record_id: source_record.id)
+          .exists?
+      end
+
+      # Keyed by (family, plan, kind, derivation purpose): true when the plan
+      # already carries a source-derived assumption of this kind from *any*
+      # source. Lets a derivation that can switch sources between reopens (e.g.
+      # budget -> recurring transaction) stay idempotent so it never double-counts.
+      def existing_source_derived?(plan, kind)
+        plan.forecast_assumptions
+          .where(family: family, kind: kind, origin: :source_derived)
           .exists?
       end
 

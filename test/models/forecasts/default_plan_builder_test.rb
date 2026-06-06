@@ -149,6 +149,41 @@ class Forecasts::DefaultPlanBuilderTest < ActiveSupport::TestCase
     assert_equal BigDecimal("2000"), living.amount
   end
 
+  test "reopening after the living_expense source changes does not double-count" do
+    # First load derives living_expense from the current budget.
+    first = build
+    living = first.forecast_assumptions.find_by(kind: "living_expense")
+    assert_equal "Budget", living.source_record_type
+    assert_equal @budget.id, living.source_record_id
+
+    # The budget goes away and a recurring outflow becomes the only spending
+    # source — a *different* source record than the original budget. Reopening
+    # must NOT create a second living_expense (which would double-count spending);
+    # the plan already carries a source-derived living_expense.
+    @budget.destroy!
+    @family.recurring_transactions.create!(
+      account: accounts(:depository),
+      name: "Rent",
+      amount: 2_000,
+      currency: "USD",
+      expected_day_of_month: 1,
+      last_occurrence_date: @as_of - 1.month,
+      next_expected_date: @as_of + 1.month,
+      status: "active",
+      occurrence_count: 6
+    )
+
+    assert_no_difference -> { Forecasts::Assumption.where(family: @family, kind: "living_expense").count } do
+      build
+    end
+
+    livings = Forecasts::Assumption.where(family: @family, kind: "living_expense")
+    assert_equal 1, livings.count
+    # The original budget-derived assumption is preserved untouched.
+    assert_equal "Budget", livings.sole.source_record_type
+    assert_equal @budget.id, livings.sole.source_record_id
+  end
+
   test "is family-scoped: does not read or write another family's data" do
     other_family = families(:empty)
 
