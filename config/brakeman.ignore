@@ -3,11 +3,11 @@
     {
       "warning_type": "Mass Assignment",
       "warning_code": 105,
-      "fingerprint": "c211b1985dc38cdb6369c5c5de9937ebd5f475adfdc1166bbcc1c2ab71a58078",
+      "fingerprint": "795821301c6853f075d36490150d29bba5bde409dfa04eca55abc6c8a04cd17e",
       "check_name": "PermitAttributes",
       "message": "Potentially dangerous key allowed for mass assignment",
       "file": "app/controllers/forecast/events_controller.rb",
-      "line": 99,
+      "line": 159,
       "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
       "code": null,
       "render_path": null,
@@ -22,6 +22,29 @@
         915
       ],
       "note": "Family-scoped (Forecast::BaseController scopes through Current.family). The permitted foreign keys (account_id, destination_account_id, category_id, forecast_scenario_id) are validated by ForecastEvent#associations_belong_to_family, which rejects any association whose family_id differs from the event's, so a cross-family id cannot be mass-assigned."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "9b6a1905f3ba5d9ef47c8dd129c71275ce3b7c302a18086b6cbe4fcae5787ffc",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/forecast/canvas_drafts_controller.rb",
+      "line": 62,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": null,
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Forecast::CanvasDraftsController",
+        "method": "event_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "Family-scoped: the controller builds events via @family.forecast_events.new and resolves account_id/destination_account_id through @family.accounts.find before assignment; ForecastEvent#associations_belong_to_family also rejects cross-family associations, so a cross-family id cannot be mass-assigned."
     },
     {
       "warning_type": "Redirect",
