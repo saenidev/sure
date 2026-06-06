@@ -77,6 +77,84 @@ const COPY: Readonly<Record<string, string>> = {
 	"forecasts.metrics.debt_balance": "Debt",
 	"forecasts.metrics.portfolio_value": "Portfolio",
 	"forecasts.metrics.runway_days": "Cash runway",
+
+	// Assumption rail (AssumptionGroup / AssumptionCard, slice C6).
+	"forecasts.assumptions.title": "Assumptions",
+	"forecasts.assumptions.empty":
+		"No assumptions yet. Add income or spending to shape the projection.",
+	"forecasts.assumptions.group_count.one": "%{count} assumption",
+	"forecasts.assumptions.group_count.other": "%{count} assumptions",
+	"forecasts.assumptions.active_count": "%{count} active in this period",
+	"forecasts.assumptions.collapse": "Collapse %{group}",
+	"forecasts.assumptions.expand": "Expand %{group}",
+	"forecasts.assumptions.active_in_period": "Active this period",
+	"forecasts.assumptions.edit": "Edit",
+	"forecasts.assumptions.more_actions": "More actions",
+	"forecasts.assumptions.action_edit": "Edit",
+	"forecasts.assumptions.action_duplicate": "Duplicate",
+	"forecasts.assumptions.action_move_to_scenario": "Move to scenario layer",
+	"forecasts.assumptions.action_disable": "Disable",
+	"forecasts.assumptions.action_archive": "Archive",
+	"forecasts.assumptions.action_delete": "Delete",
+
+	// Localized assumption-group headers (AssumptionGroup title_key).
+	"forecasts.assumption_groups.salary": "Income",
+	"forecasts.assumption_groups.living_expense": "Spending",
+
+	// Status / provenance badges on an assumption card.
+	"forecasts.badges.review_suggested": "Review suggested",
+	"forecasts.badges.derived": "From your data",
+	"forecasts.badges.low_confidence": "Low confidence",
+	"forecasts.badges.disabled": "Disabled",
+	"forecasts.badges.scenario": "Scenario",
+	"forecasts.badges.issue": "Needs attention",
+
+	// Financial-planning card copy contract (AssumptionCard).
+	"forecasts.cards.amount_per.month": "%{amount}/mo",
+	"forecasts.cards.amount_per.year": "%{amount}/yr",
+	"forecasts.cards.amount_per.week": "%{amount}/wk",
+	"forecasts.cards.amount_per.quarter": "%{amount}/qtr",
+	"forecasts.cards.amount_per.one_time": "%{amount} once",
+	"forecasts.cards.amount_unknown": "Amount not set",
+	"forecasts.cards.time_from_until": "from %{start} until %{end}",
+	"forecasts.cards.time_from": "from %{start}",
+	"forecasts.cards.time_until": "until %{end}",
+	"forecasts.cards.time_ongoing": "ongoing",
+	"forecasts.cards.growth_annual": "%{rate} annual growth",
+	"forecasts.cards.inflation_linked": "inflation-linked",
+	"forecasts.cards.source_derived": "derived from your data",
+	"forecasts.cards.no_secondary": "No additional detail",
+
+	// Recoverable plan/source issue panel (IssuePanel, slice C6).
+	"forecasts.issue_panel.title": "Issues",
+	"forecasts.issue_panel.none": "No issues. Your projection is complete.",
+	"forecasts.issue_panel.limited_one":
+		"%{count} issue is limiting this projection.",
+	"forecasts.issue_panel.limited_other":
+		"%{count} issues are limiting this projection.",
+	"forecasts.issue_panel.impact_label": "Impact",
+	"forecasts.issue_panel.affects_label": "Affects",
+	"forecasts.issue_panel.period_label": "Period",
+	"forecasts.issue_panel.severity_blocking": "Blocking",
+	"forecasts.issue_panel.severity_error": "Error",
+	"forecasts.issue_panel.severity_warning": "Warning",
+	"forecasts.issue_panel.severity_info": "Info",
+	"forecasts.issue_panel.action_fetch_rates": "Fetch rates",
+	"forecasts.issue_panel.action_enter_fallback_rate": "Enter fallback rate",
+	"forecasts.issue_panel.action_exclude_account": "Exclude account",
+	"forecasts.issue_panel.action_change_reporting_currency":
+		"Change reporting currency",
+	"forecasts.issue_panel.action_fetch_prices": "Fetch prices",
+	"forecasts.issue_panel.action_enter_fallback_price": "Enter fallback price",
+	"forecasts.issue_panel.action_exclude_holding": "Exclude holding",
+	"forecasts.issue_panel.action_refresh_source_data": "Refresh source data",
+	"forecasts.issue_panel.action_add_assumption": "Add assumption",
+	"forecasts.issue_panel.action_add_debt_terms": "Add debt terms",
+	"forecasts.issue_panel.action_fix_fields": "Fix fields",
+	"forecasts.issue_panel.action_edit_assumption": "Edit assumption",
+	"forecasts.issue_panel.action_edit_account_rules": "Edit account rules",
+	"forecasts.issue_panel.action_reorder_layers": "Reorder layers",
+	"forecasts.issue_panel.action_view": "View details",
 };
 
 /**

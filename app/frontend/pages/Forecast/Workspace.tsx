@@ -13,14 +13,15 @@
 // requests on first paint — every region renders from preloaded props.
 //
 // Slices C4–C6 fill the chart, selected-period inspector, assumption groups, and
-// issue panel. Slices C4–C5 have landed (chart + inspector); the remaining
-// regions render as stable, keyed placeholders so the shell frame, region cache
-// keys, and scoped-patch targets exist before C6 lands. Tokens only — no raw
-// palette.
+// issue panel. With C6 landed, every first-viewport region renders its real
+// component from preloaded props — no per-region fetch on first paint. Tokens
+// only — no raw palette.
 
 import { Head } from "@inertiajs/react";
 import type { JSX } from "react";
+import AssumptionGroup from "../../forecast/components/AssumptionGroup";
 import ForecastPlanShell from "../../forecast/components/ForecastPlanShell";
+import IssuePanel from "../../forecast/components/IssuePanel";
 import MetricStrip, {
 	metricsToStripEntries,
 } from "../../forecast/components/MetricStrip";
@@ -32,34 +33,47 @@ import {
 } from "../../forecast/hooks/useForecastWorkspace";
 import { usePeriodPayloadCache } from "../../forecast/hooks/usePeriodPayloadCache";
 import { ft } from "../../forecast/i18n";
-import type { ForecastWorkspaceProps } from "../../forecast/types/readModels";
+import type {
+	AssumptionGroupReadModel,
+	ForecastWorkspaceProps,
+} from "../../forecast/types/readModels";
 
-// A placeholder for a region a later slice fills (assumptions, issues). It still
-// carries the stable region key + data-testid so the shell's scoped-patch targets
-// and region cache keys exist now.
-function RegionPlaceholder({
+// The assumption rail: the stable region the shell scopes for patches, holding
+// one AssumptionGroup per kind (or a single empty state). Each group reads its
+// preloaded card payloads from `AssumptionGroupReadModel` — no per-card fetch.
+function AssumptionRail({
+	assumptionGroups,
 	regionKey,
 	cacheKey,
-	label,
 }: {
+	readonly assumptionGroups: AssumptionGroupReadModel;
 	readonly regionKey: string;
 	readonly cacheKey: string;
-	readonly label: string;
 }): JSX.Element {
+	const { groups } = assumptionGroups;
 	return (
 		<section
 			data-testid={regionKey}
 			data-region={regionKey}
 			data-cache-key={cacheKey}
-			className="rounded-xl border border-primary border-dashed bg-container p-6 text-sm text-subdued"
+			aria-label={ft("forecasts.assumptions.title")}
+			className="flex flex-col gap-3"
 		>
-			{label}
+			{groups.length === 0 ? (
+				<p className="rounded-xl border border-primary bg-container p-6 text-sm text-subdued">
+					{ft("forecasts.assumptions.empty")}
+				</p>
+			) : (
+				groups.map((group) => (
+					<AssumptionGroup key={group.kind} group={group} />
+				))
+			)}
 		</section>
 	);
 }
 
 export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
-	const { plan, band, selectedPeriod, freshness } = props;
+	const { plan, band, selectedPeriod } = props;
 	const workspace = useForecastWorkspace(props);
 	const cacheKeys = workspace.regionCacheKeys;
 
@@ -119,19 +133,23 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 						/>
 					</div>
 
-					{/* Assumption groups — filled by slice C6. */}
-					<RegionPlaceholder
+					{/* Assumption rail (C6): kind-grouped, scannable assumption cards
+					    that read like financial-planning language. Every card payload is
+					    preloaded by AssumptionGroupReadModel — no per-card fetch. */}
+					<AssumptionRail
+						assumptionGroups={props.assumptionGroups}
 						regionKey={FORECAST_REGIONS.assumptions}
 						cacheKey={cacheKeys.assumptions}
-						label={`${props.assumptionGroups.groups.length} groups`}
 					/>
 				</div>
 
-				{/* Issue panel — filled by slice C6. Freshness drives the recompute state. */}
-				<RegionPlaceholder
+				{/* Issue panel (C6): recoverable plan/source issues with impact +
+				    remediation actions, privacy-safe (no raw UUIDs). Freshness drives
+				    the workspace recompute state separately. */}
+				<IssuePanel
+					issues={props.issues}
 					regionKey={FORECAST_REGIONS.issues}
 					cacheKey={cacheKeys.issues}
-					label={`${props.issues.length} issues · ${freshness.state}`}
 				/>
 			</ForecastPlanShell>
 		</>
