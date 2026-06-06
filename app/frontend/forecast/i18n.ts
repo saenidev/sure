@@ -25,6 +25,15 @@ const COPY: Readonly<Record<string, string>> = {
 	"forecasts.workspace.not_computed": "not computed yet",
 	"forecasts.workspace.no_period_selected": "Select a period",
 
+	// Projection chart (ProjectionChart / useProjectionChart, slice C4).
+	"forecasts.chart.label": "Projection chart",
+	"forecasts.chart.empty": "No projection series to chart yet.",
+	"forecasts.chart.scrubber_label": "Projection scrubber",
+	"forecasts.chart.selected_period": "Selected period %{period}, value %{value}.",
+	"forecasts.chart.summary_caption": "Projected %{metric} for each period.",
+	"forecasts.chart.summary_period": "Period",
+	"forecasts.chart.summary_value": "Value",
+
 	// Freshness lifecycle states (drive the FreshnessIndicator).
 	"forecasts.freshness.fresh": "Up to date",
 	"forecasts.freshness.stale": "Out of date",

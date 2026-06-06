@@ -23,6 +23,7 @@ import ForecastPlanShell from "../../forecast/components/ForecastPlanShell";
 import MetricStrip, {
 	metricsToStripEntries,
 } from "../../forecast/components/MetricStrip";
+import ProjectionChart from "../../forecast/components/ProjectionChart";
 import {
 	FORECAST_REGIONS,
 	useForecastWorkspace,
@@ -74,16 +75,15 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 					regionKey={FORECAST_REGIONS.metricStrip}
 				/>
 
-				{/* Chart band (D3) — filled by slice C4. The compact preloaded period
-				    index + selected marker are already in `band` for local scrubbing. */}
-				<RegionPlaceholder
+				{/* Chart band (D3): the compact preloaded period index + selected marker
+				    live in `band`; pointer/keyboard scrubbing is local-only and reports
+				    settled selections to the shared store with zero network. */}
+				<ProjectionChart
+					band={band}
+					selectedPeriodKey={workspace.selectedPeriodKey}
+					onSelectPeriod={workspace.selectPeriod}
 					regionKey={FORECAST_REGIONS.chart}
 					cacheKey={cacheKeys.chart}
-					label={
-						band.period_keys.length > 0
-							? `${band.period_keys.length} periods · ${band.selected_metric}`
-							: ft("forecasts.workspace.no_metrics")
-					}
 				/>
 
 				<div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

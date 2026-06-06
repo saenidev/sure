@@ -14,6 +14,15 @@ en:
       as_of: "as of %{date}"
       not_computed: "not computed yet"
       no_period_selected: "Select a period"
+    # Projection chart (ProjectionChart / useProjectionChart, slice C4).
+    chart:
+      label: "Projection chart"
+      empty: "No projection series to chart yet."
+      scrubber_label: "Projection scrubber"
+      selected_period: "Selected period %{period}, value %{value}."
+      summary_caption: "Projected %{metric} for each period."
+      summary_period: "Period"
+      summary_value: "Value"
     # Projection freshness lifecycle labels (FreshnessIndicator).
     freshness:
       fresh: "Up to date"
