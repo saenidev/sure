@@ -136,6 +136,14 @@ module Forecasts
       # projection math. Synchronous for small plans (the proof slice); otherwise
       # mark the projection regions recomputing and hand the work to the keyed
       # background job (spec "Recompute Job Contract").
+      #
+      # The edit + version bump already committed in `commit_and_recompute`, so a
+      # raise from the snapshot builder or the engine here must NOT surface as a
+      # 500 over a committed plan version. Mirror the background job's contract
+      # (spec "Live Recompute Model"; "Sensitive Data In Logs"): swallow the
+      # failure, log IDs/counts/e.class ONLY (no message, no financial detail),
+      # and fall back to the deferred path so the saved card returns with a
+      # visible recomputing freshness state instead of a raw exception.
       def recompute(plan)
         snapshot = Forecasts::SourceSnapshotBuilder.new(plan: plan, as_of: forecast_as_of).build
         coordinator = Forecasts::Projection::RecomputeCoordinator.new(plan: plan, source_snapshot: snapshot)
@@ -146,6 +154,15 @@ module Forecasts
         else
           defer_recompute(plan)
         end
+      rescue StandardError => e
+        # IDs/counts/e.class only — never a message or financial detail (spec
+        # "Sensitive Data In Logs"). The committed edit stands; hand the projection
+        # work to the keyed background job, which carries the same swallow contract.
+        Rails.logger.error(
+          "Forecasts::AssumptionsController#recompute failed " \
+          "plan=#{plan.id} family=#{plan.family_id} version=#{plan.current_plan_version}: #{e.class}"
+        )
+        defer_recompute(plan)
       end
 
       # Over-budget path: mark a recomputing cache for the new version (so the

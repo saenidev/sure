@@ -303,6 +303,43 @@ class Forecasts::Assumptions::SalaryFormTest < ActiveSupport::TestCase
     assert form.valid?, -> { form.errors.inspect }
   end
 
+  # F7: a missing expected_lock_version on an EDIT is itself a conflict, not a
+  # skipped check. Without the token the server cannot prove the edit was made
+  # against the row the client observed, so a client that simply omits it must
+  # not be able to silently overwrite a concurrent edit.
+  test "missing expected_lock_version on an existing assumption emits stale_version" do
+    assumption = @plan.forecast_assumptions.create!(
+      family: @family, kind: "salary", name: "Existing",
+      amount: 100, currency: "USD", status: :active
+    )
+
+    form = build_form(input: valid_input("expected_lock_version" => nil), assumption: assumption)
+
+    assert_not form.valid?
+    assert_includes form.error_codes_for(:base), "stale_version"
+  end
+
+  # A non-integer token is no better than a missing one: it asserts nothing the
+  # server can match, so it is treated as a conflict rather than ignored.
+  test "non-integer expected_lock_version on an existing assumption emits stale_version" do
+    assumption = @plan.forecast_assumptions.create!(
+      family: @family, kind: "salary", name: "Existing",
+      amount: 100, currency: "USD", status: :active
+    )
+
+    form = build_form(input: valid_input("expected_lock_version" => "not-a-number"), assumption: assumption)
+
+    assert_not form.valid?
+    assert_includes form.error_codes_for(:base), "stale_version"
+  end
+
+  # A create (no assumption) must NOT require the token — there is no row to lock.
+  test "create path does not require an expected_lock_version" do
+    form = build_form(input: valid_input("expected_lock_version" => nil), assumption: nil)
+
+    assert form.valid?, -> { form.errors.inspect }
+  end
+
   # --- localized error-code mapping -----------------------------------------
 
   test "every emitted error code maps to localized copy" do

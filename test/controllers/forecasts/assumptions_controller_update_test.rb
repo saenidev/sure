@@ -275,6 +275,94 @@ class Forecasts::AssumptionsControllerUpdateTest < ActionDispatch::IntegrationTe
     end
   end
 
+  # F7: omitting the optimistic lock token on an EDIT is itself a conflict. A
+  # client that simply leaves out expected_lock_version must NOT be able to
+  # overwrite the row just because the coarser plan version has not advanced.
+  test "omitting expected_lock_version on an edit returns a conflict and does not overwrite" do
+    with_v2_enabled do
+      plan, salary = warm_plan_and_salary
+      before_version = plan.current_plan_version
+
+      params = valid_salary_params(salary, plan).merge(amount: "13579")
+      params.delete(:expected_lock_version)
+
+      patch forecast_assumption_url(salary), params: params
+
+      assert_response :conflict
+      refute_equal BigDecimal("13579"), salary.reload.amount,
+        "a save with no lock token must not overwrite the assumption"
+      assert_equal before_version, plan.reload.current_plan_version,
+        "a missing-token conflict must not increment the plan version"
+    end
+  end
+
+  # --- Recompute hardening: a sync recompute raise must not 500 --------------
+
+  # F7: the edit + version bump already committed in the transaction, so a raise
+  # from the snapshot builder or the engine during the synchronous recompute must
+  # NOT surface as a 500 over a committed plan version. The save returns the
+  # committed card with a recomputing freshness state (the deferred fallback), and
+  # the failure logs IDs/e.class only — never a message or financial detail.
+  test "a synchronous recompute raise returns the committed card with recomputing freshness, not a 500" do
+    with_v2_enabled do
+      plan, salary = warm_plan_and_salary
+      before_version = plan.current_plan_version
+
+      # The engine raises mid-recompute (after the edit + version bump committed).
+      Forecasts::Projection::RecomputeCoordinator
+        .any_instance.stubs(:recompute_synchronously?).returns(true)
+      Forecasts::Projection::RecomputeCoordinator
+        .any_instance.stubs(:recompute).raises(StandardError, "boom 1234.56 secret balance")
+
+      patch forecast_assumption_url(salary),
+        params: valid_salary_params(salary, plan).merge(amount: "8200")
+
+      # No 500: the committed save still returns a typed changed-region payload.
+      assert_response :success
+      assert_equal "application/json", response.media_type
+
+      # The edit committed: the card reflects committed server truth and the plan
+      # version advanced.
+      assert_equal BigDecimal("8200"), salary.reload.amount
+      assert_equal before_version + 1, plan.reload.current_plan_version
+
+      # The projection region shows a visible recomputing state (the deferred
+      # fallback), not a fresh result.
+      assert_equal "recomputing", response.parsed_body.dig("freshness", "state")
+    end
+  end
+
+  test "a synchronous recompute raise logs IDs and e.class only, no message or financial detail" do
+    with_v2_enabled do
+      plan, salary = warm_plan_and_salary
+
+      Forecasts::Projection::RecomputeCoordinator
+        .any_instance.stubs(:recompute_synchronously?).returns(true)
+      Forecasts::Projection::RecomputeCoordinator
+        .any_instance.stubs(:recompute).raises(StandardError, "boom 1234.56 secret balance")
+
+      logged = +""
+      original_logger = Rails.logger
+      Rails.logger = ActiveSupport::Logger.new(StringIO.new.tap { |io| logged = io })
+
+      begin
+        patch forecast_assumption_url(salary),
+          params: valid_salary_params(salary, plan).merge(amount: "8200")
+        assert_response :success
+      ensure
+        Rails.logger = original_logger
+      end
+
+      output = logged.string
+      assert_match(/recompute failed/i, output)
+      assert_match(/StandardError/, output)
+      # The raised message (which carries fabricated financial detail) must not leak.
+      refute_match(/boom/, output, "the exception message must not be logged")
+      refute_match(/1234\.56/, output, "financial detail must not be logged")
+      refute_match(/secret balance/, output, "financial detail must not be logged")
+    end
+  end
+
   # --- Validation: invalid input --------------------------------------------
 
   test "an invalid edit returns a 422 with typed field errors and does not save" do

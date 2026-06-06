@@ -145,16 +145,19 @@ module Forecasts
         end
 
         # Optimistic-lock conflict detection (spec "Form object rules":
-        # "stale lock/version conflicts"). When editing an existing assumption,
-        # the submitted `expected_lock_version` must match the persisted value.
+        # "stale lock/version conflicts"; spec `forecast_assumptions`: "Assumption
+        # edits must submit the assumption `lock_version`"). When editing an
+        # existing assumption, the submitted `expected_lock_version` is REQUIRED
+        # and must match the persisted value. A missing or non-integer token on an
+        # edit is itself a conflict: without it the server cannot prove the edit
+        # was made against the row the client observed, so accepting the write
+        # would let a client that simply omits the token silently overwrite a
+        # concurrent edit whenever the coarser plan version has not advanced.
         def validate_lock_version
-          return if assumption.nil?
+          return if assumption.nil? # create: no row to lock against
 
           expected = integer_value(:expected_lock_version)
-          return if expected.nil? # caller did not assert a version
-          return if expected == :invalid # ignore; not a version assertion
-
-          if expected != assumption.lock_version
+          if expected.nil? || expected == :invalid || expected != assumption.lock_version
             add_error(:base, "stale_version")
           end
         end
