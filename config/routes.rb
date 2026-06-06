@@ -303,6 +303,14 @@ Rails.application.routes.draw do
   # engine / run groups. Delete with the ForecastV2SpikeController + Inertia page.
   get "forecast_v2_spike", to: "forecast_v2_spike#show"
 
+  # Forecast V2 workspace on its OWN always-on route (NO feature flag). This is the
+  # real V2 Inertia workspace (load-or-create the family's default plan + projection
+  # cache, then render first-viewport read-model props) at a dedicated URL, so it
+  # can be opened directly without flipping FORECAST_V2_ENABLED. Authenticated and
+  # Current.family-scoped via ForecastsController#v2. The canonical /forecast still
+  # serves V1 by default (behind Forecasts::V2Flag) until cutover.
+  get "forecast_v2", to: "forecasts#v2", as: :forecast_v2
+
   # Lazy-loaded body for a single workspace tab (ForecastsController#tab). Only
   # the active tab renders eagerly on the show page; the rest fetch here when
   # first shown. Defined standalone (not nested in `resource :forecast`) so the

@@ -27,6 +27,16 @@ class ForecastsController < ApplicationController
     end
   end
 
+  # Forecast V2 on its OWN dedicated, always-on route (GET /forecast_v2). Renders
+  # the real V2 Inertia workspace directly with NO feature flag — open the URL and
+  # you get V2. (/forecast keeps the V1 default behind Forecasts::V2Flag for
+  # everyone else and for deep links.) Same ApplicationController authentication +
+  # Current.family scoping as #show, and it reuses the shared WorkspaceLoading seam,
+  # so it never runs projection math inline or touches V1 run-group state.
+  def v2
+    render_forecast_v2
+  end
+
   # Lazy-loaded panel body for a single workspace tab. The show page renders only
   # the active tab eagerly; every other tab is a lazy Turbo Frame that fetches its
   # body here when first shown, so one /forecast load no longer renders all nine
