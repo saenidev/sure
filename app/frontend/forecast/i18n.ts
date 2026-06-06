@@ -155,6 +155,65 @@ const COPY: Readonly<Record<string, string>> = {
 	"forecasts.issue_panel.action_edit_account_rules": "Edit account rules",
 	"forecasts.issue_panel.action_reorder_layers": "Reorder layers",
 	"forecasts.issue_panel.action_view": "View details",
+
+	// Typed assumption editor drawer (AssumptionEditor / useAssumptionEditor,
+	// slice C7). The only interactive editor in the MVP is the salary form.
+	"forecasts.editor.title": "Edit assumption",
+	"forecasts.editor.close": "Close editor",
+	"forecasts.editor.cancel": "Cancel",
+	"forecasts.editor.save": "Save",
+	"forecasts.editor.saving": "Saving…",
+	"forecasts.editor.dirty_warning":
+		"You have unsaved changes. Discard them?",
+	"forecasts.editor.discard": "Discard changes",
+	"forecasts.editor.keep_editing": "Keep editing",
+	"forecasts.editor.loading": "Loading editor…",
+	"forecasts.editor.load_error": "Couldn't open this editor. Try again.",
+	"forecasts.editor.summary_error":
+		"Some fields need attention before this can be saved.",
+	"forecasts.editor.scenario_baseline": "Editing the baseline plan",
+	"forecasts.editor.scenario_layer": "Editing scenario layer %{layer}",
+	// Collapsed editor section headers + summary lines.
+	"forecasts.editor.time_range": "Timing",
+	"forecasts.editor.time_range_summary": "%{start} → %{end}",
+	"forecasts.editor.time_range_ongoing": "Ongoing",
+	"forecasts.editor.change_over_time": "Change over time",
+	"forecasts.editor.change_over_time_growth": "%{rate} annual growth",
+	"forecasts.editor.change_over_time_inflation": "%{rate} inflation",
+	"forecasts.editor.change_over_time_flat": "No change over time",
+	"forecasts.editor.source": "Source",
+	"forecasts.editor.source_summary": "%{origin} · %{review}",
+	// Salary form fields.
+	"forecasts.editor.salary.heading": "Salary",
+	"forecasts.editor.salary.name_label": "Name",
+	"forecasts.editor.salary.amount_label": "Amount",
+	"forecasts.editor.salary.currency_label": "Currency",
+	"forecasts.editor.salary.person_key_label": "Earner",
+	"forecasts.editor.salary.gross_or_net_label": "Gross or net",
+	"forecasts.editor.salary.gross_or_net_gross": "Gross",
+	"forecasts.editor.salary.gross_or_net_net": "Net",
+	"forecasts.editor.salary.frequency_label": "Frequency",
+	"forecasts.editor.salary.frequency_annual": "Annual",
+	"forecasts.editor.salary.frequency_monthly": "Monthly",
+	"forecasts.editor.salary.frequency_biweekly": "Biweekly",
+	"forecasts.editor.salary.frequency_weekly": "Weekly",
+	"forecasts.editor.salary.growth_policy_label": "Growth",
+	"forecasts.editor.salary.growth_policy_flat": "No growth",
+	"forecasts.editor.salary.growth_policy_fixed_rate": "Fixed annual rate",
+	"forecasts.editor.salary.growth_rate_label": "Growth rate",
+	"forecasts.editor.salary.starts_on_label": "Starts on",
+	"forecasts.editor.salary.ends_on_label": "Ends on",
+	// Stable field error codes -> messages (mirror the SalaryForm error codes).
+	"forecasts.editor.errors.blank": "This field is required.",
+	"forecasts.editor.errors.not_a_number": "Enter a valid number.",
+	"forecasts.editor.errors.not_positive": "Enter a value greater than zero.",
+	"forecasts.editor.errors.inclusion": "Choose a valid option.",
+	"forecasts.editor.errors.invalid_date": "Enter a valid date.",
+	"forecasts.editor.errors.end_before_start":
+		"The end date can't be before the start date.",
+	"forecasts.editor.errors.not_found": "That reference could not be found.",
+	"forecasts.editor.errors.stale":
+		"This assumption changed since you opened it. Reload and try again.",
 };
 
 /**

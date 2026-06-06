@@ -342,6 +342,85 @@ export interface IssueReadModel {
 	readonly actions: readonly string[];
 }
 
+// ---------------------------------------------------------------------------
+// Forecast V2 editor-prefill read model (slice C7).
+//
+// These interfaces type the payload `Forecasts::AssumptionsController#edit`
+// (GET /forecast/assumptions/:id/edit) serializes from
+// `Forecasts::EditorPrefillReadModel#to_h` (B13). They answer exactly ONE UI
+// question — "what does one typed editor need to open?" — and carry the form key,
+// current values, collapsed-section summaries, and validation metadata
+// (`lock_version` for stale-edit detection), and nothing else (no other
+// assumptions, chart series, or projection-result bodies).
+//
+// The keys are the read model's snake_case keys exactly as Inertia/JSON
+// serializes them (no camelization), matching every other Forecast V2 payload.
+// ---------------------------------------------------------------------------
+
+/**
+ * The current editable values for the typed form's primary fields. Money stays a
+ * decimal string; `params` rides through as the typed form's raw param inputs the
+ * salary form reads (`person_key`, `gross_or_net`, `frequency`, `growth_policy`,
+ * `growth_rate`, …). Extra fields are allowed (an index signature) because the
+ * exact param set is form-specific.
+ */
+export interface EditorPrimaryValues {
+	readonly name: string | null;
+	readonly amount: MoneyString | null;
+	readonly currency: string | null;
+	readonly starts_on: string | null;
+	readonly ends_on: string | null;
+	readonly params: Readonly<Record<string, unknown>>;
+}
+
+/** One collapsed-section summary: an i18n `key` plus raw, client-formatted fields. */
+export interface EditorSectionSummary {
+	readonly key: string;
+	readonly [field: string]: string | number | null | undefined;
+}
+
+/** The collapsed-section summaries shown before the user expands each section. */
+export interface EditorSectionSummaries {
+	readonly time_range: EditorSectionSummary;
+	readonly change_over_time: EditorSectionSummary;
+	readonly source: EditorSectionSummary;
+}
+
+/**
+ * Validation metadata: the optimistic `lock_version` for stale-edit detection
+ * plus the editor schema version. No projection bodies, no other records.
+ */
+export interface EditorValidationMeta {
+	readonly lock_version: number;
+	readonly schema_version: number;
+}
+
+/**
+ * `Forecasts::EditorPrefillReadModel#to_h` — answers "what does one typed editor
+ * need to open?". The typed editor-drawer payload for ONE assumption.
+ */
+export interface EditorPrefillReadModel {
+	/** The form schema key (e.g. `"salary"`); selects the type-specific form. */
+	readonly form_key: string;
+	/** The assumption being edited (opaque id; family-resolved server-side). */
+	readonly assumption_id: string;
+	/** The scenario layer the edit targets, or `null` for the baseline plan. */
+	readonly scenario_layer_id: string | null;
+	readonly primary_values: EditorPrimaryValues;
+	readonly section_summaries: EditorSectionSummaries;
+	readonly validation: EditorValidationMeta;
+}
+
+/**
+ * Field-keyed typed validation errors a save can return (slice C8). Each value is
+ * a stable error code (`"blank"`, `"not_positive"`, …) the client localizes via
+ * `forecasts.editor.errors.<code>`. `_summary` is the optional top-level summary
+ * code for a failed save.
+ */
+export interface EditorFieldErrors {
+	readonly [field: string]: string | undefined;
+}
+
 /**
  * The full typed first-viewport prop bag `ForecastsController#show` (V2) passes
  * to the `Forecast/Workspace` Inertia page. Each region is one read model.

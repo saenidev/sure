@@ -19,6 +19,7 @@
 
 import { Head } from "@inertiajs/react";
 import type { JSX } from "react";
+import AssumptionEditor from "../../forecast/components/AssumptionEditor";
 import AssumptionGroup from "../../forecast/components/AssumptionGroup";
 import ForecastPlanShell from "../../forecast/components/ForecastPlanShell";
 import IssuePanel from "../../forecast/components/IssuePanel";
@@ -27,6 +28,7 @@ import MetricStrip, {
 } from "../../forecast/components/MetricStrip";
 import ProjectionChart from "../../forecast/components/ProjectionChart";
 import SelectedPeriodInspector from "../../forecast/components/SelectedPeriodInspector";
+import { useAssumptionEditor } from "../../forecast/hooks/useAssumptionEditor";
 import {
 	FORECAST_REGIONS,
 	useForecastWorkspace,
@@ -45,10 +47,13 @@ function AssumptionRail({
 	assumptionGroups,
 	regionKey,
 	cacheKey,
+	onEditCard,
 }: {
 	readonly assumptionGroups: AssumptionGroupReadModel;
 	readonly regionKey: string;
 	readonly cacheKey: string;
+	/** Opens the typed editor drawer for a card (slice C7). */
+	readonly onEditCard?: (cardId: string) => void;
 }): JSX.Element {
 	const { groups } = assumptionGroups;
 	return (
@@ -65,7 +70,11 @@ function AssumptionRail({
 				</p>
 			) : (
 				groups.map((group) => (
-					<AssumptionGroup key={group.kind} group={group} />
+					<AssumptionGroup
+						key={group.kind}
+						group={group}
+						onEditCard={onEditCard}
+					/>
 				))
 			)}
 		</section>
@@ -76,6 +85,13 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 	const { plan, band, selectedPeriod } = props;
 	const workspace = useForecastWorkspace(props);
 	const cacheKeys = workspace.regionCacheKeys;
+
+	// The typed editor drawer (slice C7): opens from an assumption card and
+	// composes the salary form. Opening fetches GET /forecast/assumptions/:id/edit
+	// for one EditorPrefillReadModel; it owns NONE of plan/period/scenario state
+	// (those stay in `workspace`), so opening/closing the drawer preserves the
+	// selected period + scenario stack. The PATCH save lands in slice C8.
+	const editor = useAssumptionEditor();
 
 	// Serve the selected-period detail from the preloaded seed + local cache,
 	// fetching GET /forecast/periods/:period_key only on a settled cache miss
@@ -140,6 +156,12 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 						assumptionGroups={props.assumptionGroups}
 						regionKey={FORECAST_REGIONS.assumptions}
 						cacheKey={cacheKeys.assumptions}
+						onEditCard={(cardId) =>
+							editor.open({
+								assumptionId: cardId,
+								invokerId: `forecast-assumption-edit-${cardId}`,
+							})
+						}
 					/>
 				</div>
 
@@ -152,6 +174,11 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 					cacheKey={cacheKeys.issues}
 				/>
 			</ForecastPlanShell>
+
+			{/* Typed editor drawer (C7): the only interactive editor in the MVP is the
+			    salary form. It renders OVER the workspace, so opening/closing preserves
+			    the selected period + scenario stack. The save (PATCH) lands in C8. */}
+			<AssumptionEditor editor={editor} />
 		</>
 	);
 }

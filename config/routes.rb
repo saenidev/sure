@@ -325,6 +325,21 @@ Rails.application.routes.draw do
     as: :forecast_period,
     constraints: { period_key: /\d{4}-\d{2}/ }
 
+  # Forecast V2 typed editor-drawer open endpoint (slice C7). The spec's V2 route
+  # shape ("GET /forecast/assumptions/:id/edit") returns ONE EditorPrefillReadModel
+  # (B13) typed payload for a single assumption — the form key, current values,
+  # collapsed-section summaries, and validation metadata — NOT a full plan payload
+  # (spec "Editor Contracts", "Inertia And JSON Endpoints"). Mapped to the
+  # pluralized `Forecasts::` (V2) controller namespace so the V1 `Forecast::`
+  # services stay untouched; defined standalone (not in the V1 `namespace
+  # :forecast` block, which routes to singular `Forecast::` controllers). The
+  # controller resolves the assumption through Current.family (no family_id trusted
+  # from params), so a cross-family id 404s. Only `:edit` ships in C7; the matching
+  # save (`PATCH /forecast/assumptions/:id`) lands in C8.
+  get "forecast/assumptions/:id/edit",
+    to: "forecasts/assumptions#edit",
+    as: :edit_forecast_assumption
+
   # Additive namespace that later forecasting slices hang off. Its controllers
   # inherit Forecast::BaseController, which scopes every query to Current.family.
   # Routes are added incrementally per slice.

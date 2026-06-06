@@ -148,6 +148,68 @@ en:
       action_edit_account_rules: "Edit account rules"
       action_reorder_layers: "Reorder layers"
       action_view: "View details"
+    # Typed assumption editor drawer (AssumptionEditor / useAssumptionEditor, slice
+    # C7). The only interactive editor in the MVP is the salary form. These keys are
+    # client-resolved (the React drawer has no Rails `t()` at render time) and are
+    # mirrored in app/frontend/forecast/i18n.ts. The section-summary keys
+    # (time_range / change_over_time / source) are emitted by
+    # Forecasts::EditorPrefillReadModel#section_summaries (B13) for the collapsed
+    # editor sections.
+    editor:
+      title: "Edit assumption"
+      close: "Close editor"
+      cancel: "Cancel"
+      save: "Save"
+      saving: "Saving…"
+      dirty_warning: "You have unsaved changes. Discard them?"
+      discard: "Discard changes"
+      keep_editing: "Keep editing"
+      loading: "Loading editor…"
+      load_error: "Couldn't open this editor. Try again."
+      summary_error: "Some fields need attention before this can be saved."
+      scenario_baseline: "Editing the baseline plan"
+      scenario_layer: "Editing scenario layer %{layer}"
+      # Collapsed editor section headers + their summary lines.
+      time_range: "Timing"
+      time_range_summary: "%{start} → %{end}"
+      time_range_ongoing: "Ongoing"
+      change_over_time: "Change over time"
+      change_over_time_growth: "%{rate} annual growth"
+      change_over_time_inflation: "%{rate} inflation"
+      change_over_time_flat: "No change over time"
+      source: "Source"
+      source_summary: "%{origin} · %{review}"
+      # Salary form fields.
+      salary:
+        heading: "Salary"
+        name_label: "Name"
+        amount_label: "Amount"
+        currency_label: "Currency"
+        person_key_label: "Earner"
+        gross_or_net_label: "Gross or net"
+        gross_or_net_gross: "Gross"
+        gross_or_net_net: "Net"
+        frequency_label: "Frequency"
+        frequency_annual: "Annual"
+        frequency_monthly: "Monthly"
+        frequency_biweekly: "Biweekly"
+        frequency_weekly: "Weekly"
+        growth_policy_label: "Growth"
+        growth_policy_flat: "No growth"
+        growth_policy_fixed_rate: "Fixed annual rate"
+        growth_rate_label: "Growth rate"
+        starts_on_label: "Starts on"
+        ends_on_label: "Ends on"
+      # Stable field error codes -> messages (mirror the SalaryForm error codes).
+      errors:
+        blank: "This field is required."
+        not_a_number: "Enter a valid number."
+        not_positive: "Enter a value greater than zero."
+        inclusion: "Choose a valid option."
+        invalid_date: "Enter a valid date."
+        end_before_start: "The end date can't be before the start date."
+        not_found: "That reference could not be found."
+        stale: "This assumption changed since you opened it. Reload and try again."
     show:
       title: "Forecast"
       description: "Model monthly budget, cash runway, goals, debt, portfolio movement, and life scenarios across the next 36 months."
