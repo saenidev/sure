@@ -35,12 +35,10 @@ module Forecasts
   # the canonical /forecast V2 surface. Otherwise 404 (the V1 surface owns no such
   # JSON endpoint).
   class AssumptionsController < Forecasts::BaseController
-    # Per-assumption-kind typed form objects (B14). The MVP ships the salary
-    # editor; living_expense is wired here for the same save path.
-    FORM_FOR_KIND = {
-      "salary" => Forecasts::Assumptions::SalaryForm,
-      "living_expense" => Forecasts::Assumptions::LivingExpenseForm
-    }.freeze
+    # The typed form object for an assumption kind is resolved through the single
+    # Assumption Type Registry (Forecasts::Assumptions::Registry), not a private
+    # per-kind constant. An unknown stored kind has no form and is rejected
+    # (422) on the save path below.
 
     def edit
       return head(:not_found) unless forecast_v2_enabled?
@@ -69,7 +67,7 @@ module Forecasts
       return head(:not_found) if assumption.nil?
 
       plan = assumption.forecast_plan
-      form_class = FORM_FOR_KIND[assumption.kind]
+      form_class = Forecasts::Assumptions::Registry.form_class_for(assumption.kind)
       return head(:unprocessable_entity) if form_class.nil?
 
       # Conflict: the plan moved past the version the editor observed. Reject

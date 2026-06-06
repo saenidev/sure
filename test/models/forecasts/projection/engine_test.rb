@@ -265,6 +265,40 @@ class Forecasts::Projection::EngineTest < ActiveSupport::TestCase
     assert_equal %w[spending], categories
   end
 
+  # --- Unknown assumption kind (registry guard) ----------------------------
+
+  def unknown_kind_assumption(overrides = {})
+    {
+      id: "assumption-unknown-1",
+      kind: "totally_unknown_kind",
+      status: "active",
+      scenario_layer_id: nil,
+      params: { amount: "100.00", currency: "USD" }
+    }.merge(overrides)
+  end
+
+  test "an unknown stored kind becomes a blocking plan issue and is not expanded" do
+    result = call(assumptions: [ unknown_kind_assumption, living_expense_assumption ])
+
+    issue = result.issues.find { |i| i.code == "unknown_assumption_kind" }
+    refute_nil issue, "expected an unknown_assumption_kind issue"
+    assert_equal "blocking", issue.severity
+    assert_equal "plan_validation", issue.source
+    assert_equal "assumption", issue.affected_entity_type
+    assert_equal "assumption-unknown-1", issue.affected_entity_id
+    assert_equal "blocked", result.status
+
+    # The unknown kind contributes no flows; only the living expense expands.
+    assert_equal %w[spending], result.traces.map(&:category).uniq
+  end
+
+  test "a disabled unknown kind produces no issue and no flows" do
+    result = call(assumptions: [ unknown_kind_assumption(status: "disabled"), living_expense_assumption ])
+
+    assert_empty result.issues.select { |i| i.code == "unknown_assumption_kind" }
+    assert_equal %w[spending], result.traces.map(&:category).uniq
+  end
+
   # --- Issues passthrough --------------------------------------------------
 
   test "missing FX rate surfaces a structured issue and issue_limited status" do

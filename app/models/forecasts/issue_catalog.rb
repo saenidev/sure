@@ -48,6 +48,10 @@ module Forecasts
         severity: "blocking",
         actions: %w[fix_fields]
       },
+      "unknown_assumption_kind" => {
+        severity: "blocking",
+        actions: %w[remove_assumption]
+      },
       "account_rule_conflict" => {
         severity: "warning",
         actions: %w[edit_account_rules]

@@ -16,19 +16,14 @@ module Forecasts
   # decimal strings) so the client formats them — the read model never formats UI
   # strings.
   class AssumptionGroupReadModel
-    # Icon (via the `icon` helper, never lucide directly) per assumption kind.
-    ICON_FOR_KIND = {
-      "salary" => "briefcase",
-      "living_expense" => "shopping-cart"
-    }.freeze
-    DEFAULT_ICON = "circle"
+    # Per-kind icon and group ordering are resolved through the single Assumption
+    # Type Registry (Forecasts::Assumptions::Registry), not standalone
+    # ICON_FOR_KIND / KIND_ORDER constants. The icon helper renders the icon name
+    # (never lucide directly).
 
     # The full set of actions a card offers. Editing is always available; move-to
     # -scenario and duplicate round out the scannable card affordances.
     CARD_ACTIONS = %w[edit duplicate move_to_scenario].freeze
-
-    # Display order of group kinds in the rail.
-    KIND_ORDER = %w[salary living_expense].freeze
 
     attr_reader :assumptions, :active_assumption_ids
 
@@ -58,16 +53,20 @@ module Forecasts
         end
       end
 
+      # Group display order from the registry: registered kinds first in their
+      # registered order, then any unregistered stored kind deterministically by
+      # name (the registry sorts unknown kinds after all known ones).
       def ordered_kinds(by_kind)
-        present = by_kind.keys
-        (KIND_ORDER & present) + (present - KIND_ORDER)
+        by_kind.keys.sort_by do |kind|
+          [ Forecasts::Assumptions::Registry.order_for(kind), kind.to_s ]
+        end
       end
 
       def card_for(assumption)
         {
           id: assumption.id,
           kind: assumption.kind,
-          icon: ICON_FOR_KIND.fetch(assumption.kind, DEFAULT_ICON),
+          icon: Forecasts::Assumptions::Registry.icon_for(assumption.kind),
           title: assumption.name,
           amount_summary: amount_summary(assumption),
           time_summary: time_summary(assumption),

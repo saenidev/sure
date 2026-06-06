@@ -29,12 +29,11 @@ module Forecasts
     class Engine
       InvalidInputError = Class.new(ArgumentError)
 
-      # Expander dispatch by assumption kind. The catalog grows as later slices
-      # land their expanders; this proof slice covers salary + living_expense.
-      EXPANDERS = {
-        "salary" => Forecasts::Projection::Expanders::Salary,
-        "living_expense" => Forecasts::Projection::Expanders::LivingExpense
-      }.freeze
+      # Expander dispatch is resolved through the single Assumption Type Registry
+      # (Forecasts::Assumptions::Registry), not a private per-kind constant. The
+      # registry is the one place a kind is wired into expansion, the editor save
+      # path, and the rail; an unknown stored kind resolves to nil here and the
+      # engine maps it to a blocking `unknown_assumption_kind` plan issue.
 
       # Assumption statuses that contribute flows. Disabled/archived assumptions
       # produce no flows but remain explainable in the editor (spec invariant:
@@ -138,8 +137,17 @@ module Forecasts
           assumption = Forecasts::Projection.deep_symbolize(assumption)
           return [] unless enabled?(assumption)
 
-          expander_class = EXPANDERS[assumption[:kind].to_s]
-          return [] if expander_class.nil?
+          # Registry guard: an enabled assumption whose stored kind is not in the
+          # Assumption Type Registry cannot be expanded. Per spec "Assumption Type
+          # Registry Contract" ("Unknown kinds are blocking plan issues and cannot
+          # be expanded") this becomes a structured BLOCKING plan issue and the
+          # assumption contributes no flows — never a silent skip.
+          unless Forecasts::Assumptions::Registry.registered?(assumption[:kind].to_s)
+            @expansion_issues << unknown_kind_issue_for(assumption)
+            return []
+          end
+
+          expander_class = Forecasts::Assumptions::Registry.expander_for(assumption[:kind].to_s)
 
           begin
             expander_class.new(
@@ -181,6 +189,31 @@ module Forecasts
               assumption_id: assumption[:id],
               assumption_kind: assumption[:kind].to_s,
               error_class: error.class.name
+            }
+          )
+        end
+
+        # Maps an unregistered stored kind to a blocking `unknown_assumption_kind`
+        # plan issue (spec "Assumption Type Registry Contract": unknown kinds are
+        # blocking and cannot be expanded). The affected assumption contributes no
+        # flows; the whole plan is downgraded to `blocked` by derive_status.
+        def unknown_kind_issue_for(assumption)
+          kind = assumption[:kind].to_s
+
+          Forecasts::Projection::PlanIssue.new(
+            code: "unknown_assumption_kind",
+            severity: "blocking",
+            source: "plan_validation",
+            period: nil,
+            affected_entity_type: "assumption",
+            affected_entity_id: assumption[:id],
+            display_name: "Unknown assumption type",
+            message_key: "forecasts.issues.unknown_assumption_kind",
+            impact: "This assumption uses a type this version of the planner does not support, so it is excluded from the projection.",
+            actions: %w[remove_assumption],
+            debug_context: {
+              assumption_id: assumption[:id],
+              assumption_kind: kind
             }
           )
         end
