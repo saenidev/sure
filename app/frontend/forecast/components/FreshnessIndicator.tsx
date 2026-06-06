@@ -29,11 +29,11 @@ const TONE_CLASSES: Readonly<
 	positive: { dot: "bg-success", text: "text-success" },
 	attention: { dot: "bg-warning", text: "text-warning" },
 	critical: { dot: "bg-destructive", text: "text-destructive" },
-	// Neutral (uncomputed / superseded): a muted dot from the design-system gray
-	// ramp (the same ramp the chart chrome uses) + the subdued text token. There
-	// is no dedicated functional bg token for a muted fill; this stays inside the
-	// design system rather than a raw hex.
-	neutral: { dot: "bg-gray-400", text: "text-subdued" },
+	// Neutral (uncomputed / superseded): a muted dot keyed to the subdued text
+	// token. There is no dedicated functional bg token for a muted fill, so the dot
+	// carries `text-subdued` and fills with `bg-current` — `currentColor` resolves
+	// to the subdued ramp (theme-aware light/dark) instead of a raw palette class.
+	neutral: { dot: "text-subdued bg-current", text: "text-subdued" },
 };
 
 function formatProjectedAt(iso: string): string {
