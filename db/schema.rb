@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_06_000005) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_06_000009) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -1305,6 +1305,73 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_06_000005) do
     t.index ["family_id"], name: "index_forecast_plans_on_family_id"
   end
 
+  create_table "forecast_projection_caches", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_plan_id", null: false
+    t.uuid "forecast_source_snapshot_id"
+    t.integer "plan_version", null: false
+    t.string "scenario_stack_key", null: false
+    t.string "scenario_stack_hash", null: false
+    t.string "source_snapshot_hash", null: false
+    t.string "engine_version", null: false
+    t.string "projection_result_hash"
+    t.string "status", default: "recomputing", null: false
+    t.datetime "started_at"
+    t.datetime "finished_at"
+    t.string "error_code"
+    t.jsonb "issue_summary", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["forecast_plan_id", "scenario_stack_hash", "source_snapshot_hash", "plan_version", "engine_version"], name: "idx_forecast_projection_caches_current_key", unique: true, where: "((status)::text <> 'superseded'::text)"
+    t.index ["forecast_plan_id", "status"], name: "idx_forecast_projection_caches_plan_status"
+    t.index ["forecast_plan_id"], name: "index_forecast_projection_caches_on_forecast_plan_id"
+    t.index ["forecast_source_snapshot_id"], name: "idx_on_forecast_source_snapshot_id_810f3ac154"
+  end
+
+  create_table "forecast_projection_periods", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_projection_cache_id", null: false
+    t.uuid "forecast_plan_id", null: false
+    t.string "scenario_stack_key", null: false
+    t.string "period_key", null: false
+    t.date "period_start_on", null: false
+    t.date "period_end_on", null: false
+    t.string "granularity", null: false
+    t.jsonb "metrics", default: {}, null: false
+    t.jsonb "issue_codes", default: [], null: false
+    t.jsonb "active_assumption_ids", default: [], null: false
+    t.integer "plan_version", null: false
+    t.string "engine_version", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["forecast_plan_id", "plan_version"], name: "idx_forecast_projection_periods_plan_version"
+    t.index ["forecast_plan_id", "scenario_stack_key", "period_key", "granularity"], name: "idx_forecast_projection_periods_plan_stack_period"
+    t.index ["forecast_plan_id"], name: "index_forecast_projection_periods_on_forecast_plan_id"
+    t.index ["forecast_projection_cache_id", "period_key", "granularity"], name: "idx_forecast_projection_periods_cache_period"
+    t.index ["forecast_projection_cache_id"], name: "idx_on_forecast_projection_cache_id_6ddffe18fc"
+  end
+
+  create_table "forecast_projection_traces", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_projection_cache_id", null: false
+    t.string "period_key", null: false
+    t.string "granularity", null: false
+    t.uuid "assumption_id"
+    t.string "source_type"
+    t.uuid "source_id"
+    t.string "metric_key", null: false
+    t.string "direction"
+    t.decimal "amount", precision: 19, scale: 4
+    t.string "currency"
+    t.string "category"
+    t.integer "display_order", default: 0, null: false
+    t.string "trace_kind", null: false
+    t.string "explanation_key"
+    t.jsonb "source_record_refs", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["assumption_id", "period_key"], name: "idx_forecast_projection_traces_assumption_period", where: "(assumption_id IS NOT NULL)"
+    t.index ["forecast_projection_cache_id", "period_key", "granularity"], name: "idx_forecast_projection_traces_cache_period"
+    t.index ["forecast_projection_cache_id"], name: "idx_on_forecast_projection_cache_id_84125dcf09"
+  end
+
   create_table "forecast_reviews", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "forecast_run_group_id", null: false
     t.uuid "family_id", null: false
@@ -1428,6 +1495,29 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_06_000005) do
     t.index ["family_id", "status", "position"], name: "index_forecast_scenarios_on_family_id_and_status_and_position"
     t.index ["family_id"], name: "index_forecast_scenarios_on_family_id"
     t.index ["parent_scenario_id"], name: "index_forecast_scenarios_on_parent_scenario_id"
+  end
+
+  create_table "forecast_source_snapshots", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "forecast_plan_id", null: false
+    t.uuid "family_id", null: false
+    t.string "source_snapshot_hash", null: false
+    t.date "as_of", null: false
+    t.string "freshness_state", default: "fresh", null: false
+    t.jsonb "included_account_ids", default: [], null: false
+    t.jsonb "source_versions", default: {}, null: false
+    t.jsonb "issue_candidates", default: [], null: false
+    t.jsonb "snapshot_payload", default: {}, null: false
+    t.string "created_by_event"
+    t.string "schema_version", default: "forecast-source-snapshot-v1", null: false
+    t.datetime "expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["expires_at"], name: "idx_forecast_source_snapshots_expires_at"
+    t.index ["family_id", "as_of"], name: "idx_forecast_source_snapshots_family_as_of"
+    t.index ["family_id"], name: "index_forecast_source_snapshots_on_family_id"
+    t.index ["forecast_plan_id", "freshness_state"], name: "idx_forecast_source_snapshots_plan_freshness"
+    t.index ["forecast_plan_id", "source_snapshot_hash"], name: "idx_forecast_source_snapshots_plan_hash"
+    t.index ["forecast_plan_id"], name: "index_forecast_source_snapshots_on_forecast_plan_id"
   end
 
   create_table "holdings", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -2653,6 +2743,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_06_000005) do
   add_foreign_key "forecast_milestones", "forecast_plans", on_delete: :cascade
   add_foreign_key "forecast_months", "forecast_runs", on_delete: :cascade
   add_foreign_key "forecast_plans", "families", on_delete: :cascade
+  add_foreign_key "forecast_projection_caches", "forecast_plans", on_delete: :cascade
+  add_foreign_key "forecast_projection_caches", "forecast_source_snapshots", on_delete: :nullify
+  add_foreign_key "forecast_projection_periods", "forecast_plans", on_delete: :cascade
+  add_foreign_key "forecast_projection_periods", "forecast_projection_caches", column: "forecast_projection_cache_id", on_delete: :cascade
+  add_foreign_key "forecast_projection_traces", "forecast_projection_caches", column: "forecast_projection_cache_id", on_delete: :cascade
   add_foreign_key "forecast_reviews", "families", on_delete: :cascade
   add_foreign_key "forecast_reviews", "forecast_run_groups", on_delete: :cascade
   add_foreign_key "forecast_reviews", "users", on_delete: :nullify
@@ -2669,6 +2764,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_06_000005) do
   add_foreign_key "forecast_scenarios", "families", on_delete: :cascade
   add_foreign_key "forecast_scenarios", "forecast_scenarios", column: "parent_scenario_id", on_delete: :nullify
   add_foreign_key "forecast_scenarios", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "forecast_source_snapshots", "families", on_delete: :cascade
+  add_foreign_key "forecast_source_snapshots", "forecast_plans", on_delete: :cascade
   add_foreign_key "holdings", "account_providers"
   add_foreign_key "holdings", "accounts", on_delete: :cascade
   add_foreign_key "holdings", "securities"
