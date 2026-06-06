@@ -235,6 +235,7 @@ Rails.application.routes.draw do
   end
 
   namespace :settings do
+    get "/", to: redirect("/settings/profile")
     resource :profile, only: [ :show, :destroy ]
     resource :preferences, only: %i[show update]
     resource :appearance, only: %i[show update]

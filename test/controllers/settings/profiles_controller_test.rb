@@ -13,6 +13,13 @@ class Settings::ProfilesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "settings root redirects to profile" do
+    sign_in @admin
+    get "/settings"
+
+    assert_redirected_to settings_profile_path
+  end
+
   test "intro user sees profile without settings navigation" do
     sign_in @intro_user
     get settings_profile_path
