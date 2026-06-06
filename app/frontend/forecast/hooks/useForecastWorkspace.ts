@@ -23,11 +23,11 @@
 
 import { useMemo, useReducer } from "react";
 import type {
-	ForecastWorkspaceProps,
-	FreshnessLifecycleState,
-	PeriodKey,
-	ProjectionFreshness,
-	SavedAssumptionPatch,
+  ForecastWorkspaceProps,
+  FreshnessLifecycleState,
+  PeriodKey,
+  ProjectionFreshness,
+  SavedAssumptionPatch,
 } from "../types/readModels";
 
 /**
@@ -37,13 +37,13 @@ import type {
  * `data-testid`/region keys rather than relying on CSS selectors").
  */
 export const FORECAST_REGIONS = {
-	shell: "forecast-plan-shell",
-	metricStrip: "forecast-metric-strip",
-	freshness: "forecast-freshness",
-	chart: "forecast-projection-chart",
-	inspector: "forecast-selected-period",
-	assumptions: "forecast-assumption-groups",
-	issues: "forecast-issue-panel",
+  shell: "forecast-plan-shell",
+  metricStrip: "forecast-metric-strip",
+  freshness: "forecast-freshness",
+  chart: "forecast-projection-chart",
+  inspector: "forecast-selected-period",
+  assumptions: "forecast-assumption-groups",
+  issues: "forecast-issue-panel",
 } as const;
 
 export type ForecastRegion = keyof typeof FORECAST_REGIONS;
@@ -53,13 +53,13 @@ export type RegionCacheKeys = Readonly<Record<ForecastRegion, string>>;
 
 /** The shared, ephemeral workspace state. Plan truth stays on the server. */
 export interface ForecastWorkspaceState {
-	readonly selectedPeriodKey: PeriodKey | null;
-	readonly selectedMetric: string;
-	readonly activeLens: string;
-	readonly scenarioStackKey: string;
-	readonly freshness: ProjectionFreshness;
-	readonly planVersion: number;
-	readonly regionCacheKeys: RegionCacheKeys;
+  readonly selectedPeriodKey: PeriodKey | null;
+  readonly selectedMetric: string;
+  readonly activeLens: string;
+  readonly scenarioStackKey: string;
+  readonly freshness: ProjectionFreshness;
+  readonly planVersion: number;
+  readonly regionCacheKeys: RegionCacheKeys;
 }
 
 /**
@@ -70,118 +70,118 @@ export interface ForecastWorkspaceState {
  * `forecast:projection-updated`).
  */
 export type ForecastWorkspaceAction =
-	| { type: "selectPeriod"; periodKey: PeriodKey | null }
-	| { type: "selectMetric"; metric: string }
-	| { type: "setLens"; lens: string }
-	| {
-			type: "projectionUpdated";
-			planVersion: number;
-			scenarioStackKey: string;
-			freshness: ProjectionFreshness;
-	  }
-	| { type: "setFreshnessState"; state: FreshnessLifecycleState };
+  | { type: "selectPeriod"; periodKey: PeriodKey | null }
+  | { type: "selectMetric"; metric: string }
+  | { type: "setLens"; lens: string }
+  | {
+      type: "projectionUpdated";
+      planVersion: number;
+      scenarioStackKey: string;
+      freshness: ProjectionFreshness;
+    }
+  | { type: "setFreshnessState"; state: FreshnessLifecycleState };
 
 // Compute the region cache keys for a given plan version + scenario stack. Each
 // region key is stable while the plan version and stack are unchanged, so a
 // region only re-fetches/patches when the projection it depends on changes.
 function computeRegionCacheKeys(
-	planVersion: number,
-	scenarioStackKey: string,
+  planVersion: number,
+  scenarioStackKey: string,
 ): RegionCacheKeys {
-	const suffix = `${scenarioStackKey}:v${planVersion}`;
-	return {
-		shell: `${FORECAST_REGIONS.shell}:${suffix}`,
-		metricStrip: `${FORECAST_REGIONS.metricStrip}:${suffix}`,
-		freshness: `${FORECAST_REGIONS.freshness}:${suffix}`,
-		chart: `${FORECAST_REGIONS.chart}:${suffix}`,
-		inspector: `${FORECAST_REGIONS.inspector}:${suffix}`,
-		assumptions: `${FORECAST_REGIONS.assumptions}:${suffix}`,
-		issues: `${FORECAST_REGIONS.issues}:${suffix}`,
-	};
+  const suffix = `${scenarioStackKey}:v${planVersion}`;
+  return {
+    shell: `${FORECAST_REGIONS.shell}:${suffix}`,
+    metricStrip: `${FORECAST_REGIONS.metricStrip}:${suffix}`,
+    freshness: `${FORECAST_REGIONS.freshness}:${suffix}`,
+    chart: `${FORECAST_REGIONS.chart}:${suffix}`,
+    inspector: `${FORECAST_REGIONS.inspector}:${suffix}`,
+    assumptions: `${FORECAST_REGIONS.assumptions}:${suffix}`,
+    issues: `${FORECAST_REGIONS.issues}:${suffix}`,
+  };
 }
 
 function reducer(
-	state: ForecastWorkspaceState,
-	action: ForecastWorkspaceAction,
+  state: ForecastWorkspaceState,
+  action: ForecastWorkspaceAction,
 ): ForecastWorkspaceState {
-	switch (action.type) {
-		case "selectPeriod":
-			if (action.periodKey === state.selectedPeriodKey) {
-				return state;
-			}
-			return { ...state, selectedPeriodKey: action.periodKey };
-		case "selectMetric":
-			if (action.metric === state.selectedMetric) {
-				return state;
-			}
-			return { ...state, selectedMetric: action.metric };
-		case "setLens":
-			if (action.lens === state.activeLens) {
-				return state;
-			}
-			return { ...state, activeLens: action.lens };
-		case "projectionUpdated":
-			return {
-				...state,
-				planVersion: action.planVersion,
-				scenarioStackKey: action.scenarioStackKey,
-				freshness: action.freshness,
-				regionCacheKeys: computeRegionCacheKeys(
-					action.planVersion,
-					action.scenarioStackKey,
-				),
-			};
-		case "setFreshnessState":
-			if (action.state === state.freshness.state) {
-				return state;
-			}
-			return {
-				...state,
-				freshness: { ...state.freshness, state: action.state },
-			};
-		default:
-			return state;
-	}
+  switch (action.type) {
+    case "selectPeriod":
+      if (action.periodKey === state.selectedPeriodKey) {
+        return state;
+      }
+      return { ...state, selectedPeriodKey: action.periodKey };
+    case "selectMetric":
+      if (action.metric === state.selectedMetric) {
+        return state;
+      }
+      return { ...state, selectedMetric: action.metric };
+    case "setLens":
+      if (action.lens === state.activeLens) {
+        return state;
+      }
+      return { ...state, activeLens: action.lens };
+    case "projectionUpdated":
+      return {
+        ...state,
+        planVersion: action.planVersion,
+        scenarioStackKey: action.scenarioStackKey,
+        freshness: action.freshness,
+        regionCacheKeys: computeRegionCacheKeys(
+          action.planVersion,
+          action.scenarioStackKey,
+        ),
+      };
+    case "setFreshnessState":
+      if (action.state === state.freshness.state) {
+        return state;
+      }
+      return {
+        ...state,
+        freshness: { ...state.freshness, state: action.state },
+      };
+    default:
+      return state;
+  }
 }
 
 // Derive the initial shared state from the typed first-viewport props. The
 // selected period seeds from the band's selected marker (which matches the
 // seeded selected-period read model in C2).
 function initFromProps(props: ForecastWorkspaceProps): ForecastWorkspaceState {
-	const planVersion = props.plan.plan_version;
-	const scenarioStackKey = props.plan.scenario_stack.key;
-	return {
-		selectedPeriodKey:
-			props.selectedPeriod?.period_key ?? props.band.selected_marker ?? null,
-		selectedMetric: props.band.selected_metric,
-		activeLens: props.plan.active_lens,
-		scenarioStackKey,
-		freshness: props.freshness,
-		planVersion,
-		regionCacheKeys: computeRegionCacheKeys(planVersion, scenarioStackKey),
-	};
+  const planVersion = props.plan.plan_version;
+  const scenarioStackKey = props.plan.scenario_stack.key;
+  return {
+    selectedPeriodKey:
+      props.selectedPeriod?.period_key ?? props.band.selected_marker ?? null,
+    selectedMetric: props.band.selected_metric,
+    activeLens: props.plan.active_lens,
+    scenarioStackKey,
+    freshness: props.freshness,
+    planVersion,
+    regionCacheKeys: computeRegionCacheKeys(planVersion, scenarioStackKey),
+  };
 }
 
 /** The public store handle the workspace components share. */
 export interface ForecastWorkspaceStore extends ForecastWorkspaceState {
-	readonly selectPeriod: (periodKey: PeriodKey | null) => void;
-	readonly selectMetric: (metric: string) => void;
-	readonly setLens: (lens: string) => void;
-	readonly applyProjectionUpdate: (update: {
-		planVersion: number;
-		scenarioStackKey: string;
-		freshness: ProjectionFreshness;
-	}) => void;
-	/**
-	 * Folds a committed assumption save's typed changed-region patch (slice C8) into
-	 * the store: the new plan version + scenario stack + freshness, which recompute
-	 * the region cache keys so each scoped region re-fetches/patches in isolation
-	 * (spec "Patch budget": a save patches scoped regions, never the whole tree).
-	 * The shared store only tracks version tokens + freshness; the saved card,
-	 * inspector, metric strip, and issue regions read their own slices of the patch.
-	 */
-	readonly applyAssumptionPatch: (patch: SavedAssumptionPatch) => void;
-	readonly setFreshnessState: (state: FreshnessLifecycleState) => void;
+  readonly selectPeriod: (periodKey: PeriodKey | null) => void;
+  readonly selectMetric: (metric: string) => void;
+  readonly setLens: (lens: string) => void;
+  readonly applyProjectionUpdate: (update: {
+    planVersion: number;
+    scenarioStackKey: string;
+    freshness: ProjectionFreshness;
+  }) => void;
+  /**
+   * Folds a committed assumption save's typed changed-region patch (slice C8) into
+   * the store: the new plan version + scenario stack + freshness, which recompute
+   * the region cache keys so each scoped region re-fetches/patches in isolation
+   * (spec "Patch budget": a save patches scoped regions, never the whole tree).
+   * The shared store only tracks version tokens + freshness; the saved card,
+   * inspector, metric strip, and issue regions read their own slices of the patch.
+   */
+  readonly applyAssumptionPatch: (patch: SavedAssumptionPatch) => void;
+  readonly setFreshnessState: (state: FreshnessLifecycleState) => void;
 }
 
 /**
@@ -191,29 +191,29 @@ export interface ForecastWorkspaceStore extends ForecastWorkspaceState {
  * dispatch.
  */
 export function useForecastWorkspace(
-	props: ForecastWorkspaceProps,
+  props: ForecastWorkspaceProps,
 ): ForecastWorkspaceStore {
-	const [state, dispatch] = useReducer(reducer, props, initFromProps);
+  const [state, dispatch] = useReducer(reducer, props, initFromProps);
 
-	return useMemo<ForecastWorkspaceStore>(
-		() => ({
-			...state,
-			selectPeriod: (periodKey) =>
-				dispatch({ type: "selectPeriod", periodKey }),
-			selectMetric: (metric) => dispatch({ type: "selectMetric", metric }),
-			setLens: (lens) => dispatch({ type: "setLens", lens }),
-			applyProjectionUpdate: (update) =>
-				dispatch({ type: "projectionUpdated", ...update }),
-			applyAssumptionPatch: (patch) =>
-				dispatch({
-					type: "projectionUpdated",
-					planVersion: patch.version_tokens.plan_version,
-					scenarioStackKey: patch.version_tokens.scenario_stack_key,
-					freshness: patch.freshness,
-				}),
-			setFreshnessState: (freshnessState) =>
-				dispatch({ type: "setFreshnessState", state: freshnessState }),
-		}),
-		[state],
-	);
+  return useMemo<ForecastWorkspaceStore>(
+    () => ({
+      ...state,
+      selectPeriod: (periodKey) =>
+        dispatch({ type: "selectPeriod", periodKey }),
+      selectMetric: (metric) => dispatch({ type: "selectMetric", metric }),
+      setLens: (lens) => dispatch({ type: "setLens", lens }),
+      applyProjectionUpdate: (update) =>
+        dispatch({ type: "projectionUpdated", ...update }),
+      applyAssumptionPatch: (patch) =>
+        dispatch({
+          type: "projectionUpdated",
+          planVersion: patch.version_tokens.plan_version,
+          scenarioStackKey: patch.version_tokens.scenario_stack_key,
+          freshness: patch.freshness,
+        }),
+      setFreshnessState: (freshnessState) =>
+        dispatch({ type: "setFreshnessState", state: freshnessState }),
+    }),
+    [state],
+  );
 }

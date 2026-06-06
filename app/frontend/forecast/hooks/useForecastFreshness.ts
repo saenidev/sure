@@ -15,8 +15,8 @@
 
 import { useMemo } from "react";
 import type {
-	FreshnessLifecycleState,
-	ProjectionFreshness,
+  FreshnessLifecycleState,
+  ProjectionFreshness,
 } from "../types/readModels";
 
 /**
@@ -27,41 +27,41 @@ import type {
 export type FreshnessTone = "positive" | "attention" | "critical" | "neutral";
 
 const TONE_BY_STATE: Readonly<Record<FreshnessLifecycleState, FreshnessTone>> =
-	{
-		fresh: "positive",
-		stale: "attention",
-		recomputing: "attention",
-		"source-limited": "attention",
-		failed: "critical",
-		superseded: "neutral",
-		uncomputed: "neutral",
-	};
+  {
+    fresh: "positive",
+    stale: "attention",
+    recomputing: "attention",
+    "source-limited": "attention",
+    failed: "critical",
+    superseded: "neutral",
+    uncomputed: "neutral",
+  };
 
 // The i18n copy key for each lifecycle state. The client localizes these (the
 // read models never format the lifecycle label); keys live under
 // `forecasts.freshness.*` in config/locales.
 const LABEL_KEY_BY_STATE: Readonly<Record<FreshnessLifecycleState, string>> = {
-	fresh: "forecasts.freshness.fresh",
-	stale: "forecasts.freshness.stale",
-	recomputing: "forecasts.freshness.recomputing",
-	failed: "forecasts.freshness.failed",
-	superseded: "forecasts.freshness.superseded",
-	uncomputed: "forecasts.freshness.uncomputed",
-	"source-limited": "forecasts.freshness.source_limited",
+  fresh: "forecasts.freshness.fresh",
+  stale: "forecasts.freshness.stale",
+  recomputing: "forecasts.freshness.recomputing",
+  failed: "forecasts.freshness.failed",
+  superseded: "forecasts.freshness.superseded",
+  uncomputed: "forecasts.freshness.uncomputed",
+  "source-limited": "forecasts.freshness.source_limited",
 };
 
 /** The derived, presentation-ready freshness facets. */
 export interface ForecastFreshnessView {
-	readonly state: FreshnessLifecycleState;
-	readonly tone: FreshnessTone;
-	/** True while a recompute is in flight (drives the spinner/pulse + aria-busy). */
-	readonly isRecomputing: boolean;
-	/** True when the projection is the current, trustworthy result. */
-	readonly isFresh: boolean;
-	/** i18n key for the lifecycle status label. */
-	readonly labelKey: string;
-	/** ISO-8601 instant the projection was computed, or null before the first. */
-	readonly projectedAt: string | null;
+  readonly state: FreshnessLifecycleState;
+  readonly tone: FreshnessTone;
+  /** True while a recompute is in flight (drives the spinner/pulse + aria-busy). */
+  readonly isRecomputing: boolean;
+  /** True when the projection is the current, trustworthy result. */
+  readonly isFresh: boolean;
+  /** i18n key for the lifecycle status label. */
+  readonly labelKey: string;
+  /** ISO-8601 instant the projection was computed, or null before the first. */
+  readonly projectedAt: string | null;
 }
 
 /**
@@ -70,17 +70,17 @@ export interface ForecastFreshnessView {
  * an unexpected server value never throws in the indicator.
  */
 export function useForecastFreshness(
-	freshness: ProjectionFreshness,
+  freshness: ProjectionFreshness,
 ): ForecastFreshnessView {
-	return useMemo<ForecastFreshnessView>(() => {
-		const state = freshness.state;
-		return {
-			state,
-			tone: TONE_BY_STATE[state] ?? "neutral",
-			isRecomputing: state === "recomputing",
-			isFresh: state === "fresh",
-			labelKey: LABEL_KEY_BY_STATE[state] ?? LABEL_KEY_BY_STATE.uncomputed,
-			projectedAt: freshness.projected_at,
-		};
-	}, [freshness]);
+  return useMemo<ForecastFreshnessView>(() => {
+    const state = freshness.state;
+    return {
+      state,
+      tone: TONE_BY_STATE[state] ?? "neutral",
+      isRecomputing: state === "recomputing",
+      isFresh: state === "fresh",
+      labelKey: LABEL_KEY_BY_STATE[state] ?? LABEL_KEY_BY_STATE.uncomputed,
+      projectedAt: freshness.projected_at,
+    };
+  }, [freshness]);
 }

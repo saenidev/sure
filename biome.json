@@ -7,8 +7,12 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": [],
-    "include": ["./app/javascript/**/*.js"]
+    "ignore": ["./.worktrees/**"],
+    "include": [
+      "./app/javascript/**/*.js",
+      "./app/frontend/**/*.ts",
+      "./app/frontend/**/*.tsx"
+    ]
   },
   "formatter": {
     "enabled": true,

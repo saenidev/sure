@@ -38,14 +38,14 @@ export type MoneyString = string;
  * card details, and raw engine packets (per the read-model contract).
  */
 export interface PlanLabel {
-	/** Stable plan identifier (opaque to the client). */
-	readonly id: string;
-	/** User-facing, localized plan label rendered in the shell header. */
-	readonly label: string;
-	/** ISO-4217 currency code that contextualizes every {@link MoneyString}. */
-	readonly currency: string;
-	/** Monotonic plan version; bumps drive scoped recompute/patch in Stage C. */
-	readonly version: number;
+  /** Stable plan identifier (opaque to the client). */
+  readonly id: string;
+  /** User-facing, localized plan label rendered in the shell header. */
+  readonly label: string;
+  /** ISO-4217 currency code that contextualizes every {@link MoneyString}. */
+  readonly currency: string;
+  /** Monotonic plan version; bumps drive scoped recompute/patch in Stage C. */
+  readonly version: number;
 }
 
 /**
@@ -55,12 +55,12 @@ export interface PlanLabel {
  * metric strip.
  */
 export interface MetricSeriesPoint {
-	/** The period this point belongs to; matches an entry in `periodKeys`. */
-	readonly periodKey: PeriodKey;
-	/** Projected net worth for the period, as a decimal string. */
-	readonly netWorth: MoneyString;
-	/** Projected cash position for the period, as a decimal string. */
-	readonly cash: MoneyString;
+  /** The period this point belongs to; matches an entry in `periodKeys`. */
+  readonly periodKey: PeriodKey;
+  /** Projected net worth for the period, as a decimal string. */
+  readonly netWorth: MoneyString;
+  /** Projected cash position for the period, as a decimal string. */
+  readonly cash: MoneyString;
 }
 
 /**
@@ -70,11 +70,11 @@ export interface MetricSeriesPoint {
  * spike only emits the first three.
  */
 export type FreshnessLifecycle =
-	| "fresh"
-	| "stale"
-	| "recomputing"
-	| "failed"
-	| "source-limited";
+  | "fresh"
+  | "stale"
+  | "recomputing"
+  | "failed"
+  | "source-limited";
 
 /**
  * The freshness facet shared by the plan- and selected-period read models.
@@ -83,10 +83,10 @@ export type FreshnessLifecycle =
  * the status and "as of" context.
  */
 export interface FreshnessState {
-	/** Where this projection sits in the recompute lifecycle. */
-	readonly state: FreshnessLifecycle;
-	/** ISO-8601 instant the current projection was computed (server-threaded). */
-	readonly projectedAt: string;
+  /** Where this projection sits in the recompute lifecycle. */
+  readonly state: FreshnessLifecycle;
+  /** ISO-8601 instant the current projection was computed (server-threaded). */
+  readonly projectedAt: string;
 }
 
 /**
@@ -95,12 +95,12 @@ export interface FreshnessState {
  * metric strip.
  */
 export interface MetricStripEntry {
-	/** Stable metric key (e.g. `"net_worth"`, `"cash"`). */
-	readonly key: string;
-	/** User-facing, localized metric label. */
-	readonly label: string;
-	/** The metric's value for the selected period, as a decimal string. */
-	readonly value: MoneyString;
+  /** Stable metric key (e.g. `"net_worth"`, `"cash"`). */
+  readonly key: string;
+  /** User-facing, localized metric label. */
+  readonly label: string;
+  /** The metric's value for the selected period, as a decimal string. */
+  readonly value: MoneyString;
 }
 
 /**
@@ -109,7 +109,7 @@ export interface MetricStripEntry {
  * hydrates from its own source of truth.
  */
 export interface PrivacyState {
-	readonly enabled: boolean;
+  readonly enabled: boolean;
 }
 
 /**
@@ -118,13 +118,13 @@ export interface PrivacyState {
  * prop and is composed from the read-model-shaped types above.
  */
 export interface ForecastSpikeProps {
-	readonly plan: PlanLabel;
-	readonly currentPeriodKey: PeriodKey;
-	readonly periodKeys: readonly PeriodKey[];
-	readonly series: readonly MetricSeriesPoint[];
-	readonly metrics: readonly MetricStripEntry[];
-	readonly privacy: PrivacyState;
-	readonly freshness: FreshnessState;
+  readonly plan: PlanLabel;
+  readonly currentPeriodKey: PeriodKey;
+  readonly periodKeys: readonly PeriodKey[];
+  readonly series: readonly MetricSeriesPoint[];
+  readonly metrics: readonly MetricStripEntry[];
+  readonly privacy: PrivacyState;
+  readonly freshness: FreshnessState;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,13 +158,13 @@ export interface ForecastSpikeProps {
  * spec's component contract.
  */
 export type FreshnessLifecycleState =
-	| "fresh"
-	| "stale"
-	| "recomputing"
-	| "failed"
-	| "superseded"
-	| "uncomputed"
-	| "source-limited";
+  | "fresh"
+  | "stale"
+  | "recomputing"
+  | "failed"
+  | "superseded"
+  | "uncomputed"
+  | "source-limited";
 
 /**
  * The shell/region freshness facet shared by `PlanReadModel`,
@@ -173,26 +173,26 @@ export type FreshnessLifecycleState =
  * instant the projection was computed (`null` before the first projection).
  */
 export interface ProjectionFreshness {
-	readonly state: FreshnessLifecycleState;
-	readonly projected_at: string | null;
+  readonly state: FreshnessLifecycleState;
+  readonly projected_at: string | null;
 }
 
 /** The live scenario-stack summary on the plan shell (key + bounded layer keys). */
 export interface ScenarioStackSummary {
-	readonly key: string;
-	readonly layers: readonly string[];
+  readonly key: string;
+  readonly layers: readonly string[];
 }
 
 /** The privacy-mode facet the shell frames (ephemeral, client-owned truth). */
 export interface PlanPrivacyState {
-	readonly blurred: boolean;
+  readonly blurred: boolean;
 }
 
 /** Privacy-safe issue summary stored on the cache row (counts + codes only). */
 export interface LatestIssueSummary {
-	readonly status: string;
-	readonly issue_count: number;
-	readonly codes: Readonly<Record<string, number>>;
+  readonly status: string;
+  readonly issue_count: number;
+  readonly codes: Readonly<Record<string, number>>;
 }
 
 /**
@@ -202,17 +202,17 @@ export interface LatestIssueSummary {
  * detail, no raw packets.
  */
 export interface PlanReadModel {
-	readonly id: string;
-	readonly name: string;
-	readonly reporting_currency: string;
-	readonly plan_version: number;
-	readonly active_lens: string;
-	readonly lenses: readonly string[];
-	readonly scenario_stack: ScenarioStackSummary;
-	readonly freshness: ProjectionFreshness;
-	readonly privacy: PlanPrivacyState;
-	readonly actions: readonly string[];
-	readonly latest_issue_summary: LatestIssueSummary;
+  readonly id: string;
+  readonly name: string;
+  readonly reporting_currency: string;
+  readonly plan_version: number;
+  readonly active_lens: string;
+  readonly lenses: readonly string[];
+  readonly scenario_stack: ScenarioStackSummary;
+  readonly freshness: ProjectionFreshness;
+  readonly privacy: PlanPrivacyState;
+  readonly actions: readonly string[];
+  readonly latest_issue_summary: LatestIssueSummary;
 }
 
 /**
@@ -220,8 +220,8 @@ export interface PlanReadModel {
  * the selected metric's decimal-string value (`null` if absent for the period).
  */
 export interface ProjectionBandPoint {
-	readonly period_key: PeriodKey;
-	readonly value: MoneyString | null;
+  readonly period_key: PeriodKey;
+  readonly value: MoneyString | null;
 }
 
 /**
@@ -235,13 +235,15 @@ export interface ProjectionBandPoint {
  * metric keys the selector offers (each resolves to `forecasts.metrics.<key>`).
  */
 export interface ProjectionBandReadModel {
-	readonly selected_metric: string;
-	readonly selected_marker: PeriodKey | null;
-	readonly available_metrics: readonly string[];
-	readonly period_keys: readonly PeriodKey[];
-	readonly series: readonly ProjectionBandPoint[];
-	readonly metric_series: Readonly<Record<string, readonly ProjectionBandPoint[]>>;
-	readonly freshness: ProjectionFreshness;
+  readonly selected_metric: string;
+  readonly selected_marker: PeriodKey | null;
+  readonly available_metrics: readonly string[];
+  readonly period_keys: readonly PeriodKey[];
+  readonly series: readonly ProjectionBandPoint[];
+  readonly metric_series: Readonly<
+    Record<string, readonly ProjectionBandPoint[]>
+  >;
+  readonly freshness: ProjectionFreshness;
 }
 
 /**
@@ -251,26 +253,26 @@ export interface ProjectionBandReadModel {
  * runway, `null` when absent).
  */
 export interface SelectedPeriodMetric {
-	readonly key: string;
-	readonly label_key: string;
-	readonly value: MoneyString | null;
+  readonly key: string;
+  readonly label_key: string;
+  readonly value: MoneyString | null;
 }
 
 /** One trace-backed explanation line for the selected period. */
 export interface SelectedPeriodExplanationLine {
-	readonly kind: string;
-	readonly amount: MoneyString | null;
-	readonly currency: string | null;
-	readonly direction: string | null;
-	readonly explanation_key: string | null;
-	readonly source: string;
+  readonly kind: string;
+  readonly amount: MoneyString | null;
+  readonly currency: string | null;
+  readonly direction: string | null;
+  readonly explanation_key: string | null;
+  readonly source: string;
 }
 
 /** One privacy-safe period issue line (code + severity + i18n message key). */
 export interface SelectedPeriodIssueLine {
-	readonly code: string;
-	readonly severity: string;
-	readonly message_key: string;
+  readonly code: string;
+  readonly severity: string;
+  readonly message_key: string;
 }
 
 /**
@@ -279,49 +281,49 @@ export interface SelectedPeriodIssueLine {
  * period is projected (the inspector opens on a "select a period" state).
  */
 export interface SelectedPeriodReadModel {
-	readonly period_key: PeriodKey;
-	readonly granularity: string;
-	readonly selected_metric: string;
-	readonly metrics: readonly SelectedPeriodMetric[];
-	readonly active_assumption_ids: readonly string[];
-	readonly explanation: readonly SelectedPeriodExplanationLine[];
-	readonly issues: readonly SelectedPeriodIssueLine[];
-	readonly freshness: ProjectionFreshness;
+  readonly period_key: PeriodKey;
+  readonly granularity: string;
+  readonly selected_metric: string;
+  readonly metrics: readonly SelectedPeriodMetric[];
+  readonly active_assumption_ids: readonly string[];
+  readonly explanation: readonly SelectedPeriodExplanationLine[];
+  readonly issues: readonly SelectedPeriodIssueLine[];
+  readonly freshness: ProjectionFreshness;
 }
 
 /** A structured, client-formatted summary line on an assumption card. */
 export interface AssumptionCardSummary {
-	readonly key: string;
-	readonly [field: string]: string | null | undefined;
+  readonly key: string;
+  readonly [field: string]: string | null | undefined;
 }
 
 /** Provenance/review badge code shown on an assumption card. */
 export type AssumptionCardBadge =
-	| "review_suggested"
-	| "derived"
-	| "low_confidence"
-	| "disabled";
+  | "review_suggested"
+  | "derived"
+  | "low_confidence"
+  | "disabled";
 
 /** One assumption card from `AssumptionGroupReadModel` (scannable summary only). */
 export interface AssumptionCard {
-	readonly id: string;
-	readonly kind: string;
-	readonly icon: string;
-	readonly title: string;
-	readonly amount_summary: AssumptionCardSummary;
-	readonly time_summary: AssumptionCardSummary;
-	readonly behavior_summary: AssumptionCardSummary;
-	readonly source_summary: AssumptionCardSummary;
-	readonly status_badges: readonly string[];
-	readonly active_in_period: boolean;
-	readonly actions: readonly string[];
+  readonly id: string;
+  readonly kind: string;
+  readonly icon: string;
+  readonly title: string;
+  readonly amount_summary: AssumptionCardSummary;
+  readonly time_summary: AssumptionCardSummary;
+  readonly behavior_summary: AssumptionCardSummary;
+  readonly source_summary: AssumptionCardSummary;
+  readonly status_badges: readonly string[];
+  readonly active_in_period: boolean;
+  readonly actions: readonly string[];
 }
 
 /** One assumption group (kind header + its cards). */
 export interface AssumptionGroup {
-	readonly kind: string;
-	readonly title_key: string;
-	readonly cards: readonly AssumptionCard[];
+  readonly kind: string;
+  readonly title_key: string;
+  readonly cards: readonly AssumptionCard[];
 }
 
 /**
@@ -329,7 +331,7 @@ export interface AssumptionGroup {
  * visible and scannable?".
  */
 export interface AssumptionGroupReadModel {
-	readonly groups: readonly AssumptionGroup[];
+  readonly groups: readonly AssumptionGroup[];
 }
 
 /**
@@ -338,15 +340,15 @@ export interface AssumptionGroupReadModel {
  * array of these.
  */
 export interface IssueReadModel {
-	readonly code: string;
-	readonly severity: string;
-	readonly source: string;
-	readonly period: string | null;
-	readonly title: string | null;
-	readonly affected_output: string | null;
-	readonly impact: string | null;
-	readonly message_key: string | null;
-	readonly actions: readonly string[];
+  readonly code: string;
+  readonly severity: string;
+  readonly source: string;
+  readonly period: string | null;
+  readonly title: string | null;
+  readonly affected_output: string | null;
+  readonly impact: string | null;
+  readonly message_key: string | null;
+  readonly actions: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -372,25 +374,25 @@ export interface IssueReadModel {
  * exact param set is form-specific.
  */
 export interface EditorPrimaryValues {
-	readonly name: string | null;
-	readonly amount: MoneyString | null;
-	readonly currency: string | null;
-	readonly starts_on: string | null;
-	readonly ends_on: string | null;
-	readonly params: Readonly<Record<string, unknown>>;
+  readonly name: string | null;
+  readonly amount: MoneyString | null;
+  readonly currency: string | null;
+  readonly starts_on: string | null;
+  readonly ends_on: string | null;
+  readonly params: Readonly<Record<string, unknown>>;
 }
 
 /** One collapsed-section summary: an i18n `key` plus raw, client-formatted fields. */
 export interface EditorSectionSummary {
-	readonly key: string;
-	readonly [field: string]: string | number | null | undefined;
+  readonly key: string;
+  readonly [field: string]: string | number | null | undefined;
 }
 
 /** The collapsed-section summaries shown before the user expands each section. */
 export interface EditorSectionSummaries {
-	readonly time_range: EditorSectionSummary;
-	readonly change_over_time: EditorSectionSummary;
-	readonly source: EditorSectionSummary;
+  readonly time_range: EditorSectionSummary;
+  readonly change_over_time: EditorSectionSummary;
+  readonly source: EditorSectionSummary;
 }
 
 /**
@@ -398,8 +400,8 @@ export interface EditorSectionSummaries {
  * plus the editor schema version. No projection bodies, no other records.
  */
 export interface EditorValidationMeta {
-	readonly lock_version: number;
-	readonly schema_version: number;
+  readonly lock_version: number;
+  readonly schema_version: number;
 }
 
 /**
@@ -407,15 +409,15 @@ export interface EditorValidationMeta {
  * need to open?". The typed editor-drawer payload for ONE assumption.
  */
 export interface EditorPrefillReadModel {
-	/** The form schema key (e.g. `"salary"`); selects the type-specific form. */
-	readonly form_key: string;
-	/** The assumption being edited (opaque id; family-resolved server-side). */
-	readonly assumption_id: string;
-	/** The scenario layer the edit targets, or `null` for the baseline plan. */
-	readonly scenario_layer_id: string | null;
-	readonly primary_values: EditorPrimaryValues;
-	readonly section_summaries: EditorSectionSummaries;
-	readonly validation: EditorValidationMeta;
+  /** The form schema key (e.g. `"salary"`); selects the type-specific form. */
+  readonly form_key: string;
+  /** The assumption being edited (opaque id; family-resolved server-side). */
+  readonly assumption_id: string;
+  /** The scenario layer the edit targets, or `null` for the baseline plan. */
+  readonly scenario_layer_id: string | null;
+  readonly primary_values: EditorPrimaryValues;
+  readonly section_summaries: EditorSectionSummaries;
+  readonly validation: EditorValidationMeta;
 }
 
 /**
@@ -425,7 +427,7 @@ export interface EditorPrefillReadModel {
  * code for a failed save.
  */
 export interface EditorFieldErrors {
-	readonly [field: string]: string | undefined;
+  readonly [field: string]: string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -446,9 +448,9 @@ export interface EditorFieldErrors {
  * Recompute Model").
  */
 export interface SaveVersionTokens {
-	readonly plan_version: number;
-	readonly lock_version: number;
-	readonly scenario_stack_key: string;
+  readonly plan_version: number;
+  readonly lock_version: number;
+  readonly scenario_stack_key: string;
 }
 
 /**
@@ -458,13 +460,13 @@ export interface SaveVersionTokens {
  * `recomputing` and the client keeps the prior inspector.
  */
 export interface SavedAssumptionPatch {
-	readonly saved_card: AssumptionCard;
-	readonly selected_period: SelectedPeriodReadModel | null;
-	readonly metric_strip: readonly SelectedPeriodMetric[];
-	readonly issues: readonly IssueReadModel[];
-	readonly freshness: ProjectionFreshness;
-	readonly chart_data_token: string | null;
-	readonly version_tokens: SaveVersionTokens;
+  readonly saved_card: AssumptionCard;
+  readonly selected_period: SelectedPeriodReadModel | null;
+  readonly metric_strip: readonly SelectedPeriodMetric[];
+  readonly issues: readonly IssueReadModel[];
+  readonly freshness: ProjectionFreshness;
+  readonly chart_data_token: string | null;
+  readonly version_tokens: SaveVersionTokens;
 }
 
 /**
@@ -474,13 +476,13 @@ export interface SavedAssumptionPatch {
  * user's place.
  */
 export interface SaveConflict {
-	readonly conflict: "stale_plan_version" | "stale_lock_version";
-	readonly context: {
-		readonly assumption_id?: string;
-		readonly plan_version?: number;
-		readonly lock_version?: number;
-		readonly scenario_layer_id?: string | null;
-	};
+  readonly conflict: "stale_plan_version" | "stale_lock_version";
+  readonly context: {
+    readonly assumption_id?: string;
+    readonly plan_version?: number;
+    readonly lock_version?: number;
+    readonly scenario_layer_id?: string | null;
+  };
 }
 
 /**
@@ -489,10 +491,10 @@ export interface SaveConflict {
  * `selectedPeriod` is `null` before any period is projected.
  */
 export interface ForecastWorkspaceProps {
-	readonly plan: PlanReadModel;
-	readonly band: ProjectionBandReadModel;
-	readonly selectedPeriod: SelectedPeriodReadModel | null;
-	readonly assumptionGroups: AssumptionGroupReadModel;
-	readonly issues: readonly IssueReadModel[];
-	readonly freshness: ProjectionFreshness;
+  readonly plan: PlanReadModel;
+  readonly band: ProjectionBandReadModel;
+  readonly selectedPeriod: SelectedPeriodReadModel | null;
+  readonly assumptionGroups: AssumptionGroupReadModel;
+  readonly issues: readonly IssueReadModel[];
+  readonly freshness: ProjectionFreshness;
 }

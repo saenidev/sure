@@ -12,4 +12,4 @@ import { createInertiaApp } from "@inertiajs/react";
 import { createElement } from "react";
 
 export const inertiaToolchainReady: boolean =
-	typeof createInertiaApp === "function" && typeof createElement === "function";
+  typeof createInertiaApp === "function" && typeof createElement === "function";

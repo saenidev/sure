@@ -24,8 +24,8 @@
 
 import type { JSX } from "react";
 import {
-	type ProjectionChartSummaryRow,
-	useProjectionChart,
+  type ProjectionChartSummaryRow,
+  useProjectionChart,
 } from "../hooks/useProjectionChart";
 import { ft } from "../i18n";
 import type { ProjectionBandReadModel } from "../types/readModels";
@@ -33,51 +33,51 @@ import type { ProjectionBandReadModel } from "../types/readModels";
 // Format a canonical decimal-string value for display. The canonical string stays
 // the source of truth; this only renders it. Returns an em dash for absent values.
 function formatValue(value: string | null): string {
-	if (value === null || value === "") {
-		return "—";
-	}
-	const parsed = Number.parseFloat(value);
-	if (Number.isNaN(parsed)) {
-		return value;
-	}
-	return new Intl.NumberFormat(undefined, {
-		maximumFractionDigits: 2,
-	}).format(parsed);
+  if (value === null || value === "") {
+    return "—";
+  }
+  const parsed = Number.parseFloat(value);
+  if (Number.isNaN(parsed)) {
+    return value;
+  }
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 2,
+  }).format(parsed);
 }
 
 // The screen-reader data-summary table: a real <table> mirroring every plotted
 // period so assistive tech reads the same data the marker shows. Visually hidden
 // (sr-only) but in the accessibility tree (the gate's "data summary fallback").
 function DataSummaryTable({
-	rows,
-	metricLabel,
+  rows,
+  metricLabel,
 }: {
-	readonly rows: readonly ProjectionChartSummaryRow[];
-	readonly metricLabel: string;
+  readonly rows: readonly ProjectionChartSummaryRow[];
+  readonly metricLabel: string;
 }): JSX.Element {
-	return (
-		<table className="sr-only" data-testid="forecast-chart-summary">
-			<caption>
-				{ft("forecasts.chart.summary_caption", { metric: metricLabel })}
-			</caption>
-			<thead>
-				<tr>
-					<th scope="col">{ft("forecasts.chart.summary_period")}</th>
-					<th scope="col">{ft("forecasts.chart.summary_value")}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{rows.map((row) => (
-					<tr key={row.periodKey}>
-						<th scope="row">{row.periodKey}</th>
-						{/* privacy-sensitive: the sr-only / DOM-inspectable value must blur
+  return (
+    <table className="sr-only" data-testid="forecast-chart-summary">
+      <caption>
+        {ft("forecasts.chart.summary_caption", { metric: metricLabel })}
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">{ft("forecasts.chart.summary_period")}</th>
+          <th scope="col">{ft("forecasts.chart.summary_value")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.periodKey}>
+            <th scope="row">{row.periodKey}</th>
+            {/* privacy-sensitive: the sr-only / DOM-inspectable value must blur
 						    consistently with the visible value cell when privacy mode is on. */}
-						<td className="privacy-sensitive">{formatValue(row.value)}</td>
-					</tr>
-				))}
-			</tbody>
-		</table>
-	);
+            <td className="privacy-sensitive">{formatValue(row.value)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 // The chart-header metric selector: a token-styled segmented control over the
@@ -86,236 +86,237 @@ function DataSummaryTable({
 // the preloaded `metric_series`, so switching metrics issues ZERO network. Each
 // option's label resolves through the client copy table (`forecasts.metrics.*`).
 function MetricSelector({
-	metrics,
-	selectedMetric,
-	onSelectMetric,
+  metrics,
+  selectedMetric,
+  onSelectMetric,
 }: {
-	readonly metrics: readonly string[];
-	readonly selectedMetric: string;
-	readonly onSelectMetric: (metric: string) => void;
+  readonly metrics: readonly string[];
+  readonly selectedMetric: string;
+  readonly onSelectMetric: (metric: string) => void;
 }): JSX.Element | null {
-	if (metrics.length <= 1) {
-		return null;
-	}
-	return (
-		<div
-			data-testid="forecast-chart-metric-selector"
-			role="group"
-			aria-label={ft("forecasts.chart.metric_selector_label")}
-			className="flex flex-wrap items-center gap-1 rounded-lg bg-surface-inset p-0.5"
-		>
-			{metrics.map((metric) => {
-				const isSelected = metric === selectedMetric;
-				return (
-					<button
-						key={metric}
-						type="button"
-						data-testid={`forecast-chart-metric-${metric}`}
-						aria-pressed={isSelected}
-						onClick={() => onSelectMetric(metric)}
-						className={
-							isSelected
-								? "rounded-md bg-container px-2.5 py-1 text-xs font-medium text-primary shadow-xs"
-								: "rounded-md px-2.5 py-1 text-xs font-medium text-subdued hover:text-primary"
-						}
-					>
-						{ft(`forecasts.metrics.${metric}`)}
-					</button>
-				);
-			})}
-		</div>
-	);
+  if (metrics.length <= 1) {
+    return null;
+  }
+  return (
+    <div
+      data-testid="forecast-chart-metric-selector"
+      // biome-ignore lint/a11y/useSemanticElements: this is a segmented toggle control (buttons with aria-pressed), not a form <fieldset>; role="group" with an aria-label is the correct ARIA pattern here.
+      role="group"
+      aria-label={ft("forecasts.chart.metric_selector_label")}
+      className="flex flex-wrap items-center gap-1 rounded-lg bg-surface-inset p-0.5"
+    >
+      {metrics.map((metric) => {
+        const isSelected = metric === selectedMetric;
+        return (
+          <button
+            key={metric}
+            type="button"
+            data-testid={`forecast-chart-metric-${metric}`}
+            aria-pressed={isSelected}
+            onClick={() => onSelectMetric(metric)}
+            className={
+              isSelected
+                ? "rounded-md bg-container px-2.5 py-1 text-xs font-medium text-primary shadow-xs"
+                : "rounded-md px-2.5 py-1 text-xs font-medium text-subdued hover:text-primary"
+            }
+          >
+            {ft(`forecasts.metrics.${metric}`)}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export interface ProjectionChartProps {
-	/** The preloaded projection band (compact period index + selected metric). */
-	readonly band: ProjectionBandReadModel;
-	/** The selected period from the shared store (drives the marker). */
-	readonly selectedPeriodKey: string | null;
-	/** Reports a settled, locally-resolved selection up to the workspace store. */
-	readonly onSelectPeriod: (periodKey: string) => void;
-	/** The active metric from the shared store (drives which series is plotted). */
-	readonly selectedMetric: string;
-	/** Reports a metric switch up to the workspace store (`selectMetric`). */
-	readonly onSelectMetric: (metric: string) => void;
-	/** Stable region id for scoped patches / tests. */
-	readonly regionKey?: string;
-	/** Stable cache key (plan version + scenario stack) for scoped patches. */
-	readonly cacheKey?: string;
+  /** The preloaded projection band (compact period index + selected metric). */
+  readonly band: ProjectionBandReadModel;
+  /** The selected period from the shared store (drives the marker). */
+  readonly selectedPeriodKey: string | null;
+  /** Reports a settled, locally-resolved selection up to the workspace store. */
+  readonly onSelectPeriod: (periodKey: string) => void;
+  /** The active metric from the shared store (drives which series is plotted). */
+  readonly selectedMetric: string;
+  /** Reports a metric switch up to the workspace store (`selectMetric`). */
+  readonly onSelectMetric: (metric: string) => void;
+  /** Stable region id for scoped patches / tests. */
+  readonly regionKey?: string;
+  /** Stable cache key (plan version + scenario stack) for scoped patches. */
+  readonly cacheKey?: string;
 }
 
 export default function ProjectionChart({
-	band,
-	selectedPeriodKey,
-	onSelectPeriod,
-	selectedMetric,
-	onSelectMetric,
-	regionKey = "forecast-projection-chart",
-	cacheKey,
+  band,
+  selectedPeriodKey,
+  onSelectPeriod,
+  selectedMetric,
+  onSelectMetric,
+  regionKey = "forecast-projection-chart",
+  cacheKey,
 }: ProjectionChartProps): JSX.Element {
-	// The metrics the selector offers, always including the band's preloaded
-	// selected metric so it never disappears from the control.
-	const availableMetrics =
-		band.available_metrics.length > 0
-			? band.available_metrics
-			: [band.selected_metric];
-	// Resolve the ACTIVE metric LOCALLY: honor the store's selection when its
-	// series is preloaded, otherwise fall back to the band's preloaded metric so
-	// the chart never points at a series it has no data for (no network).
-	const activeMetric =
-		band.metric_series[selectedMetric] !== undefined
-			? selectedMetric
-			: band.selected_metric;
-	// The active metric's compact series, resolved from the preloaded per-metric
-	// map (zero network) with the first-paint `series` as the fallback.
-	const activeSeries = band.metric_series[activeMetric] ?? band.series;
+  // The metrics the selector offers, always including the band's preloaded
+  // selected metric so it never disappears from the control.
+  const availableMetrics =
+    band.available_metrics.length > 0
+      ? band.available_metrics
+      : [band.selected_metric];
+  // Resolve the ACTIVE metric LOCALLY: honor the store's selection when its
+  // series is preloaded, otherwise fall back to the band's preloaded metric so
+  // the chart never points at a series it has no data for (no network).
+  const activeMetric =
+    band.metric_series[selectedMetric] !== undefined
+      ? selectedMetric
+      : band.selected_metric;
+  // The active metric's compact series, resolved from the preloaded per-metric
+  // map (zero network) with the first-paint `series` as the fallback.
+  const activeSeries = band.metric_series[activeMetric] ?? band.series;
 
-	const chart = useProjectionChart({
-		periodKeys: band.period_keys,
-		series: activeSeries,
-		selectedPeriodKey,
-		onSelectPeriod,
-	});
+  const chart = useProjectionChart({
+    periodKeys: band.period_keys,
+    series: activeSeries,
+    selectedPeriodKey,
+    onSelectPeriod,
+  });
 
-	// A human-ish metric label for the summary caption: the read model carries a
-	// metric KEY (e.g. "net_worth"); reuse the client copy table when present.
-	const metricLabel = ft(`forecasts.metrics.${activeMetric}`);
+  // A human-ish metric label for the summary caption: the read model carries a
+  // metric KEY (e.g. "net_worth"); reuse the client copy table when present.
+  const metricLabel = ft(`forecasts.metrics.${activeMetric}`);
 
-	if (!chart.hasData) {
-		return (
-			<section
-				data-testid={regionKey}
-				data-region={regionKey}
-				data-cache-key={cacheKey}
-				className="rounded-xl border border-primary bg-container p-6 text-sm text-subdued"
-			>
-				{ft("forecasts.chart.empty")}
-			</section>
-		);
-	}
+  if (!chart.hasData) {
+    return (
+      <section
+        data-testid={regionKey}
+        data-region={regionKey}
+        data-cache-key={cacheKey}
+        className="rounded-xl border border-primary bg-container p-6 text-sm text-subdued"
+      >
+        {ft("forecasts.chart.empty")}
+      </section>
+    );
+  }
 
-	const selectedValue = chart.selectedPoint
-		? formatValue(chart.selectedPoint.value)
-		: "—";
-	const selectedPeriod = chart.selectedPeriodKey ?? band.selected_marker ?? "—";
+  const selectedValue = chart.selectedPoint
+    ? formatValue(chart.selectedPoint.value)
+    : "—";
+  const selectedPeriod = chart.selectedPeriodKey ?? band.selected_marker ?? "—";
 
-	// Reduced-motion: no transition. Otherwise a quick marker ease.
-	const markerTransition = chart.reducedMotion
-		? "none"
-		: "cx 120ms ease-out, cy 120ms ease-out";
+  // Reduced-motion: no transition. Otherwise a quick marker ease.
+  const markerTransition = chart.reducedMotion
+    ? "none"
+    : "cx 120ms ease-out, cy 120ms ease-out";
 
-	const maxIndex = Math.max(0, chart.points.length - 1);
-	const selectedValueIndex = chart.selectedPoint?.index ?? 0;
+  const maxIndex = Math.max(0, chart.points.length - 1);
+  const selectedValueIndex = chart.selectedPoint?.index ?? 0;
 
-	return (
-		<section
-			data-testid={regionKey}
-			data-region={regionKey}
-			data-cache-key={cacheKey}
-			data-selected-metric={activeMetric}
-			aria-label={ft("forecasts.chart.label")}
-			className="flex flex-col gap-3 rounded-xl border border-primary bg-container p-4 sm:p-5"
-		>
-			<header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-				<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-					<h2 className="text-sm font-medium text-primary">
-						{ft("forecasts.chart.label")}
-					</h2>
-					<MetricSelector
-						metrics={availableMetrics}
-						selectedMetric={activeMetric}
-						onSelectMetric={onSelectMetric}
-					/>
-				</div>
-				<dl className="flex min-w-0 items-baseline gap-2">
-					<dt className="shrink-0 text-xs text-subdued">{selectedPeriod}</dt>
-					<dd
-						data-testid="forecast-chart-value"
-						className="privacy-sensitive truncate text-base font-semibold tabular-nums text-primary"
-					>
-						{selectedValue}
-					</dd>
-				</dl>
-			</header>
+  return (
+    <section
+      data-testid={regionKey}
+      data-region={regionKey}
+      data-cache-key={cacheKey}
+      data-selected-metric={activeMetric}
+      aria-label={ft("forecasts.chart.label")}
+      className="flex flex-col gap-3 rounded-xl border border-primary bg-container p-4 sm:p-5"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h2 className="text-sm font-medium text-primary">
+            {ft("forecasts.chart.label")}
+          </h2>
+          <MetricSelector
+            metrics={availableMetrics}
+            selectedMetric={activeMetric}
+            onSelectMetric={onSelectMetric}
+          />
+        </div>
+        <dl className="flex min-w-0 items-baseline gap-2">
+          <dt className="shrink-0 text-xs text-subdued">{selectedPeriod}</dt>
+          <dd
+            data-testid="forecast-chart-value"
+            className="privacy-sensitive truncate text-base font-semibold tabular-nums text-primary"
+          >
+            {selectedValue}
+          </dd>
+        </dl>
+      </header>
 
-			{/* The focusable scrubber region owns focus + keyboard + pointer
+      {/* The focusable scrubber region owns focus + keyboard + pointer
 			    interaction so the role lives on an interactive element; the SVG inside
 			    is purely presentational. The stable viewBox keeps the D3 math
 			    anchor-deterministic while the box scales to its container (no
 			    clipping / overlap on resize). Pointer movement moves the local hover
 			    marker; a press / arrow keys SETTLE the selection — hover/scrub is
 			    ZERO network. */}
-			<div
-				ref={chart.containerRef}
-				data-testid="forecast-chart-scrubber"
-				role="slider"
-				tabIndex={0}
-				aria-label={ft("forecasts.chart.scrubber_label")}
-				aria-valuemin={0}
-				aria-valuemax={maxIndex}
-				aria-valuenow={selectedValueIndex}
-				aria-valuetext={ft("forecasts.chart.selected_period", {
-					period: selectedPeriod,
-					value: selectedValue,
-				})}
-				className="h-44 w-full touch-none rounded-lg border border-primary bg-surface-inset outline-none focus-visible:ring-2 focus-visible:ring-gray-400 sm:h-56"
-				onPointerMove={chart.handlePointerMove}
-				onPointerDown={chart.handlePointerDown}
-				onKeyDown={chart.handleKeyDown}
-			>
-				<svg
-					data-testid="forecast-chart-svg"
-					aria-hidden="true"
-					viewBox={`0 0 ${chart.viewBox.width} ${chart.viewBox.height}`}
-					preserveAspectRatio="none"
-					className="h-full w-full"
-				>
-					<path
-						d={chart.linePath}
-						fill="none"
-						stroke="var(--color-gray-500)"
-						strokeWidth={2}
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					/>
-					{chart.selectedPoint && chart.selectedPoint.cy !== null ? (
-						<g>
-							<line
-								x1={chart.selectedPoint.cx}
-								x2={chart.selectedPoint.cx}
-								y1={chart.margin.top}
-								y2={chart.viewBox.height - chart.margin.bottom}
-								stroke="var(--color-gray-400)"
-								strokeDasharray="3 3"
-							/>
-							<circle
-								data-testid="forecast-chart-marker"
-								cx={chart.selectedPoint.cx}
-								cy={chart.selectedPoint.cy}
-								r={5}
-								fill="var(--color-white)"
-								stroke="var(--color-gray-700)"
-								strokeWidth={2}
-								style={{ transition: markerTransition }}
-							/>
-						</g>
-					) : null}
-				</svg>
-			</div>
+      <div
+        ref={chart.containerRef}
+        data-testid="forecast-chart-scrubber"
+        role="slider"
+        tabIndex={0}
+        aria-label={ft("forecasts.chart.scrubber_label")}
+        aria-valuemin={0}
+        aria-valuemax={maxIndex}
+        aria-valuenow={selectedValueIndex}
+        aria-valuetext={ft("forecasts.chart.selected_period", {
+          period: selectedPeriod,
+          value: selectedValue,
+        })}
+        className="h-44 w-full touch-none rounded-lg border border-primary bg-surface-inset outline-none focus-visible:ring-2 focus-visible:ring-gray-400 sm:h-56"
+        onPointerMove={chart.handlePointerMove}
+        onPointerDown={chart.handlePointerDown}
+        onKeyDown={chart.handleKeyDown}
+      >
+        <svg
+          data-testid="forecast-chart-svg"
+          aria-hidden="true"
+          viewBox={`0 0 ${chart.viewBox.width} ${chart.viewBox.height}`}
+          preserveAspectRatio="none"
+          className="h-full w-full"
+        >
+          <path
+            d={chart.linePath}
+            fill="none"
+            stroke="var(--color-gray-500)"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {chart.selectedPoint && chart.selectedPoint.cy !== null ? (
+            <g>
+              <line
+                x1={chart.selectedPoint.cx}
+                x2={chart.selectedPoint.cx}
+                y1={chart.margin.top}
+                y2={chart.viewBox.height - chart.margin.bottom}
+                stroke="var(--color-gray-400)"
+                strokeDasharray="3 3"
+              />
+              <circle
+                data-testid="forecast-chart-marker"
+                cx={chart.selectedPoint.cx}
+                cy={chart.selectedPoint.cy}
+                r={5}
+                fill="var(--color-white)"
+                stroke="var(--color-gray-700)"
+                strokeWidth={2}
+                style={{ transition: markerTransition }}
+              />
+            </g>
+          ) : null}
+        </svg>
+      </div>
 
-			{/* Live region announcing the selected period for screen readers, mirroring
+      {/* Live region announcing the selected period for screen readers, mirroring
 			    the marker so assistive tech stays in sync as it scrubs. privacy-sensitive
 			    so the announced money value blurs consistently with the visible value
 			    cell when privacy mode is on (the value is otherwise DOM-inspectable). */}
-			<p className="privacy-sensitive sr-only" aria-live="polite">
-				{ft("forecasts.chart.selected_period", {
-					period: selectedPeriod,
-					value: selectedValue,
-				})}
-			</p>
+      <p className="privacy-sensitive sr-only" aria-live="polite">
+        {ft("forecasts.chart.selected_period", {
+          period: selectedPeriod,
+          value: selectedValue,
+        })}
+      </p>
 
-			{/* The screen-reader data-summary table fallback (decision-gate requirement). */}
-			<DataSummaryTable rows={chart.summaryRows} metricLabel={metricLabel} />
-		</section>
-	);
+      {/* The screen-reader data-summary table fallback (decision-gate requirement). */}
+      <DataSummaryTable rows={chart.summaryRows} metricLabel={metricLabel} />
+    </section>
+  );
 }
