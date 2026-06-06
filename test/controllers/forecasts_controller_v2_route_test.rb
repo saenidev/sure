@@ -52,6 +52,18 @@ class ForecastsControllerV2RouteTest < ActionDispatch::IntegrationTest
     assert_redirected_to new_session_url
   end
 
+  test "renders for a family with no connected forecast source data" do
+    sign_in users(:empty)
+
+    get forecast_v2_url
+
+    assert_response :success
+    assert_inertia_component "Forecast/Workspace"
+    assert_kind_of Array, inertia.props.dig(:band, :period_keys)
+    assert_includes %w[fresh stale recomputing failed superseded uncomputed],
+      inertia.props.dig(:freshness, :state)
+  end
+
   test "is idempotent: opening /forecast_v2 repeatedly creates exactly one plan" do
     assert_difference -> { Forecasts::Plan.where(family: @family).count }, 1 do
       get forecast_v2_url
