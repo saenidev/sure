@@ -171,6 +171,13 @@ const COPY: Readonly<Record<string, string>> = {
 	"forecasts.editor.load_error": "Couldn't open this editor. Try again.",
 	"forecasts.editor.summary_error":
 		"Some fields need attention before this can be saved.",
+	// Save / conflict states (useAssumptionEditor save flow, slice C8).
+	"forecasts.editor.saved": "Saved",
+	"forecasts.editor.save_error": "Couldn't save. Try again.",
+	"forecasts.editor.conflict_plan_version":
+		"This plan changed elsewhere. Review the latest version, then save again.",
+	"forecasts.editor.conflict_lock_version":
+		"This assumption changed since you opened it. Reload and try again.",
 	"forecasts.editor.scenario_baseline": "Editing the baseline plan",
 	"forecasts.editor.scenario_layer": "Editing scenario layer %{layer}",
 	// Collapsed editor section headers + summary lines.

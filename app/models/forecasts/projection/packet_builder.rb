@@ -175,12 +175,50 @@ module Forecasts
         # Merge order matters: stored typed params win for keys they define, then
         # the canonical columns fill in amount/currency and override timing with
         # the persisted anchors so the engine never relies on stale param copies.
+        # Policy params are normalized last so the form's flat string shape becomes
+        # the engine's typed-hash policy shape.
         def assumption_params(assumption)
           base = Forecasts::Projection.deep_symbolize(assumption.params || {})
 
           base
             .merge(column_params(assumption))
             .merge(anchor_params(assumption))
+            .merge(policy_params(base))
+        end
+
+        # The typed form objects (B14) persist growth/inflation as a flat policy
+        # STRING (`flat` / `fixed_rate`) plus a separate percentage rate, but the
+        # pure engine expanders (B5) read a typed policy HASH
+        # (`{ type: "none" | "annual_percentage", rate: <fraction> }`). This seam —
+        # the last place that touches models — translates the persisted form shape
+        # into the engine shape so the saved assumption recomputes deterministically
+        # (spec "Plan packet builder ... into engine input"). A policy already stored
+        # as a hash (legacy/test shape) is passed through untouched.
+        def policy_params(base)
+          normalized = {}
+          normalized[:growth_policy] = engine_policy(base[:growth_policy], base[:growth_rate]) if base.key?(:growth_policy)
+          normalized[:inflation_policy] = engine_policy(base[:inflation_policy], base[:inflation_rate]) if base.key?(:inflation_policy)
+          normalized
+        end
+
+        # Maps one persisted policy value into the engine's typed policy hash. A
+        # hash is already engine-shaped (passed through). A flat string maps:
+        # `fixed_rate` (with a percentage rate) -> annual_percentage at the
+        # fractional rate; anything else (e.g. `flat`) -> no growth.
+        def engine_policy(policy, rate)
+          return policy if policy.is_a?(Hash)
+
+          if policy.to_s == "fixed_rate" && rate.present?
+            { type: "annual_percentage", rate: fractional_rate(rate) }
+          else
+            { type: "none" }
+          end
+        end
+
+        # The form stores rates as a percentage (e.g. "3.0" == 3%); the engine
+        # compounds a fractional rate (e.g. 0.03). Convert at this seam.
+        def fractional_rate(rate)
+          (to_decimal(rate) / BigDecimal("100")).to_s("F")
         end
 
         def column_params(assumption)

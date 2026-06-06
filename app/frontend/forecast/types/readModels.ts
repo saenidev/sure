@@ -421,6 +421,61 @@ export interface EditorFieldErrors {
 	readonly [field: string]: string | undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Forecast V2 saved-assumption changed-region patch (slice C8).
+//
+// These interfaces type the payload `Forecasts::AssumptionsController#update`
+// (PATCH /forecast/assumptions/:id) returns from
+// `Forecasts::SavedAssumptionPatchReadModel#to_h`. It is the TYPED changed-region
+// payload a save returns INSTEAD of a full workspace reload (spec "Patch budget",
+// "Save endpoints"): only the regions a save may patch, plus version tokens. The
+// client patches each region by its C3 `data-testid` region key, never replacing
+// the workspace component tree.
+// ---------------------------------------------------------------------------
+
+/**
+ * The version tokens a committed save returns. The client folds these into the
+ * workspace store so dependent regions recompute their cache keys (spec "Live
+ * Recompute Model").
+ */
+export interface SaveVersionTokens {
+	readonly plan_version: number;
+	readonly lock_version: number;
+	readonly scenario_stack_key: string;
+}
+
+/**
+ * `Forecasts::SavedAssumptionPatchReadModel#to_h` — the changed regions of a
+ * committed assumption save. `selected_period` is `null` until projection output
+ * is ready (deferred over-budget recompute), in which case `freshness.state` is
+ * `recomputing` and the client keeps the prior inspector.
+ */
+export interface SavedAssumptionPatch {
+	readonly saved_card: AssumptionCard;
+	readonly selected_period: SelectedPeriodReadModel | null;
+	readonly metric_strip: readonly SelectedPeriodMetric[];
+	readonly issues: readonly IssueReadModel[];
+	readonly freshness: ProjectionFreshness;
+	readonly chart_data_token: string | null;
+	readonly version_tokens: SaveVersionTokens;
+}
+
+/**
+ * The typed conflict body a stale save returns (spec "Conflict Handling"). HTTP
+ * 409. `conflict` is the stable conflict code; `context` preserves the editor /
+ * period / scenario context so the client can re-anchor without losing the
+ * user's place.
+ */
+export interface SaveConflict {
+	readonly conflict: "stale_plan_version" | "stale_lock_version";
+	readonly context: {
+		readonly assumption_id?: string;
+		readonly plan_version?: number;
+		readonly lock_version?: number;
+		readonly scenario_layer_id?: string | null;
+	};
+}
+
 /**
  * The full typed first-viewport prop bag `ForecastsController#show` (V2) passes
  * to the `Forecast/Workspace` Inertia page. Each region is one read model.

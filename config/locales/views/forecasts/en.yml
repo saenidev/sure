@@ -167,6 +167,11 @@ en:
       loading: "Loading editor…"
       load_error: "Couldn't open this editor. Try again."
       summary_error: "Some fields need attention before this can be saved."
+      # Save / conflict states (Forecasts::AssumptionsController#update, C8).
+      saved: "Saved"
+      save_error: "Couldn't save. Try again."
+      conflict_plan_version: "This plan changed elsewhere. Review the latest version, then save again."
+      conflict_lock_version: "This assumption changed since you opened it. Reload and try again."
       scenario_baseline: "Editing the baseline plan"
       scenario_layer: "Editing scenario layer %{layer}"
       # Collapsed editor section headers + their summary lines.

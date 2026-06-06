@@ -29,6 +29,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
 	EditorFieldErrors,
 	EditorPrefillReadModel,
+	SaveConflict,
+	SavedAssumptionPatch,
 } from "../types/readModels";
 
 /** Where the drawer sits in its open/load lifecycle. */
@@ -38,12 +40,37 @@ export type EditorLifecycle =
 	| "ready"
 	| "load_error";
 
-/** Where a save sits in its lifecycle (the save itself lands in C8). */
-export type EditorSaveState = "idle" | "saving" | "save_error";
+/** Where a save sits in its lifecycle. */
+export type EditorSaveState = "idle" | "saving" | "save_error" | "conflict";
+
+/** The outcome the save resolves to, so the caller can patch the workspace. */
+export type SaveOutcome =
+	| { readonly status: "saved"; readonly patch: SavedAssumptionPatch }
+	| { readonly status: "invalid"; readonly fieldErrors: EditorFieldErrors }
+	| { readonly status: "conflict"; readonly conflict: SaveConflict }
+	| { readonly status: "error" };
 
 export interface UseAssumptionEditorArgs {
 	/** Builds the editor-open endpoint URL for one assumption id (default: V2 route). */
 	readonly buildUrl?: (assumptionId: string) => string;
+	/** Builds the save endpoint URL for one assumption id (default: V2 route). */
+	readonly buildSaveUrl?: (assumptionId: string) => string;
+}
+
+/** The form values + version tokens one save submits. */
+export interface SaveEditorArgs {
+	/** The assumption being saved (family-resolved server-side; opaque). */
+	readonly assumptionId: string;
+	/** The assumption kind, sent so the server selects the typed form. */
+	readonly kind: string;
+	/** The edited field values (top-level + form-specific param fields). */
+	readonly values: Readonly<Record<string, string>>;
+	/**
+	 * The plan version the workspace observed (owned by the workspace store, passed
+	 * in here). The server rejects the save with a conflict if the live plan version
+	 * has moved past it (spec "Live Recompute Model", "Conflict Handling").
+	 */
+	readonly planVersion: number;
 }
 
 export interface OpenEditorArgs {
@@ -82,6 +109,16 @@ export interface UseAssumptionEditorResult {
 	/** Opens the drawer for one assumption, fetching its editor prefill once. */
 	readonly open: (args: OpenEditorArgs) => void;
 	/**
+	 * Saves the edited assumption via PATCH /forecast/assumptions/:id, echoing the
+	 * observed plan version + assumption lock_version for the optimistic checks.
+	 * Drives `saveState` / `fieldErrors` / `summaryError` and resolves to the typed
+	 * {@link SaveOutcome} so the caller can patch the workspace (on `saved`) or
+	 * re-anchor the editor (on `conflict`). It never patches the workspace itself —
+	 * editor lifecycle and recompute orchestration stay separate (spec "Frontend
+	 * module responsibility rules").
+	 */
+	readonly save: (args: SaveEditorArgs) => Promise<SaveOutcome>;
+	/**
 	 * Requests a close. Returns `true` if the drawer closed; `false` if it was
 	 * blocked because there are unsaved edits and `force` was not passed (the
 	 * caller should surface the dirty-state warning, then call again with `force`).
@@ -105,6 +142,23 @@ function defaultBuildUrl(assumptionId: string): string {
 	return `/forecast/assumptions/${encodeURIComponent(assumptionId)}/edit`;
 }
 
+/** The default save endpoint URL for one assumption (spec V2 route shape). */
+function defaultBuildSaveUrl(assumptionId: string): string {
+	return `/forecast/assumptions/${encodeURIComponent(assumptionId)}`;
+}
+
+/** Reads the Rails CSRF token from the page meta tag (rendered by `_head`). */
+function csrfToken(): string {
+	if (typeof document === "undefined") {
+		return "";
+	}
+	return (
+		document
+			.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
+			?.getAttribute("content") ?? ""
+	);
+}
+
 /**
  * Owns the typed editor drawer's lifecycle, dirty state, pending save state,
  * typed validation errors, and the optimistic version token. Plan / period /
@@ -113,6 +167,7 @@ function defaultBuildUrl(assumptionId: string): string {
  */
 export function useAssumptionEditor({
 	buildUrl = defaultBuildUrl,
+	buildSaveUrl = defaultBuildSaveUrl,
 }: UseAssumptionEditorArgs = {}): UseAssumptionEditorResult {
 	const [lifecycle, setLifecycle] = useState<EditorLifecycle>("closed");
 	const [prefill, setPrefill] = useState<EditorPrefillReadModel | null>(null);
@@ -207,6 +262,85 @@ export function useAssumptionEditor({
 		setSummaryError(null);
 	}, []);
 
+	// Saves the edited assumption. Echoes the optimistic version tokens (the
+	// prefill's lock_version + the workspace's observed plan version) so the server
+	// can reject a stale edit. Drives save lifecycle + typed errors; resolves to the
+	// outcome so the caller can patch the workspace (saved) or re-anchor (conflict).
+	const save = useCallback(
+		async ({
+			assumptionId,
+			kind,
+			values,
+			planVersion,
+		}: SaveEditorArgs): Promise<SaveOutcome> => {
+			setSaveState("saving");
+			setFieldErrors({});
+			setSummaryError(null);
+
+			const body = new URLSearchParams();
+			body.set("kind", kind);
+			body.set("plan_version", String(planVersion));
+			const lockVersion = prefill?.validation.lock_version;
+			if (lockVersion !== undefined && lockVersion !== null) {
+				body.set("expected_lock_version", String(lockVersion));
+			}
+			for (const [name, value] of Object.entries(values)) {
+				body.set(name, value);
+			}
+
+			try {
+				const response = await fetch(buildSaveUrl(assumptionId), {
+					method: "PATCH",
+					headers: {
+						Accept: "application/json",
+						"Content-Type": "application/x-www-form-urlencoded",
+						"X-CSRF-Token": csrfToken(),
+					},
+					credentials: "same-origin",
+					body: body.toString(),
+				});
+
+				if (response.ok) {
+					const patch = (await response.json()) as SavedAssumptionPatch;
+					setSaveState("idle");
+					setIsDirty(false);
+					return { status: "saved", patch };
+				}
+
+				if (response.status === 422) {
+					const data = (await response.json()) as {
+						errors?: EditorFieldErrors;
+					};
+					const errors = data.errors ?? {};
+					setFieldErrors(errors);
+					setSummaryError("invalid");
+					setSaveState("save_error");
+					return { status: "invalid", fieldErrors: errors };
+				}
+
+				if (response.status === 409) {
+					const conflict = (await response.json()) as SaveConflict;
+					setSummaryError(
+						conflict.conflict === "stale_lock_version"
+							? "conflict_lock_version"
+							: "conflict_plan_version",
+					);
+					setSaveState("conflict");
+					return { status: "conflict", conflict };
+				}
+
+				setSummaryError("save_error");
+				setSaveState("save_error");
+				return { status: "error" };
+			} catch {
+				setSummaryError("save_error");
+				setSaveState("save_error");
+				return { status: "error" };
+			}
+		},
+		[buildSaveUrl, prefill],
+	);
+
 	// Return focus to the invoking control once the drawer has fully closed (spec
 	// "Editor Contracts": "Return focus to the opening control after close").
 	useEffect(() => {
@@ -234,6 +368,7 @@ export function useAssumptionEditor({
 		versionToken: prefill?.validation.lock_version ?? null,
 		invokerId,
 		open,
+		save,
 		requestClose,
 		setDirty,
 		setSaveState,

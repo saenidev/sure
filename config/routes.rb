@@ -340,6 +340,22 @@ Rails.application.routes.draw do
     to: "forecasts/assumptions#edit",
     as: :edit_forecast_assumption
 
+  # Forecast V2 salary save endpoint (slice C8). The spec's V2 route shape
+  # ("PATCH /forecast/assumptions/:id") saves ONE typed assumption with plan
+  # version + optimistic lock checks, increments forecast_plans.current_plan_version,
+  # recomputes (sync within budget, else a background ForecastRecomputeJob), and
+  # returns a TYPED changed-region payload (saved card, selected-period inspector,
+  # metric strip, issue panel, freshness, chart data token) + version tokens — NOT
+  # a full workspace reload (spec "Live Recompute Model", "Patch budget", "Save
+  # endpoints"). A stale plan version returns a conflict preserving editor/period/
+  # scenario context (spec "Conflict Handling"). Mapped to the pluralized
+  # `Forecasts::` (V2) controller namespace so the V1 `Forecast::` services stay
+  # untouched; the controller resolves the assumption through Current.family (no
+  # family_id trusted from params), so a cross-family id 404s.
+  patch "forecast/assumptions/:id",
+    to: "forecasts/assumptions#update",
+    as: :forecast_assumption
+
   # Additive namespace that later forecasting slices hang off. Its controllers
   # inherit Forecast::BaseController, which scopes every query to Current.family.
   # Routes are added incrementally per slice.

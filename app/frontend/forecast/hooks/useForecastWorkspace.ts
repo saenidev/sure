@@ -27,6 +27,7 @@ import type {
 	FreshnessLifecycleState,
 	PeriodKey,
 	ProjectionFreshness,
+	SavedAssumptionPatch,
 } from "../types/readModels";
 
 /**
@@ -171,6 +172,15 @@ export interface ForecastWorkspaceStore extends ForecastWorkspaceState {
 		scenarioStackKey: string;
 		freshness: ProjectionFreshness;
 	}) => void;
+	/**
+	 * Folds a committed assumption save's typed changed-region patch (slice C8) into
+	 * the store: the new plan version + scenario stack + freshness, which recompute
+	 * the region cache keys so each scoped region re-fetches/patches in isolation
+	 * (spec "Patch budget": a save patches scoped regions, never the whole tree).
+	 * The shared store only tracks version tokens + freshness; the saved card,
+	 * inspector, metric strip, and issue regions read their own slices of the patch.
+	 */
+	readonly applyAssumptionPatch: (patch: SavedAssumptionPatch) => void;
 	readonly setFreshnessState: (state: FreshnessLifecycleState) => void;
 }
 
@@ -194,6 +204,13 @@ export function useForecastWorkspace(
 			setLens: (lens) => dispatch({ type: "setLens", lens }),
 			applyProjectionUpdate: (update) =>
 				dispatch({ type: "projectionUpdated", ...update }),
+			applyAssumptionPatch: (patch) =>
+				dispatch({
+					type: "projectionUpdated",
+					planVersion: patch.version_tokens.plan_version,
+					scenarioStackKey: patch.version_tokens.scenario_stack_key,
+					freshness: patch.freshness,
+				}),
 			setFreshnessState: (freshnessState) =>
 				dispatch({ type: "setFreshnessState", state: freshnessState }),
 		}),
