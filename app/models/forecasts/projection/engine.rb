@@ -47,6 +47,7 @@ module Forecasts
 
       def initialize(packet)
         @packet = coerce_packet(packet)
+        @expansion_issues = []
       end
 
       def call
@@ -55,6 +56,8 @@ module Forecasts
         traces = build_traces(ledger, outcome.periods)
         periods = attach_trace_ids(outcome.periods, traces)
         goals = evaluate_goals(outcome.periods)
+        issues = combined_issues(outcome)
+        status = derive_status(outcome, issues)
 
         Forecasts::Projection::Result.new(
           schema_version: packet.schema_version,
@@ -63,13 +66,13 @@ module Forecasts
           source_snapshot_hash: packet.source_snapshot_hash,
           scenario_stack_hash: packet.scenario_stack_hash,
           plan_version: plan_version,
-          status: outcome.status,
+          status: status,
           periods: periods,
           series: build_series(periods),
           traces: traces,
-          issues: outcome.issues,
+          issues: issues,
           goals: goals,
-          summary: build_summary(outcome, traces)
+          summary: build_summary(outcome, traces, issues, status)
         )
       end
 
@@ -137,10 +140,48 @@ module Forecasts
           expander_class = EXPANDERS[assumption[:kind].to_s]
           return [] if expander_class.nil?
 
-          expander_class.new(
-            params: assumption[:params] || {},
-            context: expansion_context(assumption)
-          ).expand
+          begin
+            expander_class.new(
+              params: assumption[:params] || {},
+              context: expansion_context(assumption)
+            ).expand
+          rescue Forecasts::Projection::Expanders::Base::InvalidExpansionError => error
+            # Plan-validation failures during expansion (unresolved/invalid
+            # milestone references, unknown anchor types) become structured
+            # blocking plan issues, NOT uncaught exceptions. The affected
+            # assumption simply contributes no flows. See spec "Engine
+            # Invariants" and issue codes `invalid_milestone_reference` /
+            # `invalid_assumption_params`.
+            @expansion_issues << expansion_issue_for(assumption, error)
+            []
+          end
+        end
+
+        # Maps an expander validation failure to a blocking plan issue. Milestone
+        # resolution failures map to `invalid_milestone_reference`; any other
+        # anchor/param failure maps to `invalid_assumption_params`. Both are
+        # blocking per the Issue Code Catalog.
+        def expansion_issue_for(assumption, error)
+          milestone = error.message.to_s.include?("milestone reference")
+          code = milestone ? "invalid_milestone_reference" : "invalid_assumption_params"
+
+          Forecasts::Projection::PlanIssue.new(
+            code: code,
+            severity: "blocking",
+            source: "plan_validation",
+            period: nil,
+            affected_entity_type: "assumption",
+            affected_entity_id: assumption[:id],
+            display_name: milestone ? "Invalid milestone reference" : "Invalid assumption parameters",
+            message_key: "forecasts.issues.#{code}",
+            impact: "This assumption is excluded from the projection until it is fixed.",
+            actions: milestone ? %w[choose_valid_milestone choose_date] : %w[fix_fields],
+            debug_context: {
+              assumption_id: assumption[:id],
+              assumption_kind: assumption[:kind].to_s,
+              error_class: error.class.name
+            }
+          )
         end
 
         def enabled?(assumption)
@@ -216,12 +257,30 @@ module Forecasts
           end
         end
 
-        def build_summary(outcome, traces)
+        # Expansion-time blocking issues (e.g. invalid milestone references) are
+        # joined with the simulator's issues. Expansion issues come first so
+        # plan-validation problems surface ahead of source-snapshot ones.
+        def combined_issues(outcome)
+          @expansion_issues + outcome.issues
+        end
+
+        # Final envelope status. A blocking issue (e.g. invalid milestone
+        # reference) downgrades the whole plan to `blocked`; otherwise the
+        # simulator's status (`clean`/`issue_limited`) stands. The engine never
+        # raises for a recoverable plan/source problem — it tags status and keeps
+        # the rest of the projection usable.
+        def derive_status(outcome, issues)
+          return "blocked" if issues.any? { |issue| issue.severity == "blocking" }
+
+          outcome.status
+        end
+
+        def build_summary(outcome, traces, issues, status)
           {
-            status: outcome.status,
+            status: status,
             period_count: outcome.periods.length,
             trace_count: traces.length,
-            issue_count: outcome.issues.length,
+            issue_count: issues.length,
             goal_count: goal_assumptions.length
           }
         end
