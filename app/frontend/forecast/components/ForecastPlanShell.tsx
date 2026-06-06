@@ -1,21 +1,22 @@
-// Forecast V2 ForecastPlanShell (slice C3).
+// Forecast V2 ForecastPlanShell — ProjectionLab-style workspace frame
+// (Phase 1 redesign).
 //
-// The top-level workspace frame (spec "Forecast Component Contracts" ->
-// `ForecastPlanShell`: "top-level workspace frame, lens nav, scenario stack,
-// freshness, and region keys for partial reloads"). It frames plan identity, the
-// lens nav, the live scenario-stack summary, and the freshness badge, then yields
-// stable, keyed regions (metric strip, chart, inspector, assumptions, issues)
-// that later slices fill and that scoped prop reloads / JSON patches target
-// without CSS-selector coupling.
+// The top-level workspace frame, restructured to ProjectionLab's "Current
+// Projections" dashboard shape: a dark left "Plans" rail (`ForecastSidebar`), a
+// light airy content column with a slim top bar (plan identity + freshness), and
+// the yielded workspace body (chart, breakdown, assumptions, issues). It still
+// frames plan identity + freshness and exposes the stable shell region keys that
+// scoped prop reloads / JSON patches target without CSS-selector coupling.
 //
 // State ownership: the shell reads shared selection from `useForecastWorkspace`
-// (the only shared store) and renders chrome + slots. It never owns canonical
-// plan truth, never fetches, and never recomputes. Lens nav is keyboard-reachable
-// (a real <nav> of <button>s with aria-current); the active lens lives in the
-// shared store.
+// and renders chrome + slots; it never owns plan truth, never fetches, never
+// recomputes. The shell region carries the plan id / version / scenario-stack
+// data attributes the proof-slice test reads. Freshness presentation is
+// delegated to `FreshnessIndicator`.
 //
-// Tokens only — no raw palette. The freshness presentation is delegated to
-// `FreshnessIndicator`.
+// Colors are forecast-scoped raw hex (the faithful ProjectionLab light palette
+// the user chose), kept inside this route's tree so the global Sure design
+// system stays untouched.
 
 import type { JSX, ReactNode } from "react";
 import {
@@ -24,10 +25,11 @@ import {
 } from "../hooks/useForecastWorkspace";
 import { ft } from "../i18n";
 import type { PlanReadModel } from "../types/readModels";
+import ForecastSidebar from "./ForecastSidebar";
 import FreshnessIndicator from "./FreshnessIndicator";
 
-// Inline SVG glyph (an upward trend line) using currentColor — no raw palette,
-// no lucide_icon dependency. The token text color drives the stroke.
+// Inline brand glyph (upward trend) shown next to the plan name on small screens
+// where the dark sidebar (which carries the brand) is hidden.
 function PlanGlyph(): JSX.Element {
   return (
     <svg
@@ -38,83 +40,18 @@ function PlanGlyph(): JSX.Element {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="size-5 text-secondary"
+      className="size-4 text-white"
     >
-      <path d="M3 17l6-6 4 4 8-8" />
-      <path d="M17 7h4v4" />
+      <path d="M3 3v18h18" />
+      <path d="M7 14l4-4 3 3 5-6" />
     </svg>
-  );
-}
-
-// One scenario-stack chip. Renders the localized "Baseline" label for the
-// baseline layer and the raw layer key otherwise (real per-layer labels arrive
-// with the scenario lens).
-function ScenarioStackSummary({
-  layers,
-}: {
-  readonly layers: readonly string[];
-}): JSX.Element {
-  const visible = layers.length > 0 ? layers : ["baseline"];
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-xs text-subdued">
-        {ft("forecasts.workspace.scenario_stack")}
-      </span>
-      {visible.map((layer) => (
-        <span
-          key={layer}
-          className="rounded-md border border-primary bg-surface-inset px-2 py-0.5 text-xs font-medium text-secondary"
-        >
-          {layer === "baseline" ? ft("forecasts.workspace.baseline") : layer}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// Keyboard-reachable lens nav. Each lens is a real <button> so it is focusable
-// and operable by keyboard; the active lens is announced with aria-current.
-function LensNav({
-  lenses,
-  activeLens,
-  onSelect,
-}: {
-  readonly lenses: readonly string[];
-  readonly activeLens: string;
-  readonly onSelect: (lens: string) => void;
-}): JSX.Element {
-  return (
-    <nav
-      aria-label={ft("forecasts.workspace.title")}
-      className="flex flex-wrap items-center gap-1 rounded-lg border border-primary bg-surface-inset p-1"
-    >
-      {lenses.map((lens) => {
-        const isActive = lens === activeLens;
-        return (
-          <button
-            key={lens}
-            type="button"
-            data-testid={`forecast-lens-${lens}`}
-            aria-current={isActive ? "page" : undefined}
-            onClick={() => onSelect(lens)}
-            className={`rounded-md px-3 py-1 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 ${
-              isActive
-                ? "bg-container text-primary shadow-sm"
-                : "text-secondary hover:text-primary"
-            }`}
-          >
-            {lens}
-          </button>
-        );
-      })}
-    </nav>
   );
 }
 
 export interface ForecastPlanShellProps {
   readonly plan: PlanReadModel;
   readonly workspace: ForecastWorkspaceStore;
-  /** The keyed workspace regions the shell frames (strip, chart, inspector, …). */
+  /** The keyed workspace regions the shell frames (chart, breakdown, …). */
   readonly children: ReactNode;
 }
 
@@ -130,52 +67,47 @@ export default function ForecastPlanShell({
       data-plan-id={plan.id}
       data-plan-version={workspace.planVersion}
       data-scenario-stack-key={workspace.scenarioStackKey}
-      className="mx-auto flex h-full w-full max-w-7xl flex-col gap-6 p-4 sm:p-6"
+      className="flex h-full w-full bg-[#F6F7F9]"
     >
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-lg border border-primary bg-surface-inset">
-            <PlanGlyph />
-          </span>
-          <div className="flex flex-col gap-1">
-            <h1
-              data-testid="forecast-plan-name"
-              className="text-xl font-semibold text-primary"
-            >
-              {plan.name}
-            </h1>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <p className="text-sm text-secondary">
+      <ForecastSidebar plan={plan} workspace={workspace} />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E3E8EF] bg-white/85 px-6 py-3.5 backdrop-blur">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-[#818CF8] to-[#2DD4BF] lg:hidden">
+              <PlanGlyph />
+            </span>
+            <div className="flex flex-col">
+              <h1
+                data-testid="forecast-plan-name"
+                className="text-lg font-semibold text-[#0F172A]"
+              >
+                {plan.name}
+              </h1>
+              <p className="text-xs text-[#94A3B8]">
                 {plan.reporting_currency} ·{" "}
                 {ft("forecasts.workspace.plan_version", {
                   version: workspace.planVersion,
                 })}
               </p>
-              <ScenarioStackSummary
-                layers={workspace.scenarioStackKey.split("+")}
-              />
             </div>
           </div>
-        </div>
 
-        <div
-          data-region={FORECAST_REGIONS.freshness}
-          className="flex items-center"
-        >
-          <FreshnessIndicator
-            freshness={workspace.freshness}
-            regionKey={FORECAST_REGIONS.freshness}
-          />
-        </div>
-      </header>
+          <div
+            data-region={FORECAST_REGIONS.freshness}
+            className="flex items-center"
+          >
+            <FreshnessIndicator
+              freshness={workspace.freshness}
+              regionKey={FORECAST_REGIONS.freshness}
+            />
+          </div>
+        </header>
 
-      <LensNav
-        lenses={plan.lenses}
-        activeLens={workspace.activeLens}
-        onSelect={workspace.setLens}
-      />
-
-      {children}
+        <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

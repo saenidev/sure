@@ -1,10 +1,10 @@
-// Forecast V2 workspace Inertia page (slice C3).
+// Forecast V2 workspace Inertia page (slice C3; Phase 1 ProjectionLab redesign).
 //
-// The top-level V2 React page rendered by `ForecastsController#show` (V2 path,
-// slice C2) through the dedicated `forecast_inertia` layout. It receives the
+// The top-level V2 React page rendered by `ForecastsController#show` (V2 path)
+// and `#v2` through the dedicated `forecast_inertia` layout. It receives the
 // typed first-viewport props assembled by
-// `Forecasts::WorkspaceLoading#forecast_v2_workspace_props` (one region per
-// read model) and wires them into the workspace frame.
+// `Forecasts::WorkspaceLoading#forecast_v2_workspace_props` (one region per read
+// model) and wires them into the workspace frame.
 //
 // State ownership (spec "State Ownership", "Frontend Runtime Modules"): this page
 // stands up the ONE shared store (`useForecastWorkspace`) seeded from the props,
@@ -12,22 +12,22 @@
 // truth; this page owns only ephemeral interaction state. There are NO network
 // requests on first paint — every region renders from preloaded props.
 //
-// Slices C4–C6 fill the chart, selected-period inspector, assumption groups, and
-// issue panel. With C6 landed, every first-viewport region renders its real
-// component from preloaded props — no per-region fetch on first paint. Tokens
-// only — no raw palette.
+// Phase 1 redesign: the body is laid out as ProjectionLab's "Current Projections"
+// dashboard — a dark Plans sidebar (in `ForecastPlanShell`), a center column with
+// the KPI strip, the stacked gradient bar chart, and the assumptions/issues, and
+// a right-hand breakdown panel for the selected period.
 
 import { Head } from "@inertiajs/react";
 import { type JSX, useCallback, useState } from "react";
 import AssumptionEditor from "../../forecast/components/AssumptionEditor";
 import AssumptionGroup from "../../forecast/components/AssumptionGroup";
+import BreakdownPanel from "../../forecast/components/BreakdownPanel";
 import ForecastPlanShell from "../../forecast/components/ForecastPlanShell";
 import IssuePanel from "../../forecast/components/IssuePanel";
 import MetricStrip, {
   metricsToStripEntries,
 } from "../../forecast/components/MetricStrip";
 import ProjectionChart from "../../forecast/components/ProjectionChart";
-import SelectedPeriodInspector from "../../forecast/components/SelectedPeriodInspector";
 import { useAssumptionEditor } from "../../forecast/hooks/useAssumptionEditor";
 import {
   FORECAST_REGIONS,
@@ -66,7 +66,7 @@ function AssumptionRail({
       className="flex flex-col gap-3"
     >
       {groups.length === 0 ? (
-        <p className="rounded-xl border border-primary bg-container p-6 text-sm text-subdued">
+        <p className="rounded-2xl border border-[#E3E8EF] bg-white p-6 text-sm text-[#64748B]">
           {ft("forecasts.assumptions.empty")}
         </p>
       ) : (
@@ -119,20 +119,15 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
   const [assumptionGroups, setAssumptionGroups] =
     useState<AssumptionGroupReadModel>(props.assumptionGroups);
 
-  // The typed editor drawer (slice C7): opens from an assumption card and
-  // composes the salary form. Opening fetches GET /forecast/assumptions/:id/edit
-  // for one EditorPrefillReadModel; it owns NONE of plan/period/scenario state
-  // (those stay in `workspace`), so opening/closing the drawer preserves the
-  // selected period + scenario stack. The PATCH save is driven from the drawer
-  // (slice C8) and its changed-region patch is folded in by `handleSaved` below.
+  // The typed editor drawer (slice C7): opens from an assumption card and composes
+  // the salary form. It owns NONE of plan/period/scenario state, so opening/closing
+  // preserves the selected period + scenario stack.
   const editor = useAssumptionEditor();
 
   // Fold a committed save's typed changed-region patch (slice C8) into the
   // workspace WITHOUT a full reload: the shared store takes the new plan version +
-  // scenario stack + freshness (recomputing -> fresh), which recompute the scoped
-  // region cache keys, and the saved card replaces its prior version in the rail.
-  // The selected-period inspector + metric strip re-derive from the new cache keys
-  // via usePeriodPayloadCache. No region outside the patch is touched.
+  // scenario stack + freshness, which recompute the scoped region cache keys, and
+  // the saved card replaces its prior version in the rail.
   const handleSaved = useCallback(
     (patch: SavedAssumptionPatch): void => {
       workspace.applyAssumptionPatch(patch);
@@ -141,12 +136,9 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
     [workspace],
   );
 
-  // The single editor-open path shared by the assumption rail AND the
-  // selected-period inspector. Opening the typed editor drawer IN PLACE preserves
-  // the selected period + scenario stack (the editor owns none of that state), so
-  // neither affordance ever navigates away from /forecast. The inspector chip and
-  // the card edit button pass distinct invoker ids so focus returns to whichever
-  // control opened the drawer (spec "Editor Contracts").
+  // The single editor-open path shared by the assumption rail AND the breakdown
+  // panel. Opening the typed editor drawer IN PLACE preserves the selected period
+  // + scenario stack (the editor owns none of that state).
   const openAssumptionEditor = useCallback(
     (assumptionId: string, invokerId: string): void => {
       editor.open({ assumptionId, invokerId });
@@ -157,16 +149,15 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
   // Serve the selected-period detail from the preloaded seed + local cache,
   // fetching GET /forecast/periods/:period_key only on a settled cache miss
   // (debounced). The workspace store reports SETTLED selections only, so chart
-  // hover/scrub never reaches the network. A recompute changes
-  // `cacheKeys.inspector`, which resets the cache so stale detail is never served.
+  // hover/scrub never reaches the network.
   const period = usePeriodPayloadCache({
     selectedPeriodKey: workspace.selectedPeriodKey,
     seed: selectedPeriod,
     cacheKey: cacheKeys.inspector,
   });
 
-  // The aligned metric strip tracks the served period (so it updates on
-  // selection), falling back to the seed for the first paint.
+  // The aligned KPI strip tracks the served period (so it updates on selection),
+  // falling back to the seed for the first paint.
   const metricsSource = period.payload ?? selectedPeriod;
   const metricEntries = metricsSource
     ? metricsToStripEntries(metricsSource.metrics)
@@ -177,75 +168,76 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
       <Head title={`${plan.name} · ${ft("forecasts.workspace.title")}`} />
 
       <ForecastPlanShell plan={plan} workspace={workspace}>
-        {/* Aligned metric strip for the selected period (privacy-safe values). */}
-        <MetricStrip
-          entries={metricEntries}
-          regionKey={FORECAST_REGIONS.metricStrip}
-        />
-
-        {/* Chart band (D3): the compact preloaded period index + selected marker
-				    live in `band`; pointer/keyboard scrubbing is local-only and reports
-				    settled selections to the shared store with zero network. */}
-        <ProjectionChart
-          band={band}
-          selectedPeriodKey={workspace.selectedPeriodKey}
-          onSelectPeriod={workspace.selectPeriod}
-          selectedMetric={workspace.selectedMetric}
-          onSelectMetric={workspace.selectMetric}
-          regionKey={FORECAST_REGIONS.chart}
-          cacheKey={cacheKeys.chart}
-        />
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Selected-period inspector (C5): metric strip detail, trace-backed
-					    explanation lines, active assumption links, actual/projected
-					    labels, and period issues. Served by usePeriodPayloadCache from the
-					    preloaded seed + local cache; settled-selection cache misses fetch
-					    the JSON read-model endpoint (debounced). */}
-          <div className="lg:col-span-2">
-            <SelectedPeriodInspector
-              payload={period.payload}
-              status={period.status}
-              refresh={period.refresh}
-              regionKey={FORECAST_REGIONS.inspector}
-              cacheKey={cacheKeys.inspector}
-              onOpenAssumption={(assumptionId) =>
-                openAssumptionEditor(
-                  assumptionId,
-                  `forecast-inspector-assumption-${assumptionId}`,
-                )
-              }
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          {/* Center column: KPI strip, the stacked gradient bar chart, then the
+              assumptions + issues. */}
+          <div className="flex min-w-0 flex-1 flex-col gap-6">
+            <MetricStrip
+              entries={metricEntries}
+              regionKey={FORECAST_REGIONS.metricStrip}
             />
+
+            {/* Stacked gradient bar chart (Phase 1): cash + investments above
+                zero, debt below, net-worth line riding the tops. Pointer/keyboard
+                scrubbing is local-only and reports settled selections with zero
+                network. */}
+            <ProjectionChart
+              band={band}
+              selectedPeriodKey={workspace.selectedPeriodKey}
+              onSelectPeriod={workspace.selectPeriod}
+              selectedMetric={workspace.selectedMetric}
+              onSelectMetric={workspace.selectMetric}
+              currency={plan.reporting_currency}
+              regionKey={FORECAST_REGIONS.chart}
+              cacheKey={cacheKeys.chart}
+            />
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <AssumptionRail
+                assumptionGroups={assumptionGroups}
+                regionKey={FORECAST_REGIONS.assumptions}
+                cacheKey={cacheKeys.assumptions}
+                onEditCard={(cardId) =>
+                  openAssumptionEditor(
+                    cardId,
+                    `forecast-assumption-edit-${cardId}`,
+                  )
+                }
+              />
+
+              {/* Issue panel: recoverable plan/source issues with impact +
+                  remediation actions, privacy-safe (no raw UUIDs). */}
+              <IssuePanel
+                issues={props.issues}
+                regionKey={FORECAST_REGIONS.issues}
+                cacheKey={cacheKeys.issues}
+              />
+            </div>
           </div>
 
-          {/* Assumption rail (C6): kind-grouped, scannable assumption cards
-					    that read like financial-planning language. Every card payload is
-					    preloaded by AssumptionGroupReadModel — no per-card fetch. */}
-          <AssumptionRail
-            assumptionGroups={assumptionGroups}
-            regionKey={FORECAST_REGIONS.assumptions}
-            cacheKey={cacheKeys.assumptions}
-            onEditCard={(cardId) =>
-              openAssumptionEditor(cardId, `forecast-assumption-edit-${cardId}`)
+          {/* Right column: the ProjectionLab-style breakdown panel for the
+              selected period. Carries the `forecast-selected-period` region id so
+              a committed save still patches exactly this region. */}
+          <BreakdownPanel
+            payload={period.payload}
+            status={period.status}
+            refresh={period.refresh}
+            currency={plan.reporting_currency}
+            regionKey={FORECAST_REGIONS.inspector}
+            cacheKey={cacheKeys.inspector}
+            onOpenAssumption={(assumptionId) =>
+              openAssumptionEditor(
+                assumptionId,
+                `forecast-inspector-assumption-${assumptionId}`,
+              )
             }
           />
         </div>
-
-        {/* Issue panel (C6): recoverable plan/source issues with impact +
-				    remediation actions, privacy-safe (no raw UUIDs). Freshness drives
-				    the workspace recompute state separately. */}
-        <IssuePanel
-          issues={props.issues}
-          regionKey={FORECAST_REGIONS.issues}
-          cacheKey={cacheKeys.issues}
-        />
       </ForecastPlanShell>
 
       {/* Typed editor drawer (C7): the only interactive editor in the MVP is the
-			    salary form. It renders OVER the workspace, so opening/closing preserves
-			    the selected period + scenario stack. Save (PATCH, C8) echoes the observed
-			    plan version; the committed changed-region patch is folded in by
-			    `handleSaved` (scoped regions only, no full reload). */}
+          salary form. It renders OVER the workspace, so opening/closing preserves
+          the selected period + scenario stack. */}
       <AssumptionEditor
         editor={editor}
         planVersion={workspace.planVersion}

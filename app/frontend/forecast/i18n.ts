@@ -249,6 +249,58 @@ const COPY: Readonly<Record<string, string>> = {
     "You don't have access to that account or category.",
   "forecasts.editor.errors.stale_version":
     "This assumption changed since you opened it. Reload and try again.",
+
+  // ProjectionLab-style stacked bar chart (Phase 1 redesign). The chart stacks
+  // the existing per-period balance series (cash + investments above zero, debt
+  // below zero) into gradient bars; copy here labels the plot selector, segments,
+  // and scrub tooltip.
+  "forecasts.chart.title": "Net worth projection",
+  "forecasts.chart.plot_label": "Plot",
+  "forecasts.chart.zoom_in": "Zoom in",
+  "forecasts.chart.zoom_out": "Zoom out",
+  "forecasts.chart.reset_zoom": "Reset zoom",
+  "forecasts.chart.axis_year": "Year",
+  "forecasts.chart.legend_label": "Account types",
+  "forecasts.chart.tooltip_total": "Net worth",
+  "forecasts.chart.segment.liquid_cash": "Cash",
+  "forecasts.chart.segment.portfolio_value": "Investments",
+  "forecasts.chart.segment.debt_balance": "Debt",
+  "forecasts.chart.plot.net_worth": "Net Worth",
+  "forecasts.chart.plot.liquid_cash": "Cash",
+  "forecasts.chart.plot.portfolio_value": "Investments",
+  "forecasts.chart.plot.debt_balance": "Debt",
+  "forecasts.chart.plot.income": "Income",
+  "forecasts.chart.plot.spending": "Spending",
+
+  // Dark "Plans" sidebar (ProjectionLab-style left rail).
+  "forecasts.sidebar.plans": "Plans",
+  "forecasts.sidebar.current_projections": "Current Projections",
+  "forecasts.sidebar.new_scenario": "New scenario",
+  "forecasts.sidebar.scenarios": "Scenarios",
+  "forecasts.sidebar.baseline": "Baseline",
+  "forecasts.sidebar.version": "Version %{version}",
+  "forecasts.sidebar.help": "Help center",
+  "forecasts.sidebar.support": "Support",
+  "forecasts.sidebar.collapse": "Collapse sidebar",
+  "forecasts.sidebar.expand": "Expand sidebar",
+
+  // Right-hand breakdown panel (ProjectionLab-style dense detail).
+  "forecasts.breakdown.title": "Breakdown",
+  "forecasts.breakdown.subtitle": "for %{period}",
+  "forecasts.breakdown.net_worth": "Net worth",
+  "forecasts.breakdown.assets": "Assets",
+  "forecasts.breakdown.liabilities": "Liabilities",
+  "forecasts.breakdown.cash": "Cash",
+  "forecasts.breakdown.investments": "Investments",
+  "forecasts.breakdown.debt": "Debt",
+  "forecasts.breakdown.income": "Income",
+  "forecasts.breakdown.spending": "Spending",
+  "forecasts.breakdown.flows_title": "What moved this period",
+  "forecasts.breakdown.no_flows": "No flows explain this period yet.",
+  "forecasts.breakdown.expand_row": "Show detail",
+  "forecasts.breakdown.collapse_row": "Hide detail",
+  "forecasts.breakdown.no_period":
+    "Select a year on the chart to see the breakdown.",
 };
 
 /**
