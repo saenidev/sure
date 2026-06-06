@@ -5,9 +5,10 @@
 // "Forecast Component Contracts" -> `ProjectionChart`: "chart container, metric
 // controls, selected-period scrubber, chart summary table, and data payload
 // attachment"). It is fed ENTIRELY by the preloaded `ProjectionBandReadModel`:
-// pointer hover/scrub and keyboard period selection move the marker with ZERO
-// network requests (spec "Chart scrubbing must be local"), and a settled
-// selection is dispatched up through `useForecastWorkspace.selectPeriod`.
+// pointer hover/scrub moves an EPHEMERAL local marker with ZERO network requests
+// (spec "Chart scrubbing must be local"); a SETTLED selection — pointer down/click
+// or a keyboard selection — is the only thing dispatched up through
+// `useForecastWorkspace.selectPeriod` (the cache-fetch path).
 //
 // State ownership: chart math lives in `useProjectionChart`; this component owns
 // only the DOM + presentation so D3 and React never fight over nodes. It reads
@@ -162,8 +163,9 @@ export default function ProjectionChart({
 			    interaction so the role lives on an interactive element; the SVG inside
 			    is purely presentational. The stable viewBox keeps the D3 math
 			    anchor-deterministic while the box scales to its container (no
-			    clipping / overlap on resize). Pointer movement and arrow keys
-			    re-select the period with ZERO network. */}
+			    clipping / overlap on resize). Pointer movement moves the local hover
+			    marker; a press / arrow keys SETTLE the selection — hover/scrub is
+			    ZERO network. */}
 			<div
 				ref={chart.containerRef}
 				data-testid="forecast-chart-scrubber"

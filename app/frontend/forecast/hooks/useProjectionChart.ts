@@ -9,12 +9,25 @@
 // the screen-reader data-summary rows. The React component (`ProjectionChart`)
 // owns the DOM so the two never fight over the same nodes.
 //
-// Pointer hover/scrub and keyboard period selection are PURELY LOCAL: they walk
-// the compact preloaded period index and issue ZERO network requests (spec
-// "Chart scrubbing must be local"). A settled selection is reported up through
-// the shared workspace store via `onSelectPeriod`; this module never fetches,
-// never persists, and never parses engine result internals — the server owns
-// canonical plan truth. Keep it chart math only (no persistence).
+// Hover/scrub vs settled selection (spec "State Ownership" -> the browser owns
+// "selected period, hover period"; "Inertia And JSON Endpoints" -> "Pointer
+// movement over the chart must not issue Inertia, Turbo, or JSON requests" and
+// "A settled selection may fetch period details only on cache miss or after
+// debounce"):
+//
+//   - HOVER/SCRUB is an EPHEMERAL local marker. Pointer MOVE walks the compact
+//     preloaded period index and moves a chart-LOCAL `hoverPeriodKey` only. It
+//     NEVER calls `onSelectPeriod`, so the shared store's `selectedPeriodKey`
+//     (the key `usePeriodPayloadCache` fetches against) does not change and NO
+//     network request — debounced or otherwise — can fire from a bare hover.
+//   - A SETTLED commit (pointer DOWN/click, or a keyboard selection) is the only
+//     thing reported up through `onSelectPeriod`; the cache then serves from the
+//     seed/local cache or, only on a miss, a debounced JSON fetch.
+//
+// The hover marker is local to this module because only the chart renders it; the
+// inspector + metric strip track the SETTLED store selection. This module never
+// fetches, never persists, and never parses engine result internals — the server
+// owns canonical plan truth. Keep it chart math only (no persistence).
 
 import { line, scaleLinear, scalePoint } from "d3";
 import {
@@ -86,11 +99,11 @@ export interface UseProjectionChartResult {
 	readonly summaryRows: readonly ProjectionChartSummaryRow[];
 	/** Ref to attach to the responsive container (drives resize tracking). */
 	readonly containerRef: React.RefObject<HTMLDivElement | null>;
-	/** Pointer-move handler: selects the nearest period locally (no network). */
+	/** Pointer-move handler: moves the ephemeral hover marker only (no commit, no network). */
 	readonly handlePointerMove: (event: PointerEvent<HTMLDivElement>) => void;
-	/** Pointer-down handler: settles selection on the nearest period. */
+	/** Pointer-down handler: SETTLES the selection on the nearest period (commit). */
 	readonly handlePointerDown: (event: PointerEvent<HTMLDivElement>) => void;
-	/** Keyboard handler: arrows/Home/End move the selected period (no network). */
+	/** Keyboard handler: arrows/Home/End SETTLE the selected period (commit, no network). */
 	readonly handleKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
 }
 
@@ -111,6 +124,11 @@ export function useProjectionChart({
 }: UseProjectionChartArgs): UseProjectionChartResult {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const [reducedMotion, setReducedMotion] = useState(false);
+	// Ephemeral hover/scrub marker, LOCAL to the chart. Pointer move drives this
+	// only — it never touches the shared store, so a bare hover (even one that
+	// rests past the cache debounce) issues ZERO network. A settled commit clears
+	// it so the marker re-anchors on the store's settled selection.
+	const [hoverPeriodKey, setHoverPeriodKey] = useState<PeriodKey | null>(null);
 
 	// Resolve reduced motion after mount so the first paint is deterministic.
 	useEffect(() => {
@@ -195,19 +213,23 @@ export function useProjectionChart({
 
 	const hasData = points.some((point) => point.cy !== null);
 
-	// The marker tracks the store's selected period, clamped into range; falls
-	// back to the first plottable point so the chart always shows a marker when it
-	// has data. Resolution is index-based off the preloaded period axis.
+	// The marker tracks the EPHEMERAL hover period while scrubbing, otherwise the
+	// store's SETTLED selected period, clamped into range; it falls back to the
+	// first plottable point so the chart always shows a marker when it has data.
+	// Resolution is index-based off the preloaded period axis. Hover wins for
+	// display only — it never feeds the period-payload cache (that reads the store's
+	// settled selection), so scrubbing moves the marker with zero network.
 	const selectedIndex = useMemo(() => {
-		if (selectedPeriodKey !== null) {
-			const found = periodKeys.indexOf(selectedPeriodKey);
+		const markerKey = hoverPeriodKey ?? selectedPeriodKey;
+		if (markerKey !== null) {
+			const found = periodKeys.indexOf(markerKey);
 			if (found >= 0) {
 				return found;
 			}
 		}
 		const firstPlottable = points.findIndex((point) => point.cy !== null);
 		return firstPlottable >= 0 ? firstPlottable : -1;
-	}, [selectedPeriodKey, periodKeys, points]);
+	}, [hoverPeriodKey, selectedPeriodKey, periodKeys, points]);
 
 	const selectedPoint =
 		selectedIndex >= 0 ? (points[selectedIndex] ?? null) : null;
@@ -231,37 +253,56 @@ export function useProjectionChart({
 		[points, xOf],
 	);
 
-	const selectNearestFromClientX = useCallback(
-		(clientX: number, target: HTMLDivElement): void => {
+	// Resolve the nearest plotted period to a pointer X — purely on the preloaded
+	// scale (NO fetch, NO store dispatch). Shared by hover (move) and settle (down).
+	const nearestPeriodFromClientX = useCallback(
+		(clientX: number, target: HTMLDivElement): PeriodKey | null => {
 			const rect = target.getBoundingClientRect();
 			if (rect.width === 0) {
-				return;
+				return null;
 			}
 			const ratio = (clientX - rect.left) / rect.width;
 			const viewX = ratio * VIEW_WIDTH;
 			const nearest = nearestIndexToViewX(viewX);
 			const point = nearest >= 0 ? points[nearest] : undefined;
-			if (point) {
-				onSelectPeriod(point.periodKey);
-			}
+			return point?.periodKey ?? null;
 		},
-		[nearestIndexToViewX, points, onSelectPeriod],
+		[nearestIndexToViewX, points],
 	);
 
 	const handlePointerMove = useCallback(
 		(event: PointerEvent<HTMLDivElement>): void => {
-			// Only scrub while a button is held (drag) OR a pen/touch contact moves.
-			// A bare mouse hover also scrubs the marker; either way it is local-only.
-			selectNearestFromClientX(event.clientX, event.currentTarget);
+			// HOVER/SCRUB ONLY: move the ephemeral local marker. Whether a button is
+			// held (drag) or it is a bare mouse hover, this never calls onSelectPeriod
+			// and never touches the period-payload cache — so it issues ZERO network,
+			// independent of any debounce timing. The settled selection commits on
+			// pointer DOWN / keyboard.
+			const periodKey = nearestPeriodFromClientX(
+				event.clientX,
+				event.currentTarget,
+			);
+			if (periodKey !== null) {
+				setHoverPeriodKey(periodKey);
+			}
 		},
-		[selectNearestFromClientX],
+		[nearestPeriodFromClientX],
 	);
 
 	const handlePointerDown = useCallback(
 		(event: PointerEvent<HTMLDivElement>): void => {
-			selectNearestFromClientX(event.clientX, event.currentTarget);
+			// SETTLED COMMIT: a press is a deliberate selection. Clear the ephemeral
+			// hover and report the settled period up to the shared store, which is the
+			// only path that may trigger a (debounced, cache-miss) period fetch.
+			const periodKey = nearestPeriodFromClientX(
+				event.clientX,
+				event.currentTarget,
+			);
+			if (periodKey !== null) {
+				setHoverPeriodKey(null);
+				onSelectPeriod(periodKey);
+			}
 		},
-		[selectNearestFromClientX],
+		[nearestPeriodFromClientX, onSelectPeriod],
 	);
 
 	const handleKeyDown = useCallback(
@@ -286,6 +327,9 @@ export function useProjectionChart({
 				event.preventDefault();
 				const point = points[next];
 				if (point) {
+					// SETTLED COMMIT: keyboard selection clears the ephemeral hover and
+					// reports the settled period to the shared store (the cache-fetch path).
+					setHoverPeriodKey(null);
 					onSelectPeriod(point.periodKey);
 				}
 			}

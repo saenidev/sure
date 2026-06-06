@@ -90,6 +90,12 @@ class ForecastV2ProofSliceTest < ApplicationSystemTestCase
     wait_until_chart_changed(initial)
     after_keyboard = chart_state
 
+    # The keyboard jump is a SETTLED selection, so it legitimately fetches the
+    # last period's detail (a seed-cache miss) after the debounce. Let that settled
+    # fetch fire and resolve BEFORE installing the probe, so the probe measures only
+    # pointer-scrub traffic — hover must add ZERO on top of the settled baseline.
+    rest_past_cache_debounce
+
     install_network_probe
     # Scrub to the far left (an early period), then back toward the right (a later
     # period). Track the selected period INDEX (aria-valuenow) — it is monotonic
@@ -107,6 +113,19 @@ class ForecastV2ProofSliceTest < ApplicationSystemTestCase
 
     assert_equal 0, network_request_count,
       "expected ZERO network requests during pointer scrub (local-only selection)"
+
+    # HOVER-AND-REST (regression guard): hovering a non-seeded period and PAUSING
+    # past the selected-period cache debounce window must STILL issue zero network.
+    # Hover is an ephemeral local marker — it never feeds the period-payload cache,
+    # so no debounced GET /forecast/periods/:period_key can fire from a hover that
+    # rests. (Before the hover-vs-settled split this passed only because the suite
+    # asserted inside the debounce window; a rest past it would have fetched.)
+    hovered_index = chart_state[:valueNow]
+    dispatch_pointer_move(scrubber, ratio: 0.5)
+    wait_until_period_index_changed(hovered_index)
+    rest_past_cache_debounce
+    assert_equal 0, network_request_count,
+      "a hover that rests past the cache debounce must NOT fetch period details"
 
     capture(:selected_period)
 
@@ -416,6 +435,15 @@ class ForecastV2ProofSliceTest < ApplicationSystemTestCase
 
     def network_request_count
       page.evaluate_script("window.__netCount").to_i
+    end
+
+    # Rest long enough that any debounced selected-period fetch (cache debounce is
+    # 180ms in usePeriodPayloadCache) WOULD have fired had a hover been treated as a
+    # settled selection. The hover-and-rest assertion relies on this real wait.
+    CACHE_DEBOUNCE_REST_SECONDS = 0.4
+
+    def rest_past_cache_debounce
+      sleep CACHE_DEBOUNCE_REST_SECONDS
     end
 
     def inertia_visit_count
