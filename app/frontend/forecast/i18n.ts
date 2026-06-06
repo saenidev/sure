@@ -25,11 +25,37 @@ const COPY: Readonly<Record<string, string>> = {
 	"forecasts.workspace.not_computed": "not computed yet",
 	"forecasts.workspace.no_period_selected": "Select a period",
 
+	// Selected-period inspector (SelectedPeriodInspector / usePeriodPayloadCache,
+	// slice C5).
+	"forecasts.inspector.title": "Period detail",
+	"forecasts.inspector.metrics_title": "Metrics",
+	"forecasts.inspector.explanation_title": "What explains this period",
+	"forecasts.inspector.explanation_empty": "No flows explain this period yet.",
+	"forecasts.inspector.assumptions_title": "Active assumptions",
+	"forecasts.inspector.assumptions_empty":
+		"No assumptions are active in this period.",
+	"forecasts.inspector.assumption_link": "Assumption %{id}",
+	"forecasts.inspector.issues_title": "Issues",
+	"forecasts.inspector.no_issues": "No issues for this period.",
+	"forecasts.inspector.no_period":
+		"Select a period on the chart to see what explains it.",
+	"forecasts.inspector.loading": "Loading period detail…",
+	"forecasts.inspector.error":
+		"Couldn't load this period. Try selecting it again.",
+	"forecasts.inspector.refresh": "Refresh",
+	"forecasts.inspector.label_actual": "Actual",
+	"forecasts.inspector.label_projected": "Projected",
+	"forecasts.inspector.label_inherited": "Inherited",
+	"forecasts.inspector.label_scenario": "Scenario",
+	"forecasts.inspector.direction_inflow": "in",
+	"forecasts.inspector.direction_outflow": "out",
+
 	// Projection chart (ProjectionChart / useProjectionChart, slice C4).
 	"forecasts.chart.label": "Projection chart",
 	"forecasts.chart.empty": "No projection series to chart yet.",
 	"forecasts.chart.scrubber_label": "Projection scrubber",
-	"forecasts.chart.selected_period": "Selected period %{period}, value %{value}.",
+	"forecasts.chart.selected_period":
+		"Selected period %{period}, value %{value}.",
 	"forecasts.chart.summary_caption": "Projected %{metric} for each period.",
 	"forecasts.chart.summary_period": "Period",
 	"forecasts.chart.summary_value": "Value",

@@ -291,7 +291,7 @@ Rails.application.routes.draw do
   # THROWAWAY viability spike — proves disciplined Hotwire meets the Forecast V2
   # interaction budgets without Inertia/Vite. Not in primary nav. Delete with the
   # ForecastHotwireSpike controller/model/views/Stimulus controller/test.
-  get  "forecast_hotwire_spike",            to: "forecast_hotwire_spike#show"
+  get "forecast_hotwire_spike",            to: "forecast_hotwire_spike#show"
   patch "forecast_hotwire_spike/assumption", to: "forecast_hotwire_spike#update_assumption", as: :forecast_hotwire_spike_assumption
   post "forecast_hotwire_spike/reset",       to: "forecast_hotwire_spike#reset",             as: :forecast_hotwire_spike_reset
 
@@ -310,6 +310,20 @@ Rails.application.routes.draw do
   # `tab_forecast_path` a singular-resource block would produce. Constrained to
   # the tab-id shape; the controller allowlists it against TAB_PARTIALS.
   get "forecast/tab/:tab_id", to: "forecasts#tab", as: :forecast_tab, constraints: { tab_id: /[a-z_]+/ }
+
+  # Forecast V2 selected-period JSON read-model endpoint (slice C5). The spec's
+  # V2 route shape ("GET /forecast/periods/:period_key") returns the
+  # SelectedPeriodReadModel for a SETTLED selection / cache miss / explicit
+  # refresh — never during pointer scrubbing. Mapped to the pluralized
+  # `Forecasts::` (V2) controller namespace so the V1 `Forecast::` services stay
+  # untouched; defined standalone (not in the V1 `namespace :forecast` block,
+  # which routes to singular `Forecast::` controllers). The period key is
+  # constrained to the engine's `YYYY-MM` shape; the controller resolves the
+  # plan/cache/period through Current.family (no family_id trusted from params).
+  get "forecast/periods/:period_key",
+    to: "forecasts/periods#show",
+    as: :forecast_period,
+    constraints: { period_key: /\d{4}-\d{2}/ }
 
   # Additive namespace that later forecasting slices hang off. Its controllers
   # inherit Forecast::BaseController, which scopes every query to Current.family.

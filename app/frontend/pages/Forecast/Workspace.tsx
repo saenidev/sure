@@ -13,9 +13,10 @@
 // requests on first paint — every region renders from preloaded props.
 //
 // Slices C4–C6 fill the chart, selected-period inspector, assumption groups, and
-// issue panel. This page renders those as stable, keyed regions now so the shell
-// frame, region cache keys, and scoped-patch targets exist before those slices
-// land. Tokens only — no raw palette.
+// issue panel. Slices C4–C5 have landed (chart + inspector); the remaining
+// regions render as stable, keyed placeholders so the shell frame, region cache
+// keys, and scoped-patch targets exist before C6 lands. Tokens only — no raw
+// palette.
 
 import { Head } from "@inertiajs/react";
 import type { JSX } from "react";
@@ -24,16 +25,18 @@ import MetricStrip, {
 	metricsToStripEntries,
 } from "../../forecast/components/MetricStrip";
 import ProjectionChart from "../../forecast/components/ProjectionChart";
+import SelectedPeriodInspector from "../../forecast/components/SelectedPeriodInspector";
 import {
 	FORECAST_REGIONS,
 	useForecastWorkspace,
 } from "../../forecast/hooks/useForecastWorkspace";
+import { usePeriodPayloadCache } from "../../forecast/hooks/usePeriodPayloadCache";
 import { ft } from "../../forecast/i18n";
 import type { ForecastWorkspaceProps } from "../../forecast/types/readModels";
 
-// A placeholder for a region a later slice fills (chart, inspector, assumptions,
-// issues). It still carries the stable region key + data-testid so the shell's
-// scoped-patch targets and region cache keys exist now.
+// A placeholder for a region a later slice fills (assumptions, issues). It still
+// carries the stable region key + data-testid so the shell's scoped-patch targets
+// and region cache keys exist now.
 function RegionPlaceholder({
 	regionKey,
 	cacheKey,
@@ -60,8 +63,22 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 	const workspace = useForecastWorkspace(props);
 	const cacheKeys = workspace.regionCacheKeys;
 
-	const metricEntries = selectedPeriod
-		? metricsToStripEntries(selectedPeriod.metrics)
+	// Serve the selected-period detail from the preloaded seed + local cache,
+	// fetching GET /forecast/periods/:period_key only on a settled cache miss
+	// (debounced). The workspace store reports SETTLED selections only, so chart
+	// hover/scrub never reaches the network. A recompute changes
+	// `cacheKeys.inspector`, which resets the cache so stale detail is never served.
+	const period = usePeriodPayloadCache({
+		selectedPeriodKey: workspace.selectedPeriodKey,
+		seed: selectedPeriod,
+		cacheKey: cacheKeys.inspector,
+	});
+
+	// The aligned metric strip tracks the served period (so it updates on
+	// selection), falling back to the seed for the first paint.
+	const metricsSource = period.payload ?? selectedPeriod;
+	const metricEntries = metricsSource
+		? metricsToStripEntries(metricsSource.metrics)
 		: [];
 
 	return (
@@ -87,15 +104,18 @@ export default function Workspace(props: ForecastWorkspaceProps): JSX.Element {
 				/>
 
 				<div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-					{/* Selected-period inspector — filled by slice C5. */}
+					{/* Selected-period inspector (C5): metric strip detail, trace-backed
+					    explanation lines, active assumption links, actual/projected
+					    labels, and period issues. Served by usePeriodPayloadCache from the
+					    preloaded seed + local cache; settled-selection cache misses fetch
+					    the JSON read-model endpoint (debounced). */}
 					<div className="lg:col-span-2">
-						<RegionPlaceholder
+						<SelectedPeriodInspector
+							payload={period.payload}
+							status={period.status}
+							refresh={period.refresh}
 							regionKey={FORECAST_REGIONS.inspector}
 							cacheKey={cacheKeys.inspector}
-							label={
-								workspace.selectedPeriodKey ??
-								ft("forecasts.workspace.no_period_selected")
-							}
 						/>
 					</div>
 

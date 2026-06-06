@@ -14,6 +14,30 @@ en:
       as_of: "as of %{date}"
       not_computed: "not computed yet"
       no_period_selected: "Select a period"
+    # Selected-period inspector (SelectedPeriodInspector / usePeriodPayloadCache,
+    # slice C5). Explanation lines, active assumption links, actual/projected
+    # labels, and period issues for one settled period.
+    inspector:
+      title: "Period detail"
+      metrics_title: "Metrics"
+      explanation_title: "What explains this period"
+      explanation_empty: "No flows explain this period yet."
+      assumptions_title: "Active assumptions"
+      assumptions_empty: "No assumptions are active in this period."
+      assumption_link: "Assumption %{id}"
+      issues_title: "Issues"
+      no_issues: "No issues for this period."
+      no_period: "Select a period on the chart to see what explains it."
+      loading: "Loading period detail…"
+      error: "Couldn't load this period. Try selecting it again."
+      refresh: "Refresh"
+      # Explanation-line provenance (whether values are actual or projected).
+      label_actual: "Actual"
+      label_projected: "Projected"
+      label_inherited: "Inherited"
+      label_scenario: "Scenario"
+      direction_inflow: "in"
+      direction_outflow: "out"
     # Projection chart (ProjectionChart / useProjectionChart, slice C4).
     chart:
       label: "Projection chart"

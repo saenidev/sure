@@ -64,6 +64,16 @@ module Forecasts
         ).build
       end
 
+      # The family's existing active plan WITHOUT triggering plan/assumption
+      # derivation. Returned for read-only JSON surfaces (e.g. the selected-period
+      # endpoint, C5) that operate on an already-open workspace and must stay
+      # within a tight query budget — they never create or re-derive a plan. Nil
+      # when the family has no V2 plan yet. Family-scoped: anchored to
+      # Current.family, never a family_id from params.
+      def load_existing_forecast_plan
+        Current.family.forecast_plans.active.ordered.first
+      end
+
       # Returns the current (non-superseded) fresh projection cache for the plan's
       # baseline scenario stack, building it through the recompute coordinator only
       # when none exists yet (cold load). A warm load with a fresh cache does NO
