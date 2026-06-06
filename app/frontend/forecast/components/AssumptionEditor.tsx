@@ -2,134 +2,36 @@
 //
 // The typed editor-drawer SHELL the spec's "Editor Contracts" require: it opens
 // from an assumption card, preserves plan / scenario stack / lens / selected
-// period (all owned by the shared workspace store the drawer renders OVER — this
-// component owns none of it), shows field-level errors plus a top-level summary,
-// warns on a dirty close, offers save + cancel, and returns focus to the invoking
-// control after close (the focus return is owned by `useAssumptionEditor`).
+// period (owned by the shared workspace store the drawer renders OVER), shows
+// field-level errors plus a top-level summary, warns on a dirty close, offers
+// save + cancel, and returns focus to the invoking control after close (the focus
+// return is owned by `useAssumptionEditor`).
 //
-// Composition (spec "Editor Contracts": editors compose an assumption-specific
-// form schema): the shell is type-agnostic; it composes the salary-specific form
-// schema (`SALARY_SCHEMA`) selected by the prefill's `form_key`. The salary form
-// is the only interactive editor in the MVP, so an unknown `form_key` renders a
-// neutral "unsupported" body rather than guessing a layout.
+// Composition (spec "Editor Contracts"): the shell is type-agnostic; it delegates
+// the assumption-specific schema + field rendering to `SalaryForm`, which selects
+// its layout from the prefill's `form_key`. Extracting the form keeps this module
+// focused on drawer chrome (slice F12).
+//
+// Dirty-close warning (spec "Editor Contracts": "warn on a dirty close"): every
+// close path goes through `attemptClose`, which calls `editor.requestClose()`.
+// When the form is dirty that returns `false`, so the drawer surfaces a visible
+// confirmation (the existing `dirty_warning` / `discard` / `keep_editing` copy):
+// Discard forces the close, Keep editing dismisses the warning.
 //
 // Lifecycle / dirty / save / errors / version token all come from
 // `useAssumptionEditor`; this component is presentational. Tokens only — no raw
-// palette; copy resolves through the client i18n table (`ft`). Money inputs carry
-// `privacy-sensitive` so the app-wide privacy toggle blurs them with no
-// forecast-specific JS. Save collects the form values and drives the typed PATCH
-// save (`useAssumptionEditor.save`, slice C8); on a committed save it hands the
-// changed-region patch to `onSaved` so the parent patches scoped regions without a
-// full reload (the patch fold + recompute orchestration stay in the parent).
+// palette; copy resolves through the client i18n table (`ft`). Save drives the
+// typed PATCH (`useAssumptionEditor.save`, slice C8); on a committed save it hands
+// the changed-region patch to `onSaved` so the parent patches scoped regions
+// without a full reload (the patch fold + recompute stay in the parent).
 
-import { type JSX, useEffect, useRef } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 import type { UseAssumptionEditorResult } from "../hooks/useAssumptionEditor";
 import { ft } from "../i18n";
-import type {
-	EditorPrefillReadModel,
-	SavedAssumptionPatch,
-} from "../types/readModels";
+import type { SavedAssumptionPatch } from "../types/readModels";
+import SalaryForm from "./SalaryForm";
 
-// One field in a composed form schema. `options` makes it a select; otherwise the
-// `type` drives an <input>. `param` reads/writes the value from the prefill's
-// `params` bag; otherwise it reads a top-level primary value.
-interface EditorField {
-	readonly name: string;
-	readonly labelKey: string;
-	readonly type: "text" | "number" | "date" | "select";
-	readonly param?: boolean;
-	readonly options?: ReadonlyArray<{ readonly value: string; readonly labelKey: string }>;
-}
-
-// The salary form schema (spec "Initial Assumption Type Catalog" -> salary: name,
-// amount, currency, earner, gross/net, frequency, growth, timing). The shell keeps
-// the primary financial fields visible — no advanced disclosure hides amount,
-// timing, or treatment (spec "Editor Contracts").
-const SALARY_SCHEMA: ReadonlyArray<EditorField> = [
-	{ name: "name", labelKey: "forecasts.editor.salary.name_label", type: "text" },
-	{ name: "amount", labelKey: "forecasts.editor.salary.amount_label", type: "number" },
-	{ name: "currency", labelKey: "forecasts.editor.salary.currency_label", type: "text" },
-	{
-		name: "person_key",
-		labelKey: "forecasts.editor.salary.person_key_label",
-		type: "text",
-		param: true,
-	},
-	{
-		name: "gross_or_net",
-		labelKey: "forecasts.editor.salary.gross_or_net_label",
-		type: "select",
-		param: true,
-		options: [
-			{ value: "gross", labelKey: "forecasts.editor.salary.gross_or_net_gross" },
-			{ value: "net", labelKey: "forecasts.editor.salary.gross_or_net_net" },
-		],
-	},
-	{
-		name: "frequency",
-		labelKey: "forecasts.editor.salary.frequency_label",
-		type: "select",
-		param: true,
-		options: [
-			{ value: "annual", labelKey: "forecasts.editor.salary.frequency_annual" },
-			{ value: "monthly", labelKey: "forecasts.editor.salary.frequency_monthly" },
-			{ value: "biweekly", labelKey: "forecasts.editor.salary.frequency_biweekly" },
-			{ value: "weekly", labelKey: "forecasts.editor.salary.frequency_weekly" },
-		],
-	},
-	{
-		name: "growth_policy",
-		labelKey: "forecasts.editor.salary.growth_policy_label",
-		type: "select",
-		param: true,
-		options: [
-			{ value: "flat", labelKey: "forecasts.editor.salary.growth_policy_flat" },
-			{ value: "fixed_rate", labelKey: "forecasts.editor.salary.growth_policy_fixed_rate" },
-		],
-	},
-	{
-		name: "growth_rate",
-		labelKey: "forecasts.editor.salary.growth_rate_label",
-		type: "number",
-		param: true,
-	},
-	{ name: "starts_on", labelKey: "forecasts.editor.salary.starts_on_label", type: "date" },
-	{ name: "ends_on", labelKey: "forecasts.editor.salary.ends_on_label", type: "date" },
-];
-
-const FORM_SCHEMAS: Readonly<Record<string, ReadonlyArray<EditorField>>> = {
-	salary: SALARY_SCHEMA,
-};
-
-// The top-level primary values a field may read by name (everything outside the
-// form-specific `params` bag). Narrowed so reads are type-safe without an unsafe
-// index-signature cast on `EditorPrimaryValues`.
-const PRIMARY_VALUE_READERS: Readonly<
-	Record<string, (values: EditorPrefillReadModel["primary_values"]) => string | null>
-> = {
-	name: (values) => values.name,
-	amount: (values) => values.amount,
-	currency: (values) => values.currency,
-	starts_on: (values) => values.starts_on,
-	ends_on: (values) => values.ends_on,
-};
-
-// Read a field's current value from the typed prefill (top-level primary value or
-// the `params` bag), coerced to a string the input can render.
-function fieldValue(prefill: EditorPrefillReadModel, field: EditorField): string {
-	const raw = field.param
-		? prefill.primary_values.params[field.name]
-		: PRIMARY_VALUE_READERS[field.name]?.(prefill.primary_values);
-	if (raw === null || raw === undefined) {
-		return "";
-	}
-	return String(raw);
-}
-
-// Localize a stable field error code (`"blank"`, `"not_positive"`, …).
-function errorMessage(code: string): string {
-	return ft(`forecasts.editor.errors.${code}`);
-}
+const FORM_ID = "forecast-assumption-editor-form";
 
 export interface AssumptionEditorProps {
 	/** The drawer lifecycle handle from `useAssumptionEditor`. */
@@ -142,12 +44,10 @@ export interface AssumptionEditorProps {
 	readonly planVersion: number;
 	/**
 	 * Notified AFTER a save commits (HTTP 200) with the typed changed-region patch
-	 * (slice C8). The parent folds the patch into the workspace store + scoped
-	 * regions (saved card, inspector, freshness) WITHOUT a full reload, then closes
-	 * the drawer. The save itself (PATCH + typed errors/conflicts) is owned by
-	 * `useAssumptionEditor.save`; this component only collects the form values and
-	 * drives it (spec "Frontend module responsibility rules": editor lifecycle and
-	 * recompute orchestration stay separate — the parent owns the patch fold).
+	 * (slice C8). The parent folds it into the workspace store + scoped regions
+	 * WITHOUT a full reload, then the drawer closes. The save itself is owned by
+	 * `useAssumptionEditor.save`; this component only drives it — editor lifecycle
+	 * and recompute orchestration stay separate (spec "Frontend module rules").
 	 */
 	readonly onSaved?: (patch: SavedAssumptionPatch) => void;
 }
@@ -160,6 +60,12 @@ export default function AssumptionEditor({
 	const titleId = "forecast-assumption-editor-title";
 	const panelRef = useRef<HTMLDivElement>(null);
 
+	// Whether the dirty-close confirmation is showing. A close path sets this when
+	// `editor.requestClose()` is blocked by unsaved edits; the confirmation then
+	// forces the close (discard) or dismisses (keep editing). It never persists
+	// across opens — the open lifecycle clears it below.
+	const [confirmingClose, setConfirmingClose] = useState(false);
+
 	// Focus the panel when it opens (focus trap entry; the panel is the first
 	// focus stop, and focus return on close is owned by the hook).
 	useEffect(() => {
@@ -168,17 +74,34 @@ export default function AssumptionEditor({
 		}
 	}, [editor.lifecycle]);
 
+	// Drop any pending dirty-close confirmation when the drawer fully closes, so a
+	// later open never starts mid-warning.
+	useEffect(() => {
+		if (!editor.isOpen) {
+			setConfirmingClose(false);
+		}
+	}, [editor.isOpen]);
+
 	if (!editor.isOpen) {
 		return null;
 	}
 
-	// Trap focus inside the panel and close on Escape (respecting the dirty-state
-	// warning: a dirty Escape requests close, which the hook blocks so the parent
-	// can surface the warning).
+	// The single close path for every affordance (Escape, backdrop, ×, Cancel).
+	// `requestClose()` closes immediately when the form is clean; when it's dirty it
+	// returns `false` and we surface the visible discard/keep-editing confirmation
+	// (spec "Editor Contracts": warn on a dirty close).
+	const attemptClose = (): void => {
+		if (!editor.requestClose()) {
+			setConfirmingClose(true);
+		}
+	};
+
+	// Trap focus inside the panel and close on Escape (Escape routes through
+	// `attemptClose`, so a dirty Escape surfaces the warning rather than discarding).
 	const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
 		if (event.key === "Escape") {
 			event.stopPropagation();
-			editor.requestClose();
+			attemptClose();
 			return;
 		}
 		if (event.key !== "Tab") {
@@ -201,10 +124,9 @@ export default function AssumptionEditor({
 		}
 	};
 
-	// Capture the prefill once so TS narrowing holds inside the form's field map
-	// (no per-field non-null cast) and the form-specific schema is resolved once.
+	// Capture the prefill once so TS narrowing holds for the form and the scenario
+	// label is resolved once.
 	const prefill = editor.prefill;
-	const schema = prefill ? FORM_SCHEMAS[prefill.form_key] : undefined;
 	const scenarioLabel = prefill?.scenario_layer_id
 		? ft("forecasts.editor.scenario_layer", {
 				layer: prefill.scenario_layer_id,
@@ -251,7 +173,7 @@ export default function AssumptionEditor({
 		<div
 			data-testid="forecast-assumption-editor-overlay"
 			className="fixed inset-0 z-50 flex justify-end bg-overlay"
-			onClick={() => editor.requestClose()}
+			onClick={attemptClose}
 		>
 			<div
 				ref={panelRef}
@@ -280,7 +202,7 @@ export default function AssumptionEditor({
 						type="button"
 						data-testid="forecast-assumption-editor-close"
 						aria-label={ft("forecasts.editor.close")}
-						onClick={() => editor.requestClose()}
+						onClick={attemptClose}
 						className="rounded-lg border border-primary px-2 py-1 text-sm text-secondary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
 					>
 						×
@@ -302,90 +224,64 @@ export default function AssumptionEditor({
 					) : null}
 
 					{editor.lifecycle === "ready" && prefill ? (
-						<form
-							id="forecast-assumption-editor-form"
-							data-testid="forecast-assumption-editor-form"
+						<SalaryForm
+							prefill={prefill}
+							fieldErrors={editor.fieldErrors}
+							summaryError={editor.summaryError}
+							formId={FORM_ID}
 							onSubmit={handleSave}
-							onChange={() => editor.setDirty(true)}
-							className="flex flex-col gap-4"
-						>
-							{editor.summaryError ? (
-								<p
-									data-testid="forecast-assumption-editor-summary-error"
-									role="alert"
-									className="rounded-lg border border-warning bg-surface p-3 text-sm text-warning"
-								>
-									{ft("forecasts.editor.summary_error")}
-								</p>
-							) : null}
-
-							{schema === undefined ? (
-								<p className="text-sm text-subdued">{prefill.form_key}</p>
-							) : (
-								schema.map((field) => {
-									const fieldId = `forecast-editor-field-${field.name}`;
-									const errorCode = editor.fieldErrors[field.name];
-									return (
-										<div key={field.name} className="flex flex-col gap-1">
-											<label
-												htmlFor={fieldId}
-												className="text-xs font-medium text-secondary"
-											>
-												{ft(field.labelKey)}
-											</label>
-											{field.type === "select" ? (
-												<select
-													id={fieldId}
-													name={field.name}
-													data-testid={fieldId}
-													defaultValue={fieldValue(prefill, field)}
-													className="rounded-lg border border-primary bg-container px-3 py-2 text-sm text-primary"
-												>
-													{field.options?.map((option) => (
-														<option key={option.value} value={option.value}>
-															{ft(option.labelKey)}
-														</option>
-													))}
-												</select>
-											) : (
-												<input
-													id={fieldId}
-													name={field.name}
-													type={field.type}
-													data-testid={fieldId}
-													defaultValue={fieldValue(prefill, field)}
-													className={`rounded-lg border border-primary bg-container px-3 py-2 text-sm text-primary ${field.name === "amount" ? "privacy-sensitive" : ""}`}
-												/>
-											)}
-											{errorCode ? (
-												<p
-													data-testid={`${fieldId}-error`}
-													className="text-xs text-warning"
-												>
-													{errorMessage(errorCode)}
-												</p>
-											) : null}
-										</div>
-									);
-								})
-							)}
-						</form>
+							onDirty={() => editor.setDirty(true)}
+						/>
 					) : null}
 				</div>
+
+				{/* Dirty-close confirmation (spec "Editor Contracts": warn on a dirty
+				    close). Shown when a close path was blocked by unsaved edits. Discard
+				    forces the close; Keep editing dismisses and returns to the form. */}
+				{confirmingClose ? (
+					<div
+						data-testid="forecast-assumption-editor-dirty-warning"
+						role="alertdialog"
+						aria-label={ft("forecasts.editor.dirty_warning")}
+						className="border-t border-primary bg-surface p-4"
+					>
+						<p className="text-sm text-primary">
+							{ft("forecasts.editor.dirty_warning")}
+						</p>
+						<div className="mt-3 flex items-center justify-end gap-2">
+							<button
+								type="button"
+								data-testid="forecast-assumption-editor-keep-editing"
+								onClick={() => setConfirmingClose(false)}
+								className="rounded-lg border border-primary px-3 py-1.5 text-sm text-secondary hover:bg-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+							>
+								{ft("forecasts.editor.keep_editing")}
+							</button>
+							<button
+								type="button"
+								data-testid="forecast-assumption-editor-discard"
+								onClick={() => editor.requestClose(true)}
+								className="rounded-lg border border-warning px-3 py-1.5 text-sm font-medium text-warning hover:bg-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+							>
+								{ft("forecasts.editor.discard")}
+							</button>
+						</div>
+					</div>
+				) : null}
 
 				<footer className="flex items-center justify-end gap-2 border-t border-primary p-4">
 					<button
 						type="button"
 						data-testid="forecast-assumption-editor-cancel"
 						disabled={editor.isSaving}
-						onClick={() => editor.requestClose()}
+						onClick={attemptClose}
 						className="rounded-lg border border-primary px-3 py-1.5 text-sm text-secondary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 disabled:opacity-50"
 					>
 						{ft("forecasts.editor.cancel")}
 					</button>
 					<button
 						type="submit"
-						form="forecast-assumption-editor-form"
+						form={FORM_ID}
 						data-testid="forecast-assumption-editor-save"
 						disabled={editor.isSaving || editor.lifecycle !== "ready"}
 						className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-inverse hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 disabled:opacity-50"

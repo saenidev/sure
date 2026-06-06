@@ -1,76 +1,51 @@
 // Forecast V2 assumption-editor drawer lifecycle (slice C7).
 //
-// `useAssumptionEditor` is the ONE focused module for the typed editor drawer's
-// lifecycle (spec "Frontend Runtime Modules" -> `useAssumptionEditor`: "handles
-// drawer/modal lifecycle, focus management, dirty state, pending save state, typed
-// validation errors, and optimistic version tokens"). It owns DRAWER STATE only —
-// it never renders, never persists canonical plan truth, and never orchestrates
-// recompute (spec "Frontend module responsibility rules": "No module handles both
-// editor lifecycle and recompute orchestration"). The save itself lands in C8;
-// this hook exposes the seams (`pendingSave`, `setFieldErrors`, version token) the
-// save wires into.
+// The ONE focused module for the typed editor drawer's lifecycle (spec "Frontend
+// Runtime Modules" -> `useAssumptionEditor`: drawer lifecycle, focus management,
+// dirty state, pending save state, typed validation errors, optimistic version
+// tokens). It owns DRAWER STATE only — never renders, never persists canonical
+// plan truth, never orchestrates recompute (spec "Frontend module responsibility
+// rules": "No module handles both editor lifecycle and recompute orchestration").
 //
-// Network discipline (spec "Inertia And JSON Endpoints"): opening the drawer
-// fetches GET /forecast/assumptions/:id/edit ONCE for the EditorPrefillReadModel
-// (B13) typed payload — never a full plan payload. Closing issues no network.
-// The fetched `lock_version` is the optimistic version token a later save sends
-// back so a stale edit is rejected (spec "Form Objects": "stale lock/version
-// conflicts").
+// The save itself (typed PATCH + conflict handling) lives in the focused
+// `useAssumptionSave` hook (split out for slice F12 to keep lifecycle/focus
+// separate from the save flow). This hook composes it and re-exposes the combined
+// editor surface unchanged, so the drawer + workspace wiring keep their API.
 //
-// Context preservation (spec "Editor Contracts": "Preserve plan, scenario stack,
-// lens, and selected period"): this hook deliberately owns NONE of plan / period
-// / scenario state — that all lives in the shared workspace store
-// (useForecastWorkspace), which the drawer renders over. Opening/closing the
-// drawer therefore cannot disturb the selected period or scenario stack. The hook
-// only records which control invoked the open so focus can return to it on close
-// (spec "Editor Contracts": "Return focus to the opening control after close").
+// Network discipline (spec "Inertia And JSON Endpoints"): opening fetches GET
+// /forecast/assumptions/:id/edit ONCE for the EditorPrefillReadModel (B13) — never
+// a full plan payload; closing issues no network. The fetched `lock_version` is
+// the optimistic token a later save echoes so a stale edit is rejected.
+//
+// Context preservation (spec "Editor Contracts"): this hook owns NONE of plan /
+// period / scenario state — that lives in the shared workspace store the drawer
+// renders over, so opening/closing preserves the selected period + scenario stack.
+// It only records which control invoked the open so focus returns to it on close.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
 	EditorFieldErrors,
 	EditorPrefillReadModel,
-	SaveConflict,
-	SavedAssumptionPatch,
 } from "../types/readModels";
+import {
+	type EditorSaveState,
+	type SaveEditorArgs,
+	type SaveOutcome,
+	useAssumptionSave,
+} from "./useAssumptionSave";
+
+// Re-exported so existing importers (the drawer, the workspace page) keep their
+// single import surface even though the save types now live in `useAssumptionSave`.
+export type { EditorSaveState, SaveEditorArgs, SaveOutcome };
 
 /** Where the drawer sits in its open/load lifecycle. */
-export type EditorLifecycle =
-	| "closed"
-	| "loading"
-	| "ready"
-	| "load_error";
-
-/** Where a save sits in its lifecycle. */
-export type EditorSaveState = "idle" | "saving" | "save_error" | "conflict";
-
-/** The outcome the save resolves to, so the caller can patch the workspace. */
-export type SaveOutcome =
-	| { readonly status: "saved"; readonly patch: SavedAssumptionPatch }
-	| { readonly status: "invalid"; readonly fieldErrors: EditorFieldErrors }
-	| { readonly status: "conflict"; readonly conflict: SaveConflict }
-	| { readonly status: "error" };
+export type EditorLifecycle = "closed" | "loading" | "ready" | "load_error";
 
 export interface UseAssumptionEditorArgs {
 	/** Builds the editor-open endpoint URL for one assumption id (default: V2 route). */
 	readonly buildUrl?: (assumptionId: string) => string;
 	/** Builds the save endpoint URL for one assumption id (default: V2 route). */
 	readonly buildSaveUrl?: (assumptionId: string) => string;
-}
-
-/** The form values + version tokens one save submits. */
-export interface SaveEditorArgs {
-	/** The assumption being saved (family-resolved server-side; opaque). */
-	readonly assumptionId: string;
-	/** The assumption kind, sent so the server selects the typed form. */
-	readonly kind: string;
-	/** The edited field values (top-level + form-specific param fields). */
-	readonly values: Readonly<Record<string, string>>;
-	/**
-	 * The plan version the workspace observed (owned by the workspace store, passed
-	 * in here). The server rejects the save with a conflict if the live plan version
-	 * has moved past it (spec "Live Recompute Model", "Conflict Handling").
-	 */
-	readonly planVersion: number;
 }
 
 export interface OpenEditorArgs {
@@ -142,39 +117,20 @@ function defaultBuildUrl(assumptionId: string): string {
 	return `/forecast/assumptions/${encodeURIComponent(assumptionId)}/edit`;
 }
 
-/** The default save endpoint URL for one assumption (spec V2 route shape). */
-function defaultBuildSaveUrl(assumptionId: string): string {
-	return `/forecast/assumptions/${encodeURIComponent(assumptionId)}`;
-}
-
-/** Reads the Rails CSRF token from the page meta tag (rendered by `_head`). */
-function csrfToken(): string {
-	if (typeof document === "undefined") {
-		return "";
-	}
-	return (
-		document
-			.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
-			?.getAttribute("content") ?? ""
-	);
-}
-
 /**
- * Owns the typed editor drawer's lifecycle, dirty state, pending save state,
- * typed validation errors, and the optimistic version token. Plan / period /
- * scenario context is intentionally NOT owned here — it lives in the shared
+ * Owns the typed editor drawer's lifecycle, dirty state, focus return, and the
+ * optimistic version token. The save flow (pending state, typed validation
+ * errors, conflict handling) is composed from `useAssumptionSave`. Plan / period
+ * / scenario context is intentionally NOT owned here — it lives in the shared
  * workspace store, so opening or closing the drawer preserves it.
  */
 export function useAssumptionEditor({
 	buildUrl = defaultBuildUrl,
-	buildSaveUrl = defaultBuildSaveUrl,
+	buildSaveUrl,
 }: UseAssumptionEditorArgs = {}): UseAssumptionEditorResult {
 	const [lifecycle, setLifecycle] = useState<EditorLifecycle>("closed");
 	const [prefill, setPrefill] = useState<EditorPrefillReadModel | null>(null);
 	const [isDirty, setIsDirty] = useState(false);
-	const [saveState, setSaveState] = useState<EditorSaveState>("idle");
-	const [fieldErrors, setFieldErrors] = useState<EditorFieldErrors>({});
-	const [summaryError, setSummaryError] = useState<string | null>(null);
 	const [invokerId, setInvokerId] = useState<string | null>(null);
 
 	// Monotonic open token so a stale fetch (the user opened a different card while
@@ -184,13 +140,26 @@ export function useAssumptionEditor({
 	// explicit invoker id was passed (spec "Editor Contracts": return focus).
 	const restoreFocusRef = useRef<HTMLElement | null>(null);
 
+	// A committed save clears the dirty flag so the drawer can close cleanly.
+	const markClean = useCallback((): void => {
+		setIsDirty(false);
+	}, []);
+
+	// The typed PATCH save + conflict flow (split out for slice F12). The lock
+	// version is the loaded prefill's optimistic token; null when nothing is loaded.
+	const saveFlow = useAssumptionSave({
+		buildSaveUrl,
+		lockVersion: prefill?.validation.lock_version ?? null,
+		onSaved: markClean,
+	});
+	const { setSaveState, setErrors, clearErrors } = saveFlow;
+
 	const resetEditorState = useCallback(() => {
 		setPrefill(null);
 		setIsDirty(false);
 		setSaveState("idle");
-		setFieldErrors({});
-		setSummaryError(null);
-	}, []);
+		clearErrors();
+	}, [setSaveState, clearErrors]);
 
 	const open = useCallback(
 		({ assumptionId, invokerId: invoker }: OpenEditorArgs): void => {
@@ -249,98 +218,6 @@ export function useAssumptionEditor({
 		setIsDirty(dirty);
 	}, []);
 
-	const setErrors = useCallback(
-		(errors: EditorFieldErrors, summary: string | null = null): void => {
-			setFieldErrors(errors);
-			setSummaryError(summary);
-		},
-		[],
-	);
-
-	const clearErrors = useCallback((): void => {
-		setFieldErrors({});
-		setSummaryError(null);
-	}, []);
-
-	// Saves the edited assumption. Echoes the optimistic version tokens (the
-	// prefill's lock_version + the workspace's observed plan version) so the server
-	// can reject a stale edit. Drives save lifecycle + typed errors; resolves to the
-	// outcome so the caller can patch the workspace (saved) or re-anchor (conflict).
-	const save = useCallback(
-		async ({
-			assumptionId,
-			kind,
-			values,
-			planVersion,
-		}: SaveEditorArgs): Promise<SaveOutcome> => {
-			setSaveState("saving");
-			setFieldErrors({});
-			setSummaryError(null);
-
-			const body = new URLSearchParams();
-			body.set("kind", kind);
-			body.set("plan_version", String(planVersion));
-			const lockVersion = prefill?.validation.lock_version;
-			if (lockVersion !== undefined && lockVersion !== null) {
-				body.set("expected_lock_version", String(lockVersion));
-			}
-			for (const [name, value] of Object.entries(values)) {
-				body.set(name, value);
-			}
-
-			try {
-				const response = await fetch(buildSaveUrl(assumptionId), {
-					method: "PATCH",
-					headers: {
-						Accept: "application/json",
-						"Content-Type": "application/x-www-form-urlencoded",
-						"X-CSRF-Token": csrfToken(),
-					},
-					credentials: "same-origin",
-					body: body.toString(),
-				});
-
-				if (response.ok) {
-					const patch = (await response.json()) as SavedAssumptionPatch;
-					setSaveState("idle");
-					setIsDirty(false);
-					return { status: "saved", patch };
-				}
-
-				if (response.status === 422) {
-					const data = (await response.json()) as {
-						errors?: EditorFieldErrors;
-					};
-					const errors = data.errors ?? {};
-					setFieldErrors(errors);
-					setSummaryError("invalid");
-					setSaveState("save_error");
-					return { status: "invalid", fieldErrors: errors };
-				}
-
-				if (response.status === 409) {
-					const conflict = (await response.json()) as SaveConflict;
-					setSummaryError(
-						conflict.conflict === "stale_lock_version"
-							? "conflict_lock_version"
-							: "conflict_plan_version",
-					);
-					setSaveState("conflict");
-					return { status: "conflict", conflict };
-				}
-
-				setSummaryError("save_error");
-				setSaveState("save_error");
-				return { status: "error" };
-			} catch {
-				setSummaryError("save_error");
-				setSaveState("save_error");
-				return { status: "error" };
-			}
-		},
-		[buildSaveUrl, prefill],
-	);
-
 	// Return focus to the invoking control once the drawer has fully closed (spec
 	// "Editor Contracts": "Return focus to the opening control after close").
 	useEffect(() => {
@@ -361,14 +238,14 @@ export function useAssumptionEditor({
 		lifecycle,
 		prefill,
 		isDirty,
-		saveState,
-		isSaving: saveState === "saving",
-		fieldErrors,
-		summaryError,
+		saveState: saveFlow.saveState,
+		isSaving: saveFlow.isSaving,
+		fieldErrors: saveFlow.fieldErrors,
+		summaryError: saveFlow.summaryError,
 		versionToken: prefill?.validation.lock_version ?? null,
 		invokerId,
 		open,
-		save,
+		save: saveFlow.save,
 		requestClose,
 		setDirty,
 		setSaveState,
