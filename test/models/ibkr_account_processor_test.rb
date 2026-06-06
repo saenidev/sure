@@ -192,6 +192,31 @@ class IbkrAccountProcessorTest < ActiveSupport::TestCase
     assert_in_delta BigDecimal("123.1667"), holding.cost_basis, BigDecimal("0.0001")
   end
 
+  test "processor imports holdings when optional ibkr position fields are missing" do
+    @ibkr_account.update!(
+      raw_holdings_payload: [
+        {
+          "asset_category" => "STK",
+          "symbol" => securities(:aapl).ticker,
+          "position" => "7",
+          "mark_price" => "151.25",
+          "currency" => "USD"
+        }
+      ]
+    )
+
+    IbkrAccount::Processor.new(@ibkr_account).process
+
+    holding = @account.holdings.find_by(security: securities(:aapl), date: @ibkr_account.report_date)
+
+    assert_not_nil holding
+    assert_equal BigDecimal("7"), holding.qty
+    assert_equal BigDecimal("151.25"), holding.price
+    assert_equal BigDecimal("1058.75"), holding.amount
+    assert_nil holding.cost_basis
+    assert_equal "USD", holding.currency
+  end
+
   test "processor repairs default opening anchor after importing activity entries" do
     result = Account::OpeningBalanceManager.new(@account).set_opening_balance(
       balance: @ibkr_account.current_balance,

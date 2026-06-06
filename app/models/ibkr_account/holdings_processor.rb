@@ -28,10 +28,9 @@ class IbkrAccount::HoldingsProcessor
         data = position.with_indifferent_access
         next unless supported_position?(data)
 
-        # conid is guaranteed present by supported_position?, so no fallbacks needed
         currency = extract_currency(data, fallback: @ibkr_account.currency)
         report_date = parse_date(data[:report_date]) || @ibkr_account.report_date || Date.current
-        key = [ data[:conid], currency, report_date ]
+        key = [ position_identity(data), currency, report_date ]
         groups[key] ||= []
         groups[key] << data
       end
@@ -43,17 +42,14 @@ class IbkrAccount::HoldingsProcessor
       return unless security
 
       price = parse_decimal(sample[:mark_price])
-      # quantity and cost_basis are derived from the same set of valid lots so
-      # they are always consistent — a lot with an unparseable cost_basis_price
-      # is excluded from both counts rather than inflating qty while shrinking basis.
-      aggregate = valid_lots(rows)
+      aggregate = aggregate_lots(rows)
       return unless price && aggregate
 
       quantity   = aggregate[:quantity]
       cost_basis = aggregate[:cost_basis]
       amount = quantity * price
       currency = extract_currency(sample, fallback: @ibkr_account.currency)
-      external_id = [ "ibkr", @ibkr_account.ibkr_account_id, sample[:conid], report_date, currency ].join("_")
+      external_id = [ "ibkr", @ibkr_account.ibkr_account_id, position_identity(sample), report_date, currency ].join("_")
 
       import_adapter.import_holding(
         security: security,
@@ -70,47 +66,50 @@ class IbkrAccount::HoldingsProcessor
       )
     end
 
-    # Aggregates only the lots that have both a parseable position and cost_basis_price.
-    # Returns { quantity:, cost_basis: } so the caller uses a consistent lot set for
-    # both values — a lot skipped here is excluded from quantity too, preventing the
-    # case where qty covers more shares than the cost basis was computed from.
-    def valid_lots(rows)
+    def aggregate_lots(rows)
       total_quantity = BigDecimal("0")
       total_cost = BigDecimal("0")
+      missing_cost_basis = false
 
       rows.each do |row|
-        row_quantity   = parse_decimal(row[:position])
-        row_cost_basis = parse_decimal(row[:cost_basis_price])
-
-        unless row_quantity && row_cost_basis
-          Rails.logger.warn(
-            "IbkrAccount::HoldingsProcessor - Skipping lot with missing position or cost_basis_price " \
-            "for conid=#{row[:conid].inspect}"
-          )
-          next
-        end
+        row_quantity = parse_decimal(row[:position])
+        next unless row_quantity
 
         total_quantity += row_quantity.abs
-        total_cost     += row_quantity.abs * row_cost_basis
+
+        row_cost_basis = parse_decimal(row[:cost_basis_price])
+        if row_cost_basis
+          total_cost += row_quantity.abs * row_cost_basis
+        else
+          missing_cost_basis = true
+        end
       end
 
       return nil if total_quantity.zero?
 
-      { quantity: total_quantity, cost_basis: total_cost / total_quantity }
+      cost_basis = missing_cost_basis ? nil : total_cost / total_quantity
+      { quantity: total_quantity, cost_basis: cost_basis }
     end
 
     def supported_position?(row)
+      position = parse_decimal(row[:position])
+
       row[:asset_category].to_s == "STK" &&
-        row[:side].to_s == "Long" &&
-        row[:conid].present? &&
-        row[:security_id].present? &&
-        row[:security_id_type].present? &&
+        long_position?(row, position) &&
         row[:symbol].present? &&
-        row[:currency].present? &&
-        row[:fx_rate_to_base].present? &&
-        row[:position].present? &&
-        row[:mark_price].present? &&
-        row[:cost_basis_price].present? &&
-        row[:report_date].present?
+        extract_currency(row, fallback: @ibkr_account.currency).present? &&
+        position.present? &&
+        row[:mark_price].present?
+    end
+
+    def long_position?(row, position)
+      side = row[:side].to_s
+      return side == "Long" if side.present?
+
+      position&.positive?
+    end
+
+    def position_identity(row)
+      row[:conid].presence || row[:symbol].to_s.upcase
     end
 end
