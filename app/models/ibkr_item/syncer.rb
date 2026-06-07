@@ -45,6 +45,7 @@ class IbkrItem::Syncer
       collect_transaction_stats(sync, account_ids: account_ids, source: "ibkr") if account_ids.any?
       collect_trades_stats(sync, account_ids: account_ids, source: "ibkr") if account_ids.any?
       collect_holdings_stats(sync, holdings_count: count_holdings, label: "processed")
+      collect_flex_data_quality_warning(sync, linked_accounts)
     end
 
     collect_health_stats(sync, errors: nil)
@@ -64,5 +65,24 @@ class IbkrItem::Syncer
 
     def count_holdings
       ibkr_item.ibkr_accounts.sum { |account| Array(account.raw_holdings_payload).size }
+    end
+
+    def collect_flex_data_quality_warning(sync, linked_ibkr_accounts)
+      accounts_missing_positions_or_trades = linked_ibkr_accounts.select do |account|
+        cash_present = Array(account.raw_cash_report_payload).any? || account.cash_balance.to_d.nonzero?
+        trades = Array((account.raw_activities_payload || {}).with_indifferent_access[:trades])
+
+        cash_present && account.raw_holdings_payload.blank? && trades.blank?
+      end
+
+      return if accounts_missing_positions_or_trades.empty?
+
+      collect_data_quality_stats(sync,
+        warnings: accounts_missing_positions_or_trades.size,
+        details: [ {
+          message: I18n.t("provider_warnings.ibkr_missing_positions_or_trades"),
+          severity: "warning"
+        } ]
+      )
     end
 end

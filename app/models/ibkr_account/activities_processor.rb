@@ -150,15 +150,11 @@ class IbkrAccount::ActivitiesProcessor
     def supported_trade?(row)
       row[:asset_category].to_s == "STK" &&
         row[:buy_sell].present? &&
-        row[:conid].present? &&
-        row[:currency].present? &&
+        extract_currency(row, fallback: @ibkr_account.currency).present? &&
         row[:quantity].present? &&
         row[:symbol].present? &&
-        row[:trade_date].present? &&
         row[:trade_id].present? &&
-        row[:trade_price].present? &&
-        row[:transaction_id].present? &&
-        fx_rate_available?(row)
+        row[:trade_price].present?
     end
 
     def supported_cash_transaction?(row)

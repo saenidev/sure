@@ -92,15 +92,13 @@ class IbkrItem::ReportParser
     def section_rows(statement, container_names, row_names)
       rows = []
 
-      container_names.each do |container_name|
-        statement.xpath("./#{container_name}").each do |container|
-          children = container.element_children
+      section_containers(statement, container_names).each do |container|
+        children = container.element_children
 
-          if children.any?
-            rows.concat(children.select { |child| row_names.include?(child.name) })
-          elsif row_names.include?(container.name)
-            rows << container
-          end
+        if children.any?
+          rows.concat(children.select { |child| row_names.include?(child.name) })
+        elsif row_names.include?(container.name)
+          rows << container
         end
       end
 
@@ -110,7 +108,25 @@ class IbkrItem::ReportParser
         end
       end
 
+      if rows.empty?
+        row_names.each do |row_name|
+          rows.concat(statement.xpath(".//#{row_name}"))
+        end
+      end
+
       rows.map { |row| node_attributes(row) }.reject(&:blank?)
+    end
+
+    def section_containers(statement, container_names)
+      container_names.each_with_object([]) do |container_name, containers|
+        direct_containers = statement.xpath("./#{container_name}").to_a
+
+        if direct_containers.any?
+          containers.concat(direct_containers)
+        else
+          containers.concat(statement.xpath(".//#{container_name}").to_a)
+        end
+      end
     end
 
     def node_attributes(node)

@@ -217,6 +217,37 @@ class IbkrAccountProcessorTest < ActiveSupport::TestCase
     assert_equal "USD", holding.currency
   end
 
+  test "processor imports trades when optional ibkr trade fields are missing" do
+    @ibkr_account.update!(
+      raw_activities_payload: {
+        trades: [
+          {
+            "asset_category" => "STK",
+            "trade_id" => "1005",
+            "symbol" => securities(:aapl).ticker,
+            "quantity" => "4",
+            "trade_price" => "148.00",
+            "currency" => "USD",
+            "buy_sell" => "BUY",
+            "trade_date" => Date.current.to_s
+          }
+        ],
+        cash_transactions: []
+      }
+    )
+
+    IbkrAccount::Processor.new(@ibkr_account).process
+
+    trade = @account.entries.find_by(external_id: "ibkr_trade_1005")
+
+    assert_not_nil trade
+    assert_equal "Buy", trade.entryable.investment_activity_label
+    assert_equal BigDecimal("4"), trade.entryable.qty
+    assert_equal BigDecimal("592.0"), trade.amount
+    assert_equal "USD", trade.currency
+    assert_nil trade.entryable.exchange_rate
+  end
+
   test "processor repairs default opening anchor after importing activity entries" do
     result = Account::OpeningBalanceManager.new(@account).set_opening_balance(
       balance: @ibkr_account.current_balance,
