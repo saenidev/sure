@@ -1,6 +1,8 @@
 module IbkrAccount::DataHelpers
   extend ActiveSupport::Concern
 
+  STOCK_ASSET_CATEGORIES = %w[STK STOCK STOCKS].freeze
+
   private
 
     def parse_decimal(value)
@@ -77,5 +79,9 @@ module IbkrAccount::DataHelpers
 
     def create_security_from_row(ticker)
       Security.create!(ticker: ticker, name: ticker)
+    end
+
+    def stock_asset_category?(value)
+      STOCK_ASSET_CATEGORIES.include?(value.to_s.upcase.strip)
     end
 end

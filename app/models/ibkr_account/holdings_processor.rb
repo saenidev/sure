@@ -72,7 +72,7 @@ class IbkrAccount::HoldingsProcessor
       missing_cost_basis = false
 
       rows.each do |row|
-        row_quantity = parse_decimal(row[:position])
+        row_quantity = position_quantity(row)
         next unless row_quantity
 
         total_quantity += row_quantity.abs
@@ -92,9 +92,9 @@ class IbkrAccount::HoldingsProcessor
     end
 
     def supported_position?(row)
-      position = parse_decimal(row[:position])
+      position = position_quantity(row)
 
-      row[:asset_category].to_s == "STK" &&
+      stock_asset_category?(row[:asset_category]) &&
         long_position?(row, position) &&
         row[:symbol].present? &&
         extract_currency(row, fallback: @ibkr_account.currency).present? &&
@@ -111,5 +111,9 @@ class IbkrAccount::HoldingsProcessor
 
     def position_identity(row)
       row[:conid].presence || row[:symbol].to_s.upcase
+    end
+
+    def position_quantity(row)
+      parse_decimal(row[:position]) || parse_decimal(row[:quantity])
     end
 end

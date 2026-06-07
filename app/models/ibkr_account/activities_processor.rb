@@ -48,7 +48,7 @@ class IbkrAccount::ActivitiesProcessor
       native_amount = buy_sell == "SELL" ? -(native_price * quantity.abs) : (native_price * quantity.abs)
       currency = extract_currency(row, fallback: @ibkr_account.currency)
       date = trade_date_for(row)
-      external_id = "ibkr_trade_#{row[:trade_id]}"
+      external_id = "ibkr_trade_#{trade_identity(row)}"
 
       import_adapter.import_trade(
         external_id: external_id,
@@ -119,7 +119,7 @@ class IbkrAccount::ActivitiesProcessor
       ticker = security&.ticker || row[:symbol]
 
       result = import_adapter.import_transaction(
-        external_id: "ibkr_trade_fee_#{row[:trade_id]}",
+        external_id: "ibkr_trade_fee_#{trade_identity(row)}",
         amount: commission.abs,
         currency: currency,
         date: date,
@@ -148,12 +148,12 @@ class IbkrAccount::ActivitiesProcessor
     end
 
     def supported_trade?(row)
-      row[:asset_category].to_s == "STK" &&
+      stock_asset_category?(row[:asset_category]) &&
         row[:buy_sell].present? &&
+        trade_identity(row).present? &&
         extract_currency(row, fallback: @ibkr_account.currency).present? &&
         row[:quantity].present? &&
         row[:symbol].present? &&
-        row[:trade_id].present? &&
         row[:trade_price].present?
     end
 
@@ -212,5 +212,9 @@ class IbkrAccount::ActivitiesProcessor
       return true if source_currency == @ibkr_account.currency
 
       row[:fx_rate_to_base].present?
+    end
+
+    def trade_identity(row)
+      row[:trade_id].presence || row[:transaction_id].presence
     end
 end

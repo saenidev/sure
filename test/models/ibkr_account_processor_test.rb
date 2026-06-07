@@ -217,6 +217,67 @@ class IbkrAccountProcessorTest < ActiveSupport::TestCase
     assert_equal "USD", holding.currency
   end
 
+  test "processor imports holdings when flex row uses quantity field" do
+    @ibkr_account.update!(
+      raw_holdings_payload: [
+        {
+          "asset_category" => "STK",
+          "symbol" => securities(:aapl).ticker,
+          "quantity" => "8",
+          "mark_price" => "152.50",
+          "currency" => "USD"
+        }
+      ]
+    )
+
+    IbkrAccount::Processor.new(@ibkr_account).process
+
+    holding = @account.holdings.find_by(security: securities(:aapl), date: @ibkr_account.report_date)
+
+    assert_not_nil holding
+    assert_equal BigDecimal("8"), holding.qty
+    assert_equal BigDecimal("152.50"), holding.price
+    assert_equal BigDecimal("1220.0"), holding.amount
+  end
+
+  test "processor imports stock rows when flex asset class is a display value" do
+    @ibkr_account.update!(
+      raw_holdings_payload: [
+        {
+          "asset_category" => "Stocks",
+          "symbol" => securities(:aapl).ticker,
+          "quantity" => "9",
+          "mark_price" => "153.00",
+          "currency" => "USD"
+        }
+      ],
+      raw_activities_payload: {
+        trades: [
+          {
+            "asset_category" => "Stocks",
+            "transaction_id" => "tx-1007",
+            "symbol" => securities(:aapl).ticker,
+            "quantity" => "1",
+            "trade_price" => "153.00",
+            "currency" => "USD",
+            "buy_sell" => "BUY"
+          }
+        ],
+        cash_transactions: []
+      }
+    )
+
+    IbkrAccount::Processor.new(@ibkr_account).process
+
+    holding = @account.holdings.find_by(security: securities(:aapl), date: @ibkr_account.report_date)
+    trade = @account.entries.find_by(external_id: "ibkr_trade_tx-1007")
+
+    assert_not_nil holding
+    assert_equal BigDecimal("9"), holding.qty
+    assert_not_nil trade
+    assert_equal BigDecimal("1"), trade.entryable.qty
+  end
+
   test "processor imports trades when optional ibkr trade fields are missing" do
     @ibkr_account.update!(
       raw_activities_payload: {
@@ -246,6 +307,39 @@ class IbkrAccountProcessorTest < ActiveSupport::TestCase
     assert_equal BigDecimal("592.0"), trade.amount
     assert_equal "USD", trade.currency
     assert_nil trade.entryable.exchange_rate
+  end
+
+  test "processor imports trades using transaction id when trade id is missing" do
+    @ibkr_account.update!(
+      raw_activities_payload: {
+        trades: [
+          {
+            "asset_category" => "STK",
+            "transaction_id" => "tx-1006",
+            "symbol" => securities(:aapl).ticker,
+            "quantity" => "5",
+            "trade_price" => "149.00",
+            "currency" => "USD",
+            "buy_sell" => "BUY",
+            "trade_date" => Date.current.to_s,
+            "ib_commission" => "-1.25",
+            "ib_commission_currency" => "USD"
+          }
+        ],
+        cash_transactions: []
+      }
+    )
+
+    IbkrAccount::Processor.new(@ibkr_account).process
+
+    trade = @account.entries.find_by(external_id: "ibkr_trade_tx-1006")
+    fee = @account.entries.find_by(external_id: "ibkr_trade_fee_tx-1006")
+
+    assert_not_nil trade
+    assert_equal BigDecimal("5"), trade.entryable.qty
+    assert_equal BigDecimal("745.0"), trade.amount
+    assert_not_nil fee
+    assert_equal BigDecimal("1.25"), fee.amount
   end
 
   test "processor repairs default opening anchor after importing activity entries" do
