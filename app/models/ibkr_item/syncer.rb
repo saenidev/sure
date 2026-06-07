@@ -32,7 +32,8 @@ class IbkrItem::Syncer
 
     if linked_accounts.any?
       sync.update!(status_text: "Processing holdings and activity...") if sync.respond_to?(:status_text)
-      ibkr_item.process_accounts
+      processing_results = ibkr_item.process_accounts
+      collect_ibkr_import_stats(sync, processing_results)
 
       sync.update!(status_text: "Calculating balances...") if sync.respond_to?(:status_text)
       ibkr_item.schedule_account_syncs(
@@ -84,5 +85,63 @@ class IbkrItem::Syncer
           severity: "warning"
         } ]
       )
+    end
+
+    def collect_ibkr_import_stats(sync, processing_results)
+      return unless sync.respond_to?(:sync_stats)
+
+      account_imports = Array(processing_results).map do |processing_result|
+        ibkr_account = ibkr_item.ibkr_accounts.find { |account| account.id == processing_result[:ibkr_account_id] }
+        next unless ibkr_account
+
+        activities = (ibkr_account.raw_activities_payload || {}).with_indifferent_access
+        result = (processing_result[:result] || {}).with_indifferent_access
+
+        {
+          "ibkr_account_id" => ibkr_account.id,
+          "success" => processing_result[:success],
+          "raw_holdings_rows" => Array(ibkr_account.raw_holdings_payload).size,
+          "raw_trade_rows" => Array(activities[:trades]).size,
+          "raw_cash_transaction_rows" => Array(activities[:cash_transactions]).size,
+          "holdings_imported" => result[:holdings].to_i,
+          "trades_imported" => result[:trades].to_i,
+          "transactions_imported" => result[:transactions].to_i,
+          "error" => processing_result[:error]
+        }.compact
+      end.compact
+
+      merge_sync_stats(sync, {
+        "ibkr_account_imports" => account_imports,
+        "ibkr_raw_holdings_rows" => account_imports.sum { |account| account["raw_holdings_rows"].to_i },
+        "ibkr_raw_trade_rows" => account_imports.sum { |account| account["raw_trade_rows"].to_i },
+        "ibkr_holdings_imported" => account_imports.sum { |account| account["holdings_imported"].to_i },
+        "ibkr_trades_imported" => account_imports.sum { |account| account["trades_imported"].to_i }
+      })
+
+      collect_ibkr_zero_import_warnings(sync, account_imports)
+    end
+
+    def collect_ibkr_zero_import_warnings(sync, account_imports)
+      details = []
+
+      account_imports.each do |account_import|
+        if account_import["raw_holdings_rows"].to_i.positive? && account_import["holdings_imported"].to_i.zero?
+          details << {
+            message: I18n.t("provider_warnings.ibkr_zero_holdings_imported"),
+            severity: "warning"
+          }
+        end
+
+        if account_import["raw_trade_rows"].to_i.positive? && account_import["trades_imported"].to_i.zero?
+          details << {
+            message: I18n.t("provider_warnings.ibkr_zero_trades_imported"),
+            severity: "warning"
+          }
+        end
+      end
+
+      return if details.empty?
+
+      collect_data_quality_stats(sync, warnings: details.size, details: details)
     end
 end

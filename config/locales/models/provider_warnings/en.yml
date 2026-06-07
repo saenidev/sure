@@ -3,3 +3,5 @@ en:
   provider_warnings:
     limited_investment_data: "Investment data from this provider is limited. Activity labels (Buy, Sell, Dividend) are not available, which may affect budget accuracy. Consider creating rules to exclude or categorize investment transactions."
     ibkr_missing_positions_or_trades: "IBKR Flex returned cash balances but no open positions or trades. If you expect holdings or buys, update the Flex Query to include the Open Positions and Trades sections, then run sync again."
+    ibkr_zero_holdings_imported: "IBKR returned Open Positions rows but imported 0 holdings for one linked account."
+    ibkr_zero_trades_imported: "IBKR returned Trades rows but imported 0 trades for one linked account."

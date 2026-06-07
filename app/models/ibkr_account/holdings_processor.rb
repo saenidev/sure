@@ -6,11 +6,13 @@ class IbkrAccount::HoldingsProcessor
   end
 
   def process
-    return unless account.present?
+    return { holdings: 0 } unless account.present?
 
-    grouped_positions.each do |(_, _, report_date), group|
-      process_group(group, report_date)
+    holdings_count = grouped_positions.sum do |(_, _, report_date), group|
+      process_group(group, report_date) ? 1 : 0
     end
+
+    { holdings: holdings_count }
   end
 
   private
@@ -64,6 +66,8 @@ class IbkrAccount::HoldingsProcessor
         account_provider_id: @ibkr_account.account_provider&.id,
         delete_future_holdings: false
       )
+
+      true
     end
 
     def aggregate_lots(rows)

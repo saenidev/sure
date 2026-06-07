@@ -9,11 +9,17 @@ class IbkrAccount::Processor
     return unless account.present?
 
     update_account_balance!
-    IbkrAccount::HoldingsProcessor.new(ibkr_account).process
-    IbkrAccount::ActivitiesProcessor.new(ibkr_account).process
+    holdings_result = IbkrAccount::HoldingsProcessor.new(ibkr_account).process
+    activities_result = IbkrAccount::ActivitiesProcessor.new(ibkr_account).process
     repair_default_opening_anchor!
 
     account.broadcast_sync_complete
+
+    {
+      holdings: holdings_result[:holdings].to_i,
+      trades: activities_result[:trades].to_i,
+      transactions: activities_result[:transactions].to_i
+    }
   end
 
   private
