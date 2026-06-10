@@ -70,7 +70,7 @@ class IbkrItem::ReportParser
         name: account_id,
         currency: currency,
         cash_balance: extract_cash_balance(cash_report, currency),
-        current_balance: extract_total_balance(position_values, cash_report, currency),
+        current_balance: extract_total_balance(position_values, cash_report, equity_summary_in_base, open_positions, currency),
         report_date: report_date,
         statement: statement_data,
         cash_report: cash_report,
@@ -150,10 +150,73 @@ class IbkrItem::ReportParser
       account_row = position_values.find { |row| row["currency"] == account_currency }
       row = base_summary || account_row
 
-      parse_decimal(row&.fetch("end_of_period_value", nil)) || BigDecimal("0")
+      parse_decimal(row&.fetch("end_of_period_value", nil))
     end
 
-    def extract_total_balance(position_values, cash_rows, account_currency)
-      extract_current_balance(position_values, account_currency) + extract_cash_balance(cash_rows, account_currency)
+    # Total account value. ChangeInPositionValues is an optional Flex section most
+    # queries don't include, so fall back to the equity summary (total already
+    # includes cash) and then to summing open positions. Without a fallback the
+    # balance collapses to cash-only, which both misstates the account value and
+    # hides holdings behind Account#all_cash_portfolio?.
+    def extract_total_balance(position_values, cash_rows, equity_rows, open_positions, account_currency)
+      cash = extract_cash_balance(cash_rows, account_currency)
+
+      position_value = extract_current_balance(position_values, account_currency)
+      return position_value + cash if position_value
+
+      equity_total = extract_equity_summary_total(equity_rows, account_currency)
+      return equity_total if equity_total
+
+      positions_total = sum_open_positions_in_base(open_positions, account_currency)
+      return positions_total + cash if positions_total
+
+      cash
+    end
+
+    def extract_equity_summary_total(equity_rows, account_currency)
+      equity_rows
+        .filter_map do |row|
+          currency = row["currency"].presence&.upcase
+          # BASE_SUMMARY rows aggregate across currencies; absent currency is implicitly base
+          next if currency == "BASE_SUMMARY"
+          next if currency.present? && currency != account_currency
+
+          date = parse_date(row["report_date"])
+          total = parse_decimal(row["total"])
+          next unless date && total
+
+          [ date, total ]
+        end
+        .max_by(&:first)
+        &.last
+    end
+
+    def sum_open_positions_in_base(open_positions, account_currency)
+      rows = open_positions
+      summary_rows = rows.select { |row| row["level_of_detail"].to_s.upcase == "SUMMARY" }
+      rows = summary_rows if summary_rows.any?
+
+      values = rows.filter_map do |row|
+        value = parse_decimal(row["position_value"])
+
+        if value.nil?
+          quantity = parse_decimal(row["position"]) || parse_decimal(row["quantity"])
+          price = parse_decimal(row["mark_price"])
+          value = quantity * price if quantity && price
+        end
+        next unless value
+
+        currency = row["currency"].presence&.upcase
+        fx_rate = if currency.nil? || currency == account_currency
+          BigDecimal("1")
+        else
+          parse_decimal(row["fx_rate_to_base"])
+        end
+        next unless fx_rate
+
+        value * fx_rate
+      end
+
+      values.presence&.sum
     end
 end

@@ -57,6 +57,93 @@ class IbkrItemReportParserTest < ActiveSupport::TestCase
     assert_equal "1001", account[:trades].first["trade_id"]
   end
 
+  test "derives total balance from equity summary when ChangeInPositionValues is missing" do
+    xml = <<~XML
+      <FlexQueryResponse queryName="Sure Test">
+        <FlexStatement accountId="U1234567" fromDate="20250601" toDate="20260608">
+          <AccountInformation accountId="U1234567" currency="CHF" />
+          <CashReport>
+            <CashReportCurrency currency="BASE_SUMMARY" endingCash="1000.50" />
+          </CashReport>
+          <EquitySummaryInBase>
+            <EquitySummaryByReportDateInBase currency="CHF" reportDate="20260604" cash="900.50" stock="2300.50" total="3201.00" />
+            <EquitySummaryByReportDateInBase currency="CHF" reportDate="20260605" cash="1000.50" stock="2350.50" total="3351.00" />
+          </EquitySummaryInBase>
+          <OpenPositions>
+            <OpenPosition assetCategory="STK" symbol="AAPL" conid="265598" reportDate="20260605" position="10" markPrice="150.00" positionValue="1500" currency="USD" fxRateToBase="0.90" side="Long" levelOfDetail="SUMMARY" />
+          </OpenPositions>
+        </FlexStatement>
+      </FlexQueryResponse>
+    XML
+
+    account = IbkrItem::ReportParser.new(xml).parse[:accounts].first
+
+    assert_equal BigDecimal("1000.50"), account[:cash_balance]
+    assert_equal BigDecimal("3351.00"), account[:current_balance]
+  end
+
+  test "derives total balance from open positions when equity summary is also missing" do
+    xml = <<~XML
+      <FlexQueryResponse queryName="Sure Test">
+        <FlexStatement accountId="U1234567" fromDate="20250601" toDate="20260608">
+          <AccountInformation accountId="U1234567" currency="CHF" />
+          <CashReport>
+            <CashReportCurrency currency="BASE_SUMMARY" endingCash="1000.50" />
+          </CashReport>
+          <OpenPositions>
+            <OpenPosition assetCategory="STK" symbol="AAPL" conid="265598" position="10" markPrice="150.00" positionValue="1500" currency="USD" fxRateToBase="0.90" side="Long" levelOfDetail="SUMMARY" />
+            <OpenPosition assetCategory="STK" symbol="NESN" conid="111111" position="2" markPrice="100.00" currency="CHF" side="Long" levelOfDetail="SUMMARY" />
+          </OpenPositions>
+        </FlexStatement>
+      </FlexQueryResponse>
+    XML
+
+    account = IbkrItem::ReportParser.new(xml).parse[:accounts].first
+
+    # 1500 USD * 0.90 fx + (2 * 100 CHF, no positionValue attribute) + 1000.50 cash
+    assert_equal BigDecimal("2550.50"), account[:current_balance]
+  end
+
+  test "open position balance fallback only sums summary rows when lot rows are also present" do
+    xml = <<~XML
+      <FlexQueryResponse queryName="Sure Test">
+        <FlexStatement accountId="U1234567" fromDate="20250601" toDate="20260608">
+          <AccountInformation accountId="U1234567" currency="CHF" />
+          <CashReport>
+            <CashReportCurrency currency="BASE_SUMMARY" endingCash="1000.50" />
+          </CashReport>
+          <OpenPositions>
+            <OpenPosition assetCategory="STK" symbol="AAPL" conid="265598" position="10" markPrice="150.00" positionValue="1500" currency="USD" fxRateToBase="0.90" side="Long" levelOfDetail="SUMMARY" />
+            <OpenPosition assetCategory="STK" symbol="AAPL" conid="265598" position="4" markPrice="150.00" positionValue="600" currency="USD" fxRateToBase="0.90" side="Long" levelOfDetail="LOT" />
+            <OpenPosition assetCategory="STK" symbol="AAPL" conid="265598" position="6" markPrice="150.00" positionValue="900" currency="USD" fxRateToBase="0.90" side="Long" levelOfDetail="LOT" />
+          </OpenPositions>
+        </FlexStatement>
+      </FlexQueryResponse>
+    XML
+
+    account = IbkrItem::ReportParser.new(xml).parse[:accounts].first
+
+    # Only the SUMMARY row counts: 1500 USD * 0.90 fx + 1000.50 cash
+    assert_equal BigDecimal("2350.50"), account[:current_balance]
+  end
+
+  test "total balance stays cash only when no position data is available" do
+    xml = <<~XML
+      <FlexQueryResponse queryName="Sure Test">
+        <FlexStatement accountId="U1234567" fromDate="20250601" toDate="20260608">
+          <AccountInformation accountId="U1234567" currency="CHF" />
+          <CashReport>
+            <CashReportCurrency currency="BASE_SUMMARY" endingCash="250.00" />
+          </CashReport>
+        </FlexStatement>
+      </FlexQueryResponse>
+    XML
+
+    account = IbkrItem::ReportParser.new(xml).parse[:accounts].first
+
+    assert_equal BigDecimal("250.00"), account[:current_balance]
+  end
+
   test "raises parse error for malformed xml" do
     error = assert_raises(IbkrItem::ReportParser::ParseError) do
       IbkrItem::ReportParser.new("<FlexQueryResponse><FlexStatement>").parse
