@@ -132,9 +132,12 @@ class SimplefinAccount::Investments::HoldingsProcessor
     #   - cost_basis / basis: the spec calls this per-share, and most
     #     brokerages comply. Keep these values unchanged by default.
     #
-    # Exception: a small allowlist of brokerages (Vanguard, Fidelity) is
-    # known to populate cost_basis with the total position cost in violation
+    # Exception: a small allowlist of brokerages (Vanguard, Fidelity, Schwab)
+    # is known to populate cost_basis with the total position cost in violation
     # of the spec (#1718, #1182). For those connections only, divide by qty.
+    # Schwab evidence: real payloads carry cost_basis == purchase_price * shares
+    # (e.g. 1179.6355 shares, purchase_price 55.949486, cost_basis 66000.00),
+    # which rendered as a ~-99% return when read as a per-share value.
     #
     # An earlier revision of this fix used a magnitude heuristic
     # (share_price × √qty midpoint). It was withdrawn because a legitimate
@@ -158,7 +161,7 @@ class SimplefinAccount::Investments::HoldingsProcessor
     # field with the total position cost rather than the per-share value the
     # spec requires. Matched as case-insensitive substrings against the
     # account's stored org name and domain.
-    TOTAL_BASIS_INSTITUTIONS = %w[vanguard fidelity].freeze
+    TOTAL_BASIS_INSTITUTIONS = %w[vanguard fidelity schwab].freeze
 
     def institution_reports_total_basis?
       org = simplefin_account.respond_to?(:org_data) ? simplefin_account.org_data : nil

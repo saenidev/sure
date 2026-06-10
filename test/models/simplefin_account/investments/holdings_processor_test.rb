@@ -122,14 +122,17 @@ class SimplefinAccount::Investments::HoldingsProcessorTest < ActiveSupport::Test
     assert_equal BigDecimal("100.00"), cost_basis
   end
 
-  test "institution_reports_total_basis? matches Vanguard and Fidelity org metadata" do
+  test "institution_reports_total_basis? matches known total-basis org metadata" do
     cases = {
       { "name" => "Vanguard" }                          => true,
       { "name" => "VANGUARD BROKERAGE" }                => true,
       { "name" => "Fidelity Investments" }              => true,
       { "domain" => "vanguard.com" }                    => true,
       { "domain" => "401k.fidelity.com" }               => true,
-      { "name" => "Charles Schwab", "domain" => "schwab.com" } => false,
+      # Schwab sends cost_basis = purchase_price * shares (total position
+      # cost) in real SimpleFIN payloads, violating the per-share spec.
+      { "name" => "Charles Schwab US", "domain" => "client.schwab.com" } => true,
+      { "name" => "Charles Schwab", "domain" => "schwab.com" } => true,
       { "name" => "Chase" }                             => false,
       {}                                                => false
     }
