@@ -60,6 +60,17 @@ class Balance::LinkedInvestmentSeriesNormalizerTest < ActiveSupport::TestCase
     assert series.values.all? { |v| v.date >= 1.day.ago.to_date }
   end
 
+  test "clamps trim date to series end when stable window starts after it" do
+    create_provider_transaction(date: 20.days.ago.to_date)
+    # Future-dated provider row (artifact of older code): stable window would
+    # start after the series ends, which must not fall back to fabricated history.
+    create_provider_holding(date: Date.current + 1.day)
+
+    normalized = Balance::LinkedInvestmentSeriesNormalizer.new(account: @account, series: month_series).normalize
+
+    assert_equal [ Date.current ], normalized.values.map(&:date)
+  end
+
   private
 
     def month_series

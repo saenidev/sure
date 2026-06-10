@@ -25,6 +25,7 @@ class Balance::LinkedInvestmentSeriesNormalizer
       common_start_date = common_supported_history_start_date(account_ids)
       return series unless common_start_date.present?
 
+      common_start_date = clamp_to_series_end(common_start_date, series)
       trimmed_values = series.values.select { |value| value.date >= common_start_date }
       return series if trimmed_values.blank? || trimmed_values.length == series.values.length
 
@@ -35,6 +36,17 @@ class Balance::LinkedInvestmentSeriesNormalizer
         values: trimmed_values,
         favorable_direction: series.favorable_direction
       )
+    end
+
+    # A supported-history start past the series end (e.g. a future-dated
+    # provider snapshot left by older code) would select zero values and fall
+    # back to the full fabricated series. Clamp so at most the latest point
+    # survives — a flat single-point series is honest; fabricated history isn't.
+    def clamp_to_series_end(start_date, series)
+      last_series_date = series.values.last&.date
+      return start_date unless last_series_date
+
+      [ start_date, last_series_date ].min
     end
 
     private
@@ -101,6 +113,7 @@ class Balance::LinkedInvestmentSeriesNormalizer
     first_supported_history_date = supported_history_start_date
     return series unless first_supported_history_date.present?
 
+    first_supported_history_date = self.class.clamp_to_series_end(first_supported_history_date, series)
     trimmed_values = series.values.select { |value| value.date >= first_supported_history_date }
     return series if trimmed_values.blank? || trimmed_values.length == series.values.length
 
