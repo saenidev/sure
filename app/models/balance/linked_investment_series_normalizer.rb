@@ -50,8 +50,22 @@ class Balance::LinkedInvestmentSeriesNormalizer
 
         stable_holding_dates = stable_provider_holding_start_dates(account_ids)
 
+        # Without trade entries the reverse calculator cannot rebuild holdings
+        # before the stable provider snapshot window — buys/sells arrive as
+        # plain cash transactions, so earlier balances double-count restored
+        # cash and carried-back holdings. Only trust transaction-era history
+        # for accounts whose holdings are reconstructible from trades.
+        accounts_with_trades = Entry.where(account_id: account_ids, entryable_type: "Trade")
+          .distinct
+          .pluck(:account_id)
+          .to_set
+
         account_ids.filter_map do |account_id|
-          [ activity_dates[account_id], stable_holding_dates[account_id] ].compact.min
+          if accounts_with_trades.include?(account_id)
+            [ activity_dates[account_id], stable_holding_dates[account_id] ].compact.min
+          else
+            stable_holding_dates[account_id] || activity_dates[account_id]
+          end
         end.max
       end
 
@@ -101,8 +115,14 @@ class Balance::LinkedInvestmentSeriesNormalizer
 
   private
 
+    # See common_supported_history_start_date: transaction-era history is only
+    # trustworthy when holdings can be reconstructed backward from trades.
     def supported_history_start_date
-      [ first_provider_activity_date, stable_provider_holding_start_date ].compact.min
+      if account.trades.exists?
+        [ first_provider_activity_date, stable_provider_holding_start_date ].compact.min
+      else
+        stable_provider_holding_start_date || first_provider_activity_date
+      end
     end
 
     def first_provider_activity_date
