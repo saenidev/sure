@@ -282,15 +282,4 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
 
     assert_equal 0, cache.forecast_projection_traces.where(amount: 0).count
   end
-
-  # --- Sync budget decision ------------------------------------------------
-
-  test "small proof plan is recomputed synchronously within budget" do
-    coordinator = Forecasts::Projection::RecomputeCoordinator.new(
-      plan: @plan, source_snapshot: @snapshot
-    )
-
-    assert coordinator.recompute_synchronously?,
-      "the small proof plan fits the sync recompute budget"
-  end
 end

@@ -22,11 +22,8 @@ module Forecasts
     #      source_snapshot_hash + engine_version.
     #
     # The coordinator is NOT the engine: it owns persistence, key/version
-    # management, cache invalidation, and the sync-vs-background decision. It does
-    # NOT format UI strings or broadcast — those live in read models / controllers
-    # (boundary table: "Recompute coordinator | Choosing sync/background
-    # recompute, cache invalidation, broadcast/update behavior | Simulation
-    # details").
+    # management, and cache invalidation. It does NOT format UI strings or
+    # broadcast — those live in read models / controllers.
     #
     # Versioning + stale-result protection (spec "Versioning rules", "Recompute
     # Job Contract"): a recompute publishes a current cache ONLY if the
@@ -46,11 +43,6 @@ module Forecasts
     # caller params (the PacketBuilder enforces snapshot/plan/family ownership).
     class RecomputeCoordinator
       InvalidRecomputeInputError = Class.new(ArgumentError)
-
-      # Plans at or under this period count recompute synchronously inside the
-      # request/interaction budget. Larger plans are handed to a background job.
-      # The proof slice's 36-month plan is comfortably under budget.
-      SYNC_PERIOD_BUDGET = 60
 
       # Maps a pure-engine trace category onto the metric the trace explains. For
       # the proof slice income/spending traces explain the like-named metric.
@@ -97,13 +89,6 @@ module Forecasts
         result = Forecasts::Projection::Engine.call(packet)
 
         persist(packet, result, target_version)
-      end
-
-      # True when the plan is small enough to recompute inline within the
-      # interaction budget (spec "Allowed recompute strategies": server-side
-      # synchronous recompute for small deterministic plans).
-      def recompute_synchronously?
-        projected_period_count <= SYNC_PERIOD_BUDGET
       end
 
       private
@@ -355,18 +340,6 @@ module Forecasts
 
         def started_at
           @started_at ||= Time.current
-        end
-
-        # Estimates the monthly period count the engine will simulate from the
-        # plan horizon (no DB read, no clock): the inclusive month span between
-        # the horizon endpoints. Used only for the sync-vs-background decision.
-        def projected_period_count
-          start_on = plan.horizon_start_on
-          end_on = plan.horizon_end_on
-          return Forecasts::Projection::PeriodSimulator::DEFAULT_PERIOD_COUNT if start_on.nil? || end_on.nil?
-
-          months = ((end_on.year - start_on.year) * 12) + (end_on.month - start_on.month)
-          [ months, 1 ].max
         end
     end
   end
