@@ -184,10 +184,29 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
     assert newer.fresh?
     refute_equal older.id, newer.id
 
-    older.reload
-    assert older.superseded?, "the older cache must be superseded by the newer one"
+    # The older cache is superseded between publishes and pruned by the newer
+    # publish (cache hygiene): the row must not outlive the next publish.
+    refute Forecasts::ProjectionCache.exists?(older.id),
+      "the older cache must be pruned by the newer publish"
     assert_equal 1, Forecasts::ProjectionCache.current
       .where(status: "fresh", forecast_plan_id: @plan.id, scenario_stack_key: "baseline").count
+  end
+
+  test "publishing deletes prior caches for the stack so they cannot accumulate" do
+    recompute
+
+    # A version bump + a changed input gives the second publish a different key
+    # and result hash, so coalescing cannot apply. (SourceSnapshotBuilder is
+    # idempotent by content hash — the snapshot row may be reused; the cache key
+    # still differs via plan_version.)
+    @plan.increment!(:current_plan_version)
+    add_salary(name: "Raise", amount: 1234.56)
+    second_snapshot = Forecasts::SourceSnapshotBuilder.new(plan: @plan, as_of: @as_of).build
+    recompute(snapshot: second_snapshot)
+
+    assert_equal 1, @plan.forecast_projection_caches.count,
+      "only the current cache row may survive a publish"
+    assert_equal "fresh", @plan.forecast_projection_caches.first.status
   end
 
   # --- Idempotency by key --------------------------------------------------

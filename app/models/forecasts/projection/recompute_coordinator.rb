@@ -149,6 +149,7 @@ module Forecasts
             cache = write_cache!(packet, result)
             write_periods!(cache, packet, result)
             write_traces!(cache, result)
+            prune_replaced_caches!(packet, keep: cache)
             outcome = cache
           end
 
@@ -175,6 +176,18 @@ module Forecasts
             .current
             .where(scenario_stack_key: packet.scenario_stack[:key])
             .update_all(status: "superseded", updated_at: Time.current)
+        end
+
+        # Cache hygiene (spec §8): at most ONE cache row per scenario stack
+        # survives a publish — the row just written. Auto-save bumps the plan
+        # version on every settle, so without this hard delete the table grows by
+        # ~361 period rows per keystroke-settle. Pinned snapshot rows (phase 8
+        # adds pinned_at) will be excluded here when pinning exists.
+        def prune_replaced_caches!(packet, keep:)
+          plan.forecast_projection_caches
+            .where(scenario_stack_key: packet.scenario_stack[:key])
+            .where.not(id: keep.id)
+            .delete_all
         end
 
         def write_cache!(packet, result)
