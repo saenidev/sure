@@ -26,9 +26,13 @@ module Forecasts
 
       # One immutable entry per kind. `order` fixes the rail group display order
       # (lower first); `icon` is rendered via the `icon` helper (never lucide
-      # directly); `locale_scope` roots the kind's labels/sections/messages.
+      # directly); `locale_scope` roots the kind's labels/sections/messages;
+      # `preview` declares whether the kind ships a JS preview-engine mirror
+      # (spec §11a). Data.define's keyword-init makes the declaration mandatory:
+      # registering a kind without an explicit preview decision raises at load.
       Entry = Data.define(
-        :kind, :order, :params_class, :form_class, :expander, :icon, :locale_scope
+        :kind, :order, :params_class, :form_class, :expander, :icon, :locale_scope,
+        :preview
       )
 
       # The canonical kind catalog. Order is the rail group display order. Adding
@@ -42,7 +46,8 @@ module Forecasts
           form_class: Forecasts::Assumptions::SalaryForm,
           expander: Forecasts::Projection::Expanders::Salary,
           icon: "briefcase",
-          locale_scope: "forecasts.assumptions.salary"
+          locale_scope: "forecasts.assumptions.salary",
+          preview: true
         ),
         Entry.new(
           kind: "living_expense",
@@ -51,7 +56,8 @@ module Forecasts
           form_class: Forecasts::Assumptions::LivingExpenseForm,
           expander: Forecasts::Projection::Expanders::LivingExpense,
           icon: "shopping-cart",
-          locale_scope: "forecasts.assumptions.living_expense"
+          locale_scope: "forecasts.assumptions.living_expense",
+          preview: true
         )
       ].freeze
 
@@ -119,6 +125,12 @@ module Forecasts
       # stray stored kind still renders deterministically at the end.
       def order_for(kind)
         entry(kind)&.order || (ENTRIES.length + 1)
+      end
+
+      # True when `kind` ships a JS preview-engine mirror (spec §11a per-kind
+      # escape hatch). Unknown kinds never preview.
+      def preview_for(kind)
+        entry(kind)&.preview || false
       end
     end
   end

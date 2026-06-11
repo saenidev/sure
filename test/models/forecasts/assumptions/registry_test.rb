@@ -56,6 +56,17 @@ class Forecasts::Assumptions::RegistryTest < ActiveSupport::TestCase
     assert Registry.order_for("living_expense") < Registry.order_for("transfer")
   end
 
+  test "preview_for is true only for kinds that ship a JS preview-engine mirror" do
+    # Both MVP kinds are linear cash flows the JS engine mirrors exactly.
+    assert Registry.preview_for("salary")
+    assert Registry.preview_for("living_expense")
+    assert Registry.preview_for(:salary)
+    # Unknown kinds never preview — false, never nil, so callers can emit the
+    # flag straight into the island JSON.
+    assert_equal false, Registry.preview_for("transfer")
+    assert_equal false, Registry.preview_for(nil)
+  end
+
   test "entry! raises a typed error for an unknown kind" do
     assert_kind_of Forecasts::Assumptions::Registry::Entry, Registry.entry!("salary")
 
