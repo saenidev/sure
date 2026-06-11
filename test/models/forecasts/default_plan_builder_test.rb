@@ -238,6 +238,51 @@ class Forecasts::DefaultPlanBuilderTest < ActiveSupport::TestCase
     assert_equal BigDecimal("2000"), living.amount
   end
 
+  test "with no budget or recurring outflow the living_expense falls back to median monthly expense" do
+    @budget.destroy!
+    # Remove the fixture recurring outflows so no spending-average source
+    # qualifies; the derived living_expense amount comes from the income
+    # statement median expense.
+    @family.recurring_transactions.where("amount > 0").destroy_all
+    IncomeStatement.any_instance.stubs(:median_expense).returns(2_750)
+
+    plan = build
+    living = plan.forecast_assumptions.find_by(kind: "living_expense")
+
+    assert_not_nil living
+    assert_nil living.source_record_type
+    assert_nil living.source_record_id
+    assert_equal BigDecimal("2750"), living.amount
+    assert_equal "source_derived", living.origin
+    assert_equal "needs_review", living.review_state
+  end
+
+  test "a zero-spend budget falls through to the median monthly expense fallback" do
+    # A budget record can exist for a past month with no budgeted spending set;
+    # it must not seed a $0 living_expense.
+    @budget.update!(budgeted_spending: 0)
+    @family.recurring_transactions.where("amount > 0").destroy_all
+    IncomeStatement.any_instance.stubs(:median_expense).returns(2_750)
+
+    plan = build
+    living = plan.forecast_assumptions.find_by(kind: "living_expense")
+
+    assert_not_nil living
+    assert_nil living.source_record_type
+    assert_nil living.source_record_id
+    assert_equal BigDecimal("2750"), living.amount
+  end
+
+  test "derives no living_expense when there is no spending source and median expense is zero" do
+    @budget.destroy!
+    @family.recurring_transactions.where("amount > 0").destroy_all
+    IncomeStatement.any_instance.stubs(:median_expense).returns(0)
+
+    plan = build
+
+    assert_nil plan.forecast_assumptions.find_by(kind: "living_expense")
+  end
+
   test "reopening after the living_expense source changes does not double-count" do
     # First load derives living_expense from the current budget.
     first = build

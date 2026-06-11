@@ -7,8 +7,9 @@ module Forecasts
   # family's connected Sure data:
   #
   #   - a `salary` assumption from a recurring payroll deposit, and
-  #   - a `living_expense` assumption from the current budget (preferred) or a
-  #     recurring-spending average fallback.
+  #   - a `living_expense` assumption from the current budget (preferred), a
+  #     recurring-spending average fallback, or the income-statement median
+  #     monthly expense as a last resort.
   #
   # Derivation is the bridge between Sure's connected-finance data and the plan
   # workspace; it is NOT part of the pure projection engine. This is a PORO that
@@ -193,9 +194,16 @@ module Forecasts
       # --- Living expense (from budget, else spending average) ------------------
 
       # Prefer current Sure budget intent over a transaction average (spec
-      # "Source-To-Assumption Mapping" / derivation precedence). When no current
-      # budget exists, fall back to the largest recurring outflow as a spending
+      # "Source-To-Assumption Mapping" / derivation precedence). When no usable
+      # budget exists (none at all, or only budgets with zero budgeted
+      # spending), fall back to the largest recurring outflow as a spending
       # source. Either way the assumption is medium-confidence and needs review.
+      #
+      # When neither a usable budget nor a recurring outflow exists, fall back
+      # to the family's income-statement median monthly expense as a
+      # low-confidence estimate (mirroring derive_salary), so the plan still
+      # starts with a reviewable spending figure instead of no living expenses
+      # at all or a $0 seeded from an empty budget.
       #
       # Idempotency here is by derivation purpose, not just the specific source
       # record: the source can legitimately *change* between reopens (e.g. the
@@ -210,7 +218,7 @@ module Forecasts
         return if existing_source_derived?(plan, "living_expense")
 
         budget = current_budget
-        if budget
+        if budget && to_decimal(budget.budgeted_spending).positive?
           upsert_derived_assumption(
             plan: plan,
             kind: "living_expense",
@@ -229,20 +237,47 @@ module Forecasts
         end
 
         spend = primary_recurring_expense
-        return if spend.nil?
+        if spend
+          upsert_derived_assumption(
+            plan: plan,
+            kind: "living_expense",
+            name: spend.name.presence || "Living expenses",
+            amount: to_decimal(spend.amount).abs,
+            currency: spend.currency,
+            confidence: "medium",
+            source_record: spend,
+            params: derived_living_expense_params(
+              amount: to_decimal(spend.amount).abs,
+              currency: spend.currency,
+              basis: "recurring_average"
+            )
+          )
+          return
+        end
+
+        derive_living_expense_from_income_statement(plan)
+      end
+
+      # Median-expense fallback: a low-confidence, source-record-less living
+      # expense estimate from the income statement. Skipped when the family has
+      # no measurable spending.
+      def derive_living_expense_from_income_statement(plan)
+        median = to_decimal(family.income_statement.median_expense)
+        return unless median.positive?
 
         upsert_derived_assumption(
           plan: plan,
           kind: "living_expense",
-          name: spend.name.presence || "Living expenses",
-          amount: to_decimal(spend.amount).abs,
-          currency: spend.currency,
-          confidence: "medium",
-          source_record: spend,
+          name: "Estimated living expenses",
+          amount: median,
+          currency: reporting_currency,
+          confidence: "low",
+          source_record: nil,
+          source_refs: { "records" => [], "basis" => "income_statement_median_expense" },
           params: derived_living_expense_params(
-            amount: to_decimal(spend.amount).abs,
-            currency: spend.currency,
-            basis: "recurring_average"
+            amount: median,
+            currency: reporting_currency,
+            basis: "median_expense"
           )
         )
       end
