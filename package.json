@@ -13,7 +13,8 @@
 		"format:check": "biome format",
 		"format": "biome format --write",
 		"tokens:build": "node bin/tokens.mjs",
-		"tokens:check": "node bin/tokens.mjs && git diff --quiet -- app/assets/tailwind/sure-design-system/_generated.css"
+		"tokens:check": "node bin/tokens.mjs && git diff --quiet -- app/assets/tailwind/sure-design-system/_generated.css",
+		"test:js": "node --test test/javascript/*.test.mjs"
 	},
 	"author": "",
 	"license": "ISC"
