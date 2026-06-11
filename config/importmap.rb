@@ -10,6 +10,11 @@ pin_all_from "app/components", under: "controllers", to: "", preload: [ "authent
 pin_all_from "app/javascript/services", under: "services", to: "services", preload: [ "authenticated" ]
 pin_all_from "app/javascript/utils", under: "utils", to: "utils", preload: [ "authenticated" ]
 pin "utils/sankey_zoom", to: "utils/sankey_zoom.mjs", preload: [ "authenticated" ]
+# Forecast workspace preview engine (phase 4): pure .mjs modules shared with
+# the node --test parity suite (test/javascript).
+pin "forecast/preview_engine", to: "forecast/preview_engine.mjs", preload: [ "authenticated" ]
+pin "forecast/form_params", to: "forecast/form_params.mjs", preload: [ "authenticated" ]
+pin "forecast/save_pipeline", to: "forecast/save_pipeline.mjs", preload: [ "authenticated" ]
 pin "@github/hotkey", to: "@github--hotkey.js", preload: [ "authenticated" ] # @3.1.1
 pin "@simonwep/pickr", to: "@simonwep--pickr.js", preload: [ "authenticated" ] # @1.9.1
 

@@ -1,15 +1,24 @@
 import { Controller } from "@hotwired/stimulus";
 import * as d3 from "d3";
+import {
+  UNBOUNDED_RUNWAY_DAYS,
+  previewPeriods,
+} from "forecast/preview_engine";
 
 // Renders the forecast projection from the #forecast-island JSON and keeps
-// scrubbing/lens-switching 100% client-side (spec §4/§11: zero network for
-// scrub, lens switch, and period inspect). The island element is replaced by
-// Turbo Streams after a save; Stimulus disconnect/reconnect re-reads it.
+// scrubbing/lens-switching/live-preview 100% client-side (spec §4/§11: zero
+// network for scrub, lens switch, period inspect, and per-keystroke preview).
+// The island element is replaced by Turbo Streams after a save; Stimulus
+// disconnect/reconnect re-reads it, then dispatches
+// forecast:island-connected so editors with dirty unsettled edits re-apply
+// their preview (§4.6 — a stale stream must never clobber a newer edit).
 //
-// Lenses map island metric keys: nw, lc, pv, db are direct; "sv" (saving rate)
-// is computed as income - spending per month. All DOM is built with
-// document.createElement/replaceChildren — never innerHTML — so island-derived
-// strings can never execute.
+// Lenses map island metric keys: nw, lc, pv, db are direct; "sv" (saving
+// rate) is computed as income - spending per month. All user-facing strings
+// come from the island's `labels` section (server-rendered i18n) — no
+// hardcoded English in this file. All DOM is built with
+// document.createElement/replaceChildren — never innerHTML — so
+// island-derived strings can never execute.
 export default class extends Controller {
   static targets = [
     "canvas",
@@ -25,6 +34,12 @@ export default class extends Controller {
     const el = document.getElementById(this.islandIdValue);
     if (!el) return;
     this.island = JSON.parse(el.textContent);
+    this.labels = this.island.labels || { metrics: {}, inspector: {} };
+    this.packet = this.island.packet || null;
+    this.ordinalById = new Map(
+      (this.island.assumptions || []).map((a, i) => [a.id, i]),
+    );
+    this.preview = null;
     this.periods = this.island.periods;
     this.formatter = new Intl.NumberFormat(undefined, {
       style: "currency",
@@ -41,10 +56,19 @@ export default class extends Controller {
 
     this.resizeObserver = new ResizeObserver(() => this.renderChart());
     this.resizeObserver.observe(this.canvasTarget);
+
+    this.onPreview = (event) => this.applyPreview(event.detail);
+    this.onPreviewClear = () => this.clearPreview();
+    window.addEventListener("forecast:preview", this.onPreview);
+    window.addEventListener("forecast:preview-clear", this.onPreviewClear);
+
+    window.dispatchEvent(new CustomEvent("forecast:island-connected"));
   }
 
   disconnect() {
     this.resizeObserver?.disconnect();
+    window.removeEventListener("forecast:preview", this.onPreview);
+    window.removeEventListener("forecast:preview-clear", this.onPreviewClear);
   }
 
   switchLens(event) {
@@ -59,10 +83,53 @@ export default class extends Controller {
     this.positionScrubLine();
   }
 
+  // --- live preview (forecast:preview / forecast:preview-clear) ---
+
+  applyPreview(detail) {
+    if (!this.packet || !detail) return;
+    const card = (this.packet.assumptions || []).find(
+      (a) => a.id === detail.assumptionId,
+    );
+    if (!card || !card.pv) return;
+    try {
+      this.preview = previewPeriods(
+        this.packet,
+        this.island.periods,
+        detail.assumptionId,
+        detail.params,
+        this.ordinalById.get(detail.assumptionId),
+      );
+    } catch (error) {
+      // Spec §11a: a preview/parity bug is a flicker, never a wrong plan —
+      // fall back to the saved island projection.
+      console.error(
+        "Forecast preview failed, showing saved projection",
+        error,
+      );
+      this.preview = null;
+    }
+    this.refreshSeries();
+  }
+
+  clearPreview() {
+    if (!this.preview) return;
+    this.preview = null;
+    this.refreshSeries();
+  }
+
+  refreshSeries() {
+    this.periods = this.preview || this.island.periods;
+    this.renderChart();
+    this.renderSelection(this.selectedIndex());
+  }
+
   // --- internals ---
 
   selectedIndex() {
-    return Math.min(Number(this.scrubberTarget.value), this.periods.length - 1);
+    return Math.min(
+      Number(this.scrubberTarget.value),
+      this.periods.length - 1,
+    );
   }
 
   seriesValue(period) {
@@ -169,7 +236,7 @@ export default class extends Controller {
       ["liquid_cash", this.formatter.format(Number(m.lc))],
       ["portfolio_value", this.formatter.format(Number(m.pv))],
       ["debt_balance", this.formatter.format(Number(m.db))],
-      ["runway", `${Math.round(Number(m.rd) / 30)} mo`],
+      ["runway", this.runwayText(m.rd)],
       ["saved_per_month", this.formatter.format(Number(m.inc) - Number(m.sp))],
     ];
     const heading = document.createElement("div");
@@ -198,9 +265,9 @@ export default class extends Controller {
     label.className = "text-primary";
     label.textContent = period.s.slice(0, 7);
     const chips = [
-      [this.metricLabel("income_flow"), Number(m.inc)],
-      [this.metricLabel("spending_flow"), Number(m.sp)],
-      [this.metricLabel("net_flow"), Number(m.inc) - Number(m.sp)],
+      [this.labels.inspector.income, Number(m.inc)],
+      [this.labels.inspector.spending, Number(m.sp)],
+      [this.labels.inspector.net, Number(m.inc) - Number(m.sp)],
     ].map(([name, value]) => {
       const chip = document.createElement("span");
       chip.className =
@@ -210,22 +277,30 @@ export default class extends Controller {
     });
     const active = document.createElement("span");
     active.className = "text-subdued";
-    active.textContent = `${count} ${count === 1 ? "active assumption" : "active assumptions"}`;
+    active.textContent = this.pluralize(
+      this.labels.inspector.active_assumptions,
+      count,
+    );
     this.inspectorTarget.replaceChildren(label, ...chips, active);
   }
 
   metricLabel(key) {
-    const labels = {
-      net_worth: "Net worth",
-      liquid_cash: "Liquid cash",
-      portfolio_value: "Invested",
-      debt_balance: "Debt",
-      runway: "Runway",
-      saved_per_month: "Saved / mo",
-      income_flow: "Income",
-      spending_flow: "Spending",
-      net_flow: "Net",
-    };
-    return labels[key] || key;
+    return this.labels.metrics[key] || key;
+  }
+
+  runwayText(runwayDays) {
+    const days = Number(runwayDays);
+    if (days >= UNBOUNDED_RUNWAY_DAYS) {
+      return this.labels.metrics.runway_unbounded || "";
+    }
+    return this.pluralize(
+      this.labels.metrics.runway_months,
+      Math.round(days / 30),
+    );
+  }
+
+  pluralize(templates, count) {
+    const template = (count === 1 ? templates?.one : templates?.other) || "";
+    return template.replace("%{count}", count);
   }
 }
