@@ -40,6 +40,8 @@ module Forecasts
 
     # GET path: monthly period tuples from the persisted cache rows.
     def self.from_cache(plan:, cache:)
+      raise ArgumentError, "cache is required — callers must skip the island when no cache exists" if cache.nil?
+
       tuples = cache.forecast_projection_periods
         .where(granularity: "month")
         .order(:period_start_on)

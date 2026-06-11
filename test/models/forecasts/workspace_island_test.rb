@@ -57,6 +57,13 @@ class Forecasts::WorkspaceIslandTest < ActiveSupport::TestCase
     assert_operator json.bytesize, :<, 150_000, "island is #{json.bytesize} bytes (budget 150KB)"
   end
 
+  test "from_cache raises ArgumentError on a nil cache" do
+    error = assert_raises(ArgumentError) do
+      Forecasts::WorkspaceIsland.from_cache(plan: @loader.plan, cache: nil)
+    end
+    assert_match(/cache/, error.message)
+  end
+
   test "from_result and from_cache serialize byte-identical JSON for the same projection" do
     # Amendment A: the save path renders the island from the in-memory engine
     # Result (compute-synchronous, persist-async), while GETs render it from

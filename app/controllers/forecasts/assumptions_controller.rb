@@ -50,8 +50,9 @@ module Forecasts
     private
       def set_assumption
         @assumption = Current.family.forecast_assumptions.find_by(id: params[:id])
-        head :not_found if @assumption.nil?
-        @plan = @assumption&.forecast_plan
+        return head :not_found if @assumption.nil?
+
+        @plan = @assumption.forecast_plan
       end
 
       def assumption_params
@@ -103,7 +104,10 @@ module Forecasts
       #
       # `result` is the fresh in-memory engine Result (Amendment A); when it is
       # nil (failed compute, or the 409 restream) the island and issue banner
-      # render from the last good persisted cache instead.
+      # render from the last good persisted cache instead. When NEITHER exists
+      # (compute failed before any cache was ever persisted) there is nothing
+      # to refresh — the save itself succeeded, so the projection-region and
+      # issues streams are omitted and only the card + lock token go out.
       def workspace_patch_streams(result)
         plan = @plan.reload
         assumption = @assumption.reload
@@ -111,35 +115,38 @@ module Forecasts
         if result
           island = Forecasts::WorkspaceIsland.from_result(plan: plan, result: result)
           issues = result.issues.map(&:code).tally
-        else
-          cache = last_good_cache
+        elsif (cache = last_good_cache)
           island = Forecasts::WorkspaceIsland.from_cache(plan: plan, cache: cache)
-          issues = (cache&.issue_summary || {}).fetch("codes", {})
+          issues = (cache.issue_summary || {}).fetch("codes", {})
         end
 
-        [
-          turbo_stream.update(
+        streams = []
+        if island
+          streams << turbo_stream.update(
             "forecast_projection_region",
             partial: "forecasts/projection_region",
             locals: { plan: plan, island: island }
-          ),
-          turbo_stream.replace(
-            helpers.dom_id(assumption),
-            partial: "forecasts/assumption_card",
-            locals: { assumption: assumption }
-          ),
-          turbo_stream.update(
+          )
+        end
+        streams << turbo_stream.replace(
+          helpers.dom_id(assumption),
+          partial: "forecasts/assumption_card",
+          locals: { assumption: assumption }
+        )
+        if island
+          streams << turbo_stream.update(
             "forecast_issues",
             partial: "forecasts/workspace_issues",
             locals: { issues: issues }
-          ),
-          turbo_stream.replace(
-            "forecast_drawer_lock",
-            html: helpers.hidden_field_tag(
-              "assumption[expected_lock_version]", assumption.lock_version, id: "forecast_drawer_lock"
-            )
           )
-        ]
+        end
+        streams << turbo_stream.replace(
+          "forecast_drawer_lock",
+          html: helpers.hidden_field_tag(
+            "assumption[expected_lock_version]", assumption.lock_version, id: "forecast_drawer_lock"
+          )
+        )
+        streams
       end
 
       # Validation failure: 422 + re-render the drawer form (update keeps the

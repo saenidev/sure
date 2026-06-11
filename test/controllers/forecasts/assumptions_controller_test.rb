@@ -134,6 +134,26 @@ class Forecasts::AssumptionsControllerTest < ActionDispatch::IntegrationTest
     assert_includes streams, "forecast_projection_region"
   end
 
+  test "update keeps the save and omits projection streams when compute fails with no cache" do
+    @plan.forecast_projection_caches.destroy_all
+    Forecasts::Projection::RecomputeCoordinator.any_instance
+      .stubs(:compute).raises(StandardError, "engine exploded")
+
+    patch forecasts_assumption_path(@assumption),
+      params: { assumption: salary_params(amount: "6000") },
+      as: :turbo_stream
+
+    assert_response :success
+    assert_equal 6000, @assumption.reload.amount
+
+    streams = css_select("turbo-stream").map { |s| s["target"] }
+    assert_includes streams, ActionView::RecordIdentifier.dom_id(@assumption)
+    assert_includes streams, "forecast_drawer_lock"
+    assert_not_includes streams, "forecast_projection_region",
+      "nothing to refresh — no result and no cache must not stream the projection region"
+    assert_not_includes streams, "forecast_issues"
+  end
+
   test "update is family-scoped" do
     sign_in users(:empty)
     patch forecasts_assumption_path(@assumption),
