@@ -83,7 +83,9 @@ module Forecasts
       # renders the i18n `explanation_key`. This is the trace-backed explanation
       # the spec requires (rendered from traces, not chart series). Compact blob
       # keys (ProjectionPeriod::TRACE_KEYS) are translated here so the payload
-      # shape is unchanged.
+      # shape is unchanged. "d" is stored sparsely (only when it diverges from
+      # the category default — see TRACE_KEYS), so the reader falls back to the
+      # canonical category-derived direction.
       def explanation_lines
         Array(period.traces).map do |trace|
           category = trace["k"]
@@ -91,7 +93,7 @@ module Forecasts
             kind: EXPLANATION_KIND_FOR_CATEGORY.fetch(category, category),
             amount: money_string(trace["am"]),
             currency: trace["c"],
-            direction: trace["d"],
+            direction: trace["d"] || ProjectionPeriod::TRACE_DIRECTION_FOR_CATEGORY[category],
             explanation_key: trace["e"],
             source: "trace"
           }

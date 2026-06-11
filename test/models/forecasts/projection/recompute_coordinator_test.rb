@@ -123,17 +123,23 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
     assert first.period_end_on.present?
   end
 
-  test "embedded trace entries carry metric, category, and assumption provenance" do
+  test "embedded trace entries carry category and assumption provenance" do
     cache = recompute
     period = cache.forecast_projection_periods.ordered.first
     trace = period.traces.first
 
     assert trace.present?, "the first period must embed trace entries"
-    assert trace["mk"].present?, "metric key"
     assert trace["k"].present?, "category"
     assert trace["a"].present?, "assumption id"
     assert trace["am"].present?, "amount"
-    assert trace["d"].present?, "direction"
+    # "mk"/"d" are sparse (see ProjectionPeriod::TRACE_KEYS): both proof-slice
+    # kinds match their category-derived defaults, so the keys are omitted and
+    # readers derive metric_key == "k" and direction from
+    # TRACE_DIRECTION_FOR_CATEGORY["k"].
+    refute trace.key?("mk"), "metric key must be omitted when it matches the category"
+    refute trace.key?("d"), "direction must be omitted when it matches the category default"
+    assert Forecasts::ProjectionPeriod::TRACE_DIRECTION_FOR_CATEGORY.key?(trace["k"]),
+      "the category default direction must be derivable for stored categories"
   end
 
   # --- Stale-result protection (CRITICAL) ----------------------------------
@@ -246,7 +252,7 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
   # --- Transactional integrity ---------------------------------------------
 
   test "a failed persistence rolls back the whole write" do
-    Forecasts::ProjectionPeriod.stubs(:insert_all!).raises(ActiveRecord::RecordInvalid.new(Forecasts::ProjectionPeriod.new))
+    Forecasts::ProjectionPeriod.stubs(:bulk_load!).raises(ActiveRecord::RecordInvalid.new(Forecasts::ProjectionPeriod.new))
 
     assert_no_difference [
       -> { Forecasts::ProjectionCache.count },

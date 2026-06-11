@@ -54,12 +54,12 @@ module Forecasts
         "spending" => "spending"
       }.freeze
 
-      # Maps a trace category onto its direction when the value object omits one.
-      # The value object already carries a direction; this is a defensive default.
-      DIRECTION_FOR_CATEGORY = {
-        "income" => "inflow",
-        "spending" => "outflow"
-      }.freeze
+      # Maps a trace category onto its direction when the value object omits one
+      # (a defensive default), and the threshold for sparse "d" storage: an
+      # entry stores "d" only when its direction diverges from this default.
+      # Aliased to the canonical reader-side map so writer and readers cannot
+      # drift.
+      DIRECTION_FOR_CATEGORY = Forecasts::ProjectionPeriod::TRACE_DIRECTION_FOR_CATEGORY
 
       attr_reader :plan, :source_snapshot, :family
 
@@ -193,10 +193,11 @@ module Forecasts
           )
         end
 
-        # Bulk-persists period rows in one INSERT. insert_all skips AR callbacks/
-        # validations: acceptable here because rows are derived verbatim from the
-        # engine result (already validated value objects), and required because a
-        # 30-year plan writes ~361 rows inside the save round-trip budget.
+        # Bulk-persists period rows in one INSERT (ProjectionPeriod.bulk_load!,
+        # which skips AR callbacks/validations): acceptable here because rows are
+        # derived verbatim from the engine result (already validated value
+        # objects), and required because a 30-year plan writes ~361 rows inside
+        # the save round-trip budget.
         #
         # Each period row embeds its explanation traces as a compact ordered
         # jsonb array (see ProjectionPeriod::TRACE_KEYS) built in the same pass:
@@ -234,7 +235,7 @@ module Forecasts
             }
           end
 
-          Forecasts::ProjectionPeriod.insert_all!(rows) if rows.any?
+          Forecasts::ProjectionPeriod.bulk_load!(rows)
         end
 
         # Builds one period's embedded traces as a pre-generated JSON array
@@ -248,8 +249,8 @@ module Forecasts
         # amount) per [assumption_id, amount, category, currency, direction]
         # across the whole save — every varying stored field is in the key, so
         # a future flow kind emitting multiple categories/currencies/directions
-        # per assumption cannot collide onto a wrong cached entry. The two
-        # remaining fields (explanation_key, refs) derive from the assumption's
+        # per assumption cannot collide onto a wrong cached entry. The one
+        # remaining field (explanation_key) derives from the assumption's
         # kind/identity alone. A 30-year save still encodes ~25 entry strings
         # instead of ~9k (flat assumptions repeat one key all horizon).
         def traces_json(period_traces, entry_jsons, blob_jsons)
@@ -266,18 +267,34 @@ module Forecasts
 
         # Encodes one embedded trace entry (compact keys documented on
         # ProjectionPeriod::TRACE_KEYS), or nil when the amount is zero.
+        #
+        # source_record_refs are NOT stored: they are a pure function of the
+        # assumption ("a") — the self ref { type: "assumption", id: a } plus one
+        # { type: "category", id: ... } per entry of the assumption's
+        # params["category_ids"] (see TraceBuilder#source_record_refs). Readers
+        # that need refs reconstruct them from the plan's assumptions; storing
+        # them cost ~33% of the blob bytes for zero information.
+        #
+        # "mk"/"d" are sparse: stored ONLY when they diverge from the
+        # category-derived defaults (metric_key == "k"; direction ==
+        # DIRECTION_FOR_CATEGORY["k"]) — today both kinds always match, so the
+        # keys are always omitted. Readers derive the defaults from "k".
         def trace_entry_json(trace)
           return nil if BigDecimal(trace.amount.to_s).zero?
 
+          entry = { "a" => trace.assumption_id }
+          metric_key = metric_key_for(trace)
+          entry["mk"] = metric_key unless metric_key == trace.category
+          default_direction = DIRECTION_FOR_CATEGORY[trace.category]
+          direction = trace.direction || default_direction
+          entry["d"] = direction unless direction == default_direction
           JSON.generate(
-            "a" => trace.assumption_id,
-            "mk" => metric_key_for(trace),
-            "d" => trace.direction || DIRECTION_FOR_CATEGORY[trace.category],
-            "am" => trace.amount.to_s,
-            "c" => trace.currency,
-            "k" => trace.category,
-            "e" => trace.explanation_key,
-            "r" => trace.source_record_refs
+            entry.merge!(
+              "am" => trace.amount.to_s,
+              "c" => trace.currency,
+              "k" => trace.category,
+              "e" => trace.explanation_key
+            )
           )
         end
 
