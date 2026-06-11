@@ -14,4 +14,15 @@
   <div id="forecast_assumption_rail">
     <%= render "forecasts/assumption_rail", plan: @plan, groups: @groups %>
   </div>
+
+  <%# The `name: "%{name}"` interpolation deliberately substitutes the
+      placeholder with itself, so the client receives the raw template and
+      the toast controller interpolates the saved card's name at event
+      time. %>
+  <div id="forecast_undo_toast"
+       class="fixed bottom-4 right-4 z-50"
+       data-controller="forecast-undo-toast"
+       data-forecast-undo-toast-saved-template-value="<%= t("forecasts.workspace.editor.saved_name", name: "%{name}") %>"
+       data-forecast-undo-toast-undo-label-value="<%= t("forecasts.workspace.editor.undo") %>"
+       data-forecast-undo-toast-dismiss-label-value="<%= t("defaults.common.close") %>"></div>
 </div>

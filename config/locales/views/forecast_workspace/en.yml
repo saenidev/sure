@@ -22,6 +22,7 @@ en:
         runway_months:
           one: "%{count} month"
           other: "%{count} months"
+        runway_unbounded: "∞"
       inspector:
         income: "Income"
         spending: "Spending"
@@ -45,6 +46,8 @@ en:
         saving: "Saving…"
         saved: "Saved"
         retry: "Retry"
+        undo: "Undo"
+        saved_name: "%{name} saved"
         fields:
           name: "Name"
           amount: "Amount"

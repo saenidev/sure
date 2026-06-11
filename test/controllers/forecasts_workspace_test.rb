@@ -18,6 +18,17 @@ class ForecastsWorkspaceTest < ActionDispatch::IntegrationTest
     assert_select "[data-controller=forecast-chart]"
   end
 
+  test "workspace page wires the undo toast container with locale-derived labels" do
+    get forecast_path
+    assert_response :success
+    # raise_on_missing_translations is OFF in the test env: a typoed
+    # forecasts.workspace.editor.* key would render a "translation missing"
+    # span and stay green without these explicit value assertions.
+    assert_select "#forecast_undo_toast[data-controller=?]", "forecast-undo-toast"
+    assert_select "#forecast_undo_toast[data-forecast-undo-toast-undo-label-value=?]", "Undo"
+    assert_select "#forecast_undo_toast[data-forecast-undo-toast-saved-template-value=?]", "%{name} saved"
+  end
+
   test "GET /forecast never renders V1 generate affordances" do
     get forecast_path
     assert_response :success
