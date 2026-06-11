@@ -108,7 +108,7 @@ module Forecasts
           return :source_gone if proposal.nil? || proposal.source_gone?
 
           if proposal.currency == @assumption.currency &&
-              (proposal.amount - @assumption.amount).abs < AMOUNT_TOLERANCE
+              (proposal.amount - (@assumption.amount || 0)).abs < AMOUNT_TOLERANCE
             :in_sync
           else
             :proposal

@@ -88,6 +88,18 @@ class Forecasts::Assumptions::ResyncsControllerTest < ActionDispatch::Integratio
     assert_select "a[href=?]", forecasts_assumption_resync_path(@assumption)
   end
 
+  test "show previews a proposal for a derived row whose amount is nil" do
+    @assumption.update_columns(amount: nil)
+    @payroll.update!(amount: -6_000)
+
+    get forecasts_assumption_resync_path(@assumption), as: :turbo_stream
+
+    assert_response :success
+    streams = css_select("turbo-stream").map { |s| s["target"] }
+    assert_includes streams, ActionView::RecordIdentifier.dom_id(@assumption)
+    assert_includes response.body, Money.new(BigDecimal("6000"), "USD").format
+  end
+
   test "show is family-scoped" do
     sign_in users(:empty)
     get forecasts_assumption_resync_path(@assumption), as: :turbo_stream

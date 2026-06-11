@@ -11,7 +11,7 @@
       </span>
       <span class="text-sm font-semibold text-primary whitespace-nowrap privacy-sensitive">
         <%= t("forecasts.workspace.card.per_month",
-              amount: Money.new(assumption.amount, assumption.currency).format) %>
+              amount: Money.new(assumption.amount || 0, assumption.currency).format) %>
       </span>
     </div>
     <div class="mt-1 flex items-center gap-2 text-xs text-secondary">
@@ -31,7 +31,7 @@
       <% when :proposal %>
         <p class="text-secondary privacy-sensitive">
           <%= t("forecasts.workspace.card.resync.proposal",
-                current: Money.new(assumption.amount, assumption.currency).format,
+                current: Money.new(assumption.amount || 0, assumption.currency).format,
                 proposed: Money.new(proposal.amount, proposal.currency).format) %>
         </p>
         <div class="mt-2 flex items-center gap-3">

@@ -34,7 +34,11 @@ module Forecasts
       return render_form_errors(form) unless form.valid?
 
       Forecasts::Plan.transaction do
-        @assumption.update!(form.assumption_attributes)
+        # An explicit edit resolves/invalidates any pending drift nudge: the
+        # cached verdict's "current_amount" no longer matches, so drop the
+        # cached drift verdict and the soft-dismiss sentinel. The next scan
+        # re-evaluates fresh against the saved figure.
+        @assumption.update!(form.assumption_attributes.merge(drift: nil, drift_dismissed_amount: nil))
         @plan.increment!(:current_plan_version)
       end
 

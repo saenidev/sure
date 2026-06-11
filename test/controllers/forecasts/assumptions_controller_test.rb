@@ -247,6 +247,30 @@ class Forecasts::AssumptionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 5200, @assumption.reload.amount
   end
 
+  # A manual edit invalidates any cached drift verdict — its "current_amount"
+  # no longer matches the saved figure — so the save must drop the cached
+  # verdict and the soft-dismiss sentinel; the next scan re-evaluates fresh.
+  test "update clears a stale cached drift verdict and dismissed amount" do
+    @assumption.update_columns(
+      drift: {
+        "status" => "drifted", "proposed_amount" => "6500.0",
+        "current_amount" => "5200.0", "relative" => "0.25",
+        "basis" => "source_rederive", "computed_at" => Time.current.iso8601
+      },
+      drift_dismissed_amount: 6_400
+    )
+
+    patch forecasts_assumption_path(@assumption),
+      params: { assumption: salary_params(amount: "6000") },
+      as: :turbo_stream
+
+    assert_response :success
+    @assumption.reload
+    assert_equal 6000, @assumption.amount
+    assert_nil @assumption.drift, "an explicit edit must invalidate the cached drift verdict"
+    assert_nil @assumption.drift_dismissed_amount, "an explicit edit must reset the soft-dismiss sentinel"
+  end
+
   private
     def salary_params(overrides = {})
       {
