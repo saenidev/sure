@@ -94,4 +94,40 @@ class ForecastsWorkspaceTest < ActionDispatch::IntegrationTest
     assert_select "#{card} form[action=?]",
       forecasts_assumption_drift_dismissal_path(assumption), count: 2
   end
+
+  test "a needs-review card renders the confirm control" do
+    plan = Forecasts::WorkspaceLoader.new(family: @user.family, today: Date.current).load.plan
+    assumption = plan.forecast_assumptions.create!(
+      family: @user.family, kind: "salary", name: "Derived Salary", status: :active,
+      amount: 5200, currency: "USD",
+      origin: :source_derived, review_state: :needs_review,
+      params: { "frequency" => "monthly", "growth_policy" => "flat" }
+    )
+
+    get forecast_path
+
+    assert_response :success
+    card = "##{ActionView::RecordIdentifier.dom_id(assumption)}"
+    assert_select "#{card} form[action=?]",
+      forecasts_assumption_review_confirmation_path(assumption), count: 1
+    assert_select "#{card} form[action=?] button",
+      forecasts_assumption_review_confirmation_path(assumption), text: "Looks right"
+  end
+
+  test "the bootstrap load shows the derived callout exactly once" do
+    # The fixture family derives at least a living_expense on first build
+    # (see Forecasts::AssumptionsControllerTest's `.sole` on the derived row),
+    # so the bootstrap GET must render the callout...
+    assert_difference -> { @user.family.forecast_plans.count }, 1 do
+      get forecast_path
+    end
+    assert_response :success
+    assert_select "#forecast_derived_callout", count: 1
+    assert_select "#forecast_derived_callout p", text: /from your data/
+
+    # ...and any later GET finds the plan and renders no callout.
+    get forecast_path
+    assert_response :success
+    assert_select "#forecast_derived_callout", count: 0
+  end
 end

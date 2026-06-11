@@ -24,11 +24,21 @@ module Forecasts
     # unconditionally would re-run derivation queries (and could write derived
     # assumption rows) on every GET, violating the §11 hard GET rule.
     def load
-      @plan = existing_plan || Forecasts::DefaultPlanBuilder.new(family: family, as_of: today).build
+      @plan = existing_plan
+      @bootstrapped = @plan.nil?
+      @plan ||= Forecasts::DefaultPlanBuilder.new(family: family, as_of: today).build
       @cache = current_cache
       @cache = recompute! if @cache.nil? || anchored_to_older_month?
       enqueue_drift_scan_if_stale
       self
+    end
+
+    # True only when THIS load created the plan (first-ever visit). The
+    # controller uses it to show the post-seed derived callout exactly once;
+    # any later navigation finds the plan, the flag is false, and the callout
+    # is gone — that IS the dismissal mechanism.
+    def bootstrapped?
+      !!@bootstrapped
     end
 
     private

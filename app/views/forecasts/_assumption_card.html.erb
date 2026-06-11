@@ -100,4 +100,11 @@
             class: "mt-1 text-xs font-medium text-secondary border border-primary rounded-md px-2 py-1 hover:bg-container-hover" %>
     </aside>
   <% end %>
+  <% if assumption.review_state == "needs_review" %>
+    <div class="border-t border-primary px-3 py-2">
+      <%= button_to t("forecasts.workspace.card.review.confirm"),
+            forecasts_assumption_review_confirmation_path(assumption),
+            class: "text-xs font-medium text-link hover:underline" %>
+    </div>
+  <% end %>
 </div>

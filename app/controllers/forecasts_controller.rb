@@ -5,6 +5,12 @@ class ForecastsController < ApplicationController
     @cache = loader.cache
     @island = Forecasts::WorkspaceIsland.from_cache(plan: @plan, cache: @cache)
     @groups = assumption_groups
+    @derived_count =
+      if loader.bootstrapped?
+        @groups.values.sum { |list| list.count { |a| a.origin == "source_derived" } }
+      else
+        0
+      end
     @issues = (@cache.issue_summary || {}).fetch("codes", {})
     @breadcrumbs = [ [ t("breadcrumbs.home"), root_path ], [ t("forecasts.workspace.title"), nil ] ]
   end

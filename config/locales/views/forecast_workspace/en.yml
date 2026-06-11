@@ -46,6 +46,8 @@ en:
           dismiss_permanently: "Don't ask again"
           source_gone: "Source gone — link removed. This assumption is now manual."
           source_gone_ok: "OK"
+        review:
+          confirm: "Looks right"
         resync:
           refresh: "Check %{name} against your data"
           refresh_label: "Refresh from data"

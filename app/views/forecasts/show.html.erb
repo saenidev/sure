@@ -11,6 +11,18 @@
     <%= render "forecasts/projection_region", plan: @plan, island: @island %>
   </div>
 
+  <% if @derived_count.to_i.positive? %>
+    <%# Post-seed callout. Renders ONLY on the request that bootstrapped the
+        plan (WorkspaceLoader#bootstrapped?) — any reload or navigation finds
+        the existing plan and the callout disappears. Dismiss-by-navigation,
+        no client state. %>
+    <div id="forecast_derived_callout">
+      <%= render DS::Alert.new(variant: :info, live: :polite) do %>
+        <p class="text-sm text-primary"><%= t("forecasts.workspace.derived_callout", count: @derived_count) %></p>
+      <% end %>
+    </div>
+  <% end %>
+
   <div id="forecast_assumption_rail">
     <%= render "forecasts/assumption_rail", plan: @plan, groups: @groups %>
   </div>

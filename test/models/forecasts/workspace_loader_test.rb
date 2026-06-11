@@ -42,4 +42,12 @@ class Forecasts::WorkspaceLoaderTest < ActiveSupport::TestCase
     assert_equal Date.new(2026, 8, 1),
       second.cache.forecast_projection_periods.where(granularity: "month").minimum(:period_start_on)
   end
+
+  test "bootstrapped? is true only on the load that created the plan" do
+    first = Forecasts::WorkspaceLoader.new(family: @family, today: Date.new(2026, 6, 15)).load
+    assert first.bootstrapped?
+
+    second = Forecasts::WorkspaceLoader.new(family: @family, today: Date.new(2026, 6, 16)).load
+    assert_not second.bootstrapped?
+  end
 end
