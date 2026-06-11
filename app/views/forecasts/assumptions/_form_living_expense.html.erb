@@ -1,0 +1,57 @@
+<%= form_with url: forecasts_assumption_path(assumption), method: :patch,
+              scope: :assumption,
+              data: {
+                controller: "forecast-auto-submit",
+                forecast_auto_submit_saving_value: t("forecasts.workspace.editor.saving"),
+                forecast_auto_submit_saved_value: t("forecasts.workspace.editor.saved"),
+                forecast_auto_submit_retry_value: t("forecasts.workspace.editor.retry")
+              } do |f| %>
+  <%= render "forecasts/assumptions/form_errors", form_object: defined?(form_object) ? form_object : nil %>
+  <%# Stable id: the save response streams a replacement of this field with the
+      new lock_version, so the open drawer can keep saving (without it, every
+      second auto-save would 409 on a stale token). %>
+  <%= f.hidden_field :expected_lock_version, value: assumption.lock_version, id: "forecast_drawer_lock" %>
+
+  <div class="space-y-4">
+    <div>
+      <%= f.label :name, t("forecasts.workspace.editor.fields.name"), class: "text-sm text-secondary" %>
+      <%= f.text_field :name, value: assumption.name,
+            class: "w-full rounded-md border border-secondary bg-container-inset px-3 py-2 text-sm text-primary",
+            data: { action: "input->forecast-auto-submit#queue" } %>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <%= f.label :amount, t("forecasts.workspace.editor.fields.amount"), class: "text-sm text-secondary" %>
+        <%= f.number_field :amount, value: assumption.amount, step: "0.01", min: 0,
+              class: "w-full rounded-md border border-secondary bg-container-inset px-3 py-2 text-sm text-primary privacy-sensitive",
+              data: { action: "input->forecast-auto-submit#queue" } %>
+      </div>
+      <div>
+        <%= f.label :frequency, t("forecasts.workspace.editor.fields.frequency"), class: "text-sm text-secondary" %>
+        <%= f.select :frequency,
+              Forecasts::Assumptions::LivingExpenseForm::FREQUENCIES.map { |v| [ t("forecasts.workspace.editor.frequencies.#{v}"), v ] },
+              { selected: assumption.params["frequency"] || "monthly" },
+              class: "w-full rounded-md border border-secondary bg-container-inset px-3 py-2 text-sm text-primary",
+              data: { action: "change->forecast-auto-submit#queue" } %>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <%= f.label :inflation_policy, t("forecasts.workspace.editor.fields.inflation_policy"), class: "text-sm text-secondary" %>
+        <%= f.select :inflation_policy,
+              Forecasts::Assumptions::LivingExpenseForm::INFLATION_POLICIES.map { |v| [ t("forecasts.workspace.editor.policies.#{v}"), v ] },
+              { selected: assumption.params["inflation_policy"] || "flat" },
+              class: "w-full rounded-md border border-secondary bg-container-inset px-3 py-2 text-sm text-primary",
+              data: { action: "change->forecast-auto-submit#queue" } %>
+      </div>
+      <div>
+        <%= f.label :inflation_rate, t("forecasts.workspace.editor.fields.inflation_rate"), class: "text-sm text-secondary" %>
+        <%= f.number_field :inflation_rate, value: assumption.params["inflation_rate"], step: "0.1",
+              class: "w-full rounded-md border border-secondary bg-container-inset px-3 py-2 text-sm text-primary",
+              data: { action: "input->forecast-auto-submit#queue" } %>
+      </div>
+    </div>
+    <%= f.hidden_field :currency, value: assumption.currency %>
+    <p class="text-xs text-subdued" data-forecast-auto-submit-target="status" aria-live="polite"></p>
+  </div>
+<% end %>

@@ -1,0 +1,16 @@
+<%# Error codes are mapped through i18n (forecasts.workspace.editor.errors.*);
+    unknown codes fall back to a humanized attribute+code, never a raw symbol
+    dump. stale_version (on :base) renders the server-wins notice. %>
+<% if form_object.present? && form_object.errors.any? %>
+  <%= render DS::Alert.new(variant: :error) do %>
+    <p class="font-medium"><%= t("forecasts.workspace.editor.errors.heading") %></p>
+    <ul class="mt-1 list-disc pl-5 text-sm">
+      <% form_object.errors.each do |error| %>
+        <li>
+          <%= t("forecasts.workspace.editor.errors.#{error.type}",
+                default: "#{error.attribute.to_s.humanize}: #{error.type.to_s.humanize.downcase}") %>
+        </li>
+      <% end %>
+    </ul>
+  <% end %>
+<% end %>

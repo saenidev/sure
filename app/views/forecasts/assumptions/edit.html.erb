@@ -1,0 +1,8 @@
+<%= render DS::Dialog.new(variant: "drawer", frame: "modal") do |dialog| %>
+  <% dialog.with_header(title: t("forecasts.workspace.editor.title", name: @assumption.name)) %>
+  <% dialog.with_body do %>
+    <div id="forecast_drawer_form">
+      <%= render @form_partial, assumption: @assumption, plan: @plan %>
+    </div>
+  <% end %>
+<% end %>
