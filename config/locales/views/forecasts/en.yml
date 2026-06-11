@@ -1,5 +1,53 @@
 en:
   forecasts:
+    # Recoverable plan/source issue panel (IssuePanel, slice C6). Each issue shows
+    # a title, context, impact, and concrete remediation actions (no raw UUIDs or
+    # exception text), following the spec "Error And Issue UX" copy structure.
+    issue_panel:
+      title: "Issues"
+      none: "No issues. Your projection is complete."
+      limited_one: "%{count} issue is limiting this projection."
+      limited_other: "%{count} issues are limiting this projection."
+      impact_label: "Impact"
+      affects_label: "Affects"
+      period_label: "Period"
+      severity_blocking: "Blocking"
+      severity_error: "Error"
+      severity_warning: "Warning"
+      severity_info: "Info"
+      action_fetch_rates: "Fetch rates"
+      action_enter_fallback_rate: "Enter fallback rate"
+      action_exclude_account: "Exclude account"
+      action_change_reporting_currency: "Change reporting currency"
+      action_fetch_prices: "Fetch prices"
+      action_enter_fallback_price: "Enter fallback price"
+      action_exclude_holding: "Exclude holding"
+      action_refresh_source_data: "Refresh source data"
+      action_add_assumption: "Add assumption"
+      action_add_debt_terms: "Add debt terms"
+      action_fix_fields: "Fix fields"
+      action_edit_assumption: "Edit assumption"
+      action_edit_account_rules: "Edit account rules"
+      action_reorder_layers: "Reorder layers"
+      action_remove_assumption: "Remove assumption"
+      action_choose_valid_milestone: "Choose a valid milestone"
+      action_choose_date: "Use a fixed date"
+      action_view: "View details"
+    # Stable issue-code titles (spec "Issue Code Catalog"). These are the localized,
+    # human titles the IssuePanel renders from an issue's message_key so the visible
+    # copy is never the raw engine code. Keyed by the same codes
+    # Forecasts::IssueCatalog maps to severity + remediation actions.
+    issues:
+      missing_fx_rate: "Missing exchange rate"
+      missing_security_price: "Missing security price"
+      stale_source_data: "Source data is out of date"
+      insufficient_history: "Not enough history yet"
+      missing_debt_terms: "Missing debt terms"
+      invalid_assumption_params: "Assumption needs attention"
+      invalid_milestone_reference: "Invalid milestone reference"
+      unknown_assumption_kind: "Unknown assumption type"
+      account_rule_conflict: "Conflicting account rules"
+      scenario_layer_conflict: "Conflicting scenario layers"
     show:
       title: "Forecast"
       description: "Model monthly budget, cash runway, goals, debt, portfolio movement, and life scenarios across the next 36 months."

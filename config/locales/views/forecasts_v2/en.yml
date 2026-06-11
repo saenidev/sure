@@ -1,0 +1,43 @@
+en:
+  forecasts_v2:
+    assumptions:
+      fields:
+        name: "Name"
+        amount: "Amount"
+        currency: "Currency"
+        person_key: "Earner"
+        gross_or_net: "Income treatment"
+        frequency: "Frequency"
+        growth_policy: "Growth"
+        growth_rate: "Growth rate"
+        inflation_policy: "Inflation"
+        inflation_rate: "Inflation rate"
+        actualization_policy: "Actualization"
+        category_ids: "Categories"
+        cash_account_id: "Cash account"
+        starts_on: "Start date"
+        ends_on: "End date"
+        starts_at_milestone_id: "Start milestone"
+        ends_at_milestone_id: "End milestone"
+      # Terse server-side validation fragments for the stable form error codes the
+      # assumption form objects (Forecasts::Assumptions::BaseForm and subclasses)
+      # emit. This is the canonical enumeration of the code set (asserted by
+      # forecasts/assumptions/salary_form_test.rb); the client-facing copy the
+      # React drawer renders lives under forecasts.editor.errors (mirrored in
+      # app/frontend/forecast/i18n.ts). Both tables must enumerate exactly these
+      # codes — keep them in sync as one error-code contract.
+      errors:
+        blank: "can't be blank"
+        not_a_number: "must be a number"
+        not_positive: "must be greater than zero"
+        not_a_fraction: "must be between 0 and 1"
+        unknown_currency: "is not a supported currency"
+        inclusion: "is not a valid option"
+        invalid_date: "is not a valid date"
+        end_before_start: "must be on or after the start date"
+        invalid_reference: "references something that doesn't exist"
+        not_permitted: "references an account or category you can't access"
+        stale_version: "This assumption changed since you opened it. Reload and try again."
+      summary:
+        one: "Fix %{count} problem before saving this assumption."
+        other: "Fix %{count} problems before saving this assumption."
