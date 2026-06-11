@@ -300,7 +300,7 @@ Rails.application.routes.draw do
   # THROWAWAY viability spike — proves disciplined Hotwire meets the Forecast V2
   # interaction budgets without Inertia/Vite. Not in primary nav. Delete with the
   # ForecastHotwireSpike controller/model/views/Stimulus controller/test.
-  get  "forecast_hotwire_spike",            to: "forecast_hotwire_spike#show"
+  get "forecast_hotwire_spike",            to: "forecast_hotwire_spike#show"
   patch "forecast_hotwire_spike/assumption", to: "forecast_hotwire_spike#update_assumption", as: :forecast_hotwire_spike_assumption
   post "forecast_hotwire_spike/reset",       to: "forecast_hotwire_spike#reset",             as: :forecast_hotwire_spike_reset
 

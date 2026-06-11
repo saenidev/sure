@@ -218,6 +218,40 @@
         22
       ],
       "note": ""
+    },
+    {
+      "warning_type": "Dynamic Render Path",
+      "warning_code": 15,
+      "fingerprint": "ea78f3724829604621f0b13239af7f152d0343bff4eb51b4760afa9ce684f35d",
+      "check_name": "Render",
+      "message": "Render path contains parameter value",
+      "file": "app/views/forecasts/assumptions/edit.html.erb",
+      "line": 5,
+      "link": "https://brakemanscanner.org/docs/warning_types/dynamic_render_path/",
+      "code": "render(action => \"forecasts/assumptions/form_#{Current.family.forecast_assumptions.find_by(:id => params[:id]).kind}\", { :assumption => Current.family.forecast_assumptions.find_by(:id => params[:id]), :plan => Current.family.forecast_assumptions.find_by(:id => params[:id]).forecast_plan })",
+      "render_path": [
+        {
+          "type": "controller",
+          "class": "Forecasts::AssumptionsController",
+          "method": "edit",
+          "line": 22,
+          "file": "app/controllers/forecasts/assumptions_controller.rb",
+          "rendered": {
+            "name": "forecasts/assumptions/edit",
+            "file": "app/views/forecasts/assumptions/edit.html.erb"
+          }
+        }
+      ],
+      "location": {
+        "type": "template",
+        "template": "forecasts/assumptions/edit"
+      },
+      "user_input": "params[:id]",
+      "confidence": "Weak",
+      "cwe_id": [
+        22
+      ],
+      "note": "Family-scoped and form-validated (same defense as the two existing forecast ignores): params[:id] only selects a record from Current.family.forecast_assumptions, and the interpolated value is the record's `kind` column, not user input. Kinds are constrained by Forecasts::Assumptions::Registry — an unregistered kind can never be saved — so the render path can only resolve to a registered form_<kind> partial."
     }
   ],
   "brakeman_version": "7.1.0"
