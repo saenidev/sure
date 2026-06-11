@@ -291,6 +291,12 @@ Rails.application.routes.draw do
 
   resource :forecast, only: :show
 
+  # Plan-workspace editing endpoints (plural namespace; the V1 singular
+  # `namespace :forecast` block below remains routable until the phase-9 cutover).
+  namespace :forecasts do
+    resources :assumptions, only: %i[edit update]
+  end
+
   # THROWAWAY viability spike — proves disciplined Hotwire meets the Forecast V2
   # interaction budgets without Inertia/Vite. Not in primary nav. Delete with the
   # ForecastHotwireSpike controller/model/views/Stimulus controller/test.

@@ -1,0 +1,69 @@
+en:
+  forecasts:
+    workspace:
+      title: "Forecast"
+      horizon: "%{starts} → %{ends}"
+      derived_callout:
+        one: "We derived %{count} assumption from your data — review it below."
+        other: "We derived %{count} assumptions from your data — review them below."
+      lenses:
+        net_worth: "Net worth"
+        cash: "Cash"
+        invested: "Invested"
+        debt: "Debt"
+        saving: "Saving rate"
+      metrics:
+        net_worth: "Net worth"
+        liquid_cash: "Liquid cash"
+        portfolio_value: "Invested"
+        debt_balance: "Debt"
+        runway: "Runway"
+        saved_per_month: "Saved / mo"
+        runway_months:
+          one: "%{count} month"
+          other: "%{count} months"
+      inspector:
+        income: "Income"
+        spending: "Spending"
+        net: "Net"
+        active_assumptions:
+          one: "%{count} active assumption"
+          other: "%{count} active assumptions"
+      groups:
+        income: "Income"
+        expenses: "Expenses"
+        other: "Other"
+      card:
+        per_month: "%{amount}/mo"
+        needs_review: "Review"
+        derived: "From your data"
+        edit: "Edit %{name}"
+      issues:
+        heading: "Needs attention"
+      editor:
+        title: "Edit %{name}"
+        saving: "Saving…"
+        saved: "Saved"
+        retry: "Retry"
+        fields:
+          name: "Name"
+          amount: "Amount"
+          currency: "Currency"
+          frequency: "Frequency"
+          growth_policy: "Growth"
+          growth_rate: "Growth rate (%/yr)"
+          inflation_policy: "Growth"
+          inflation_rate: "Inflation rate (%/yr)"
+          starts_on: "Starts"
+          ends_on: "Ends"
+        frequencies:
+          monthly: "Monthly"
+          annual: "Annual"
+          biweekly: "Biweekly"
+          weekly: "Weekly"
+        policies:
+          flat: "Flat"
+          fixed_rate: "Fixed rate"
+        errors:
+          heading: "Couldn't save"
+          stale_version: "This plan changed elsewhere — the latest values are shown. Edit again to save."
