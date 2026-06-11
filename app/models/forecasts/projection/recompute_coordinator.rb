@@ -95,6 +95,17 @@ module Forecasts
         persist(packet, result, target_version)
       end
 
+      # Builds the packet and runs the pure engine, returning the in-memory
+      # Result WITHOUT persisting anything — no cache rows, no period rows, no
+      # superseded markers (plan Amendment A: compute-synchronous,
+      # persist-async). The synchronous save path renders its Turbo Streams
+      # from this result and enqueues ForecastProjectionPersistJob, which calls
+      # #recompute to persist under the full stale-guard/coalescing semantics
+      # off-request.
+      def compute
+        Forecasts::Projection::Engine.call(build_packet)
+      end
+
       private
         def build_packet
           Forecasts::Projection::PacketBuilder.new(

@@ -249,6 +249,24 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
     assert_equal 1, current.count
   end
 
+  # --- In-memory compute (plan Amendment A save path) ------------------------
+
+  test "compute returns the engine result without persisting anything" do
+    result = nil
+
+    assert_no_difference [
+      -> { Forecasts::ProjectionCache.count },
+      -> { Forecasts::ProjectionPeriod.count }
+    ] do
+      result = Forecasts::Projection::RecomputeCoordinator
+        .new(plan: @plan, source_snapshot: @snapshot)
+        .compute
+    end
+
+    assert_kind_of Forecasts::Projection::Result, result
+    assert_equal 37, result.periods.length
+  end
+
   # --- Transactional integrity ---------------------------------------------
 
   test "a failed persistence rolls back the whole write" do
