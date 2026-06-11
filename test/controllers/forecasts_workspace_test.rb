@@ -44,4 +44,27 @@ class ForecastsWorkspaceTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal cache_id, plan.reload.forecast_projection_caches.first.id
   end
+
+  test "GET /forecast enqueues a drift scan when the stored key is stale" do
+    get forecast_path
+    assert_response :success
+
+    plan = @user.family.forecast_plans.first
+    assert_nil plan.drift_scan_key, "no scan has run yet"
+    assert_enqueued_with(
+      job: ForecastDriftScanJob,
+      args: [ plan.id, Forecasts::Drift.scan_key(plan) ]
+    )
+  end
+
+  test "GET /forecast does not enqueue a drift scan when the key is current" do
+    get forecast_path # bootstrap plan + cache (enqueues the first scan)
+    plan = @user.family.forecast_plans.first
+    plan.update_columns(drift_scan_key: Forecasts::Drift.scan_key(plan))
+
+    assert_no_enqueued_jobs(only: ForecastDriftScanJob) do
+      get forecast_path
+    end
+    assert_response :success
+  end
 end

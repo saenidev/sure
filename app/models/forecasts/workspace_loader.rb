@@ -27,6 +27,7 @@ module Forecasts
       @plan = existing_plan || Forecasts::DefaultPlanBuilder.new(family: family, as_of: today).build
       @cache = current_cache
       @cache = recompute! if @cache.nil? || anchored_to_older_month?
+      enqueue_drift_scan_if_stale
       self
     end
 
@@ -57,6 +58,19 @@ module Forecasts
         Forecasts::Projection::RecomputeCoordinator
           .new(plan: plan, source_snapshot: snapshot, anchor_on: today)
           .recompute
+      end
+
+      # §11 GET rule: drift is never COMPUTED here. This is the cheap staleness
+      # check only — one indexed MAX plus a family column read (see
+      # Forecasts::Drift.scan_key) — and an enqueue when the key moved. A
+      # matching key means no enqueue, keeping repeat GETs idempotent. While a
+      # scan is in flight the stored key still differs, so a repeat GET may
+      # enqueue a duplicate; the job's own guard coalesces those.
+      def enqueue_drift_scan_if_stale
+        live_key = Forecasts::Drift.scan_key(plan)
+        return if plan.drift_scan_key == live_key
+
+        ForecastDriftScanJob.perform_later(plan.id, live_key)
       end
   end
 end
