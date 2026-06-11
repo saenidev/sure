@@ -1,0 +1,26 @@
+<div id="<%= dom_id(assumption) %>"
+     class="bg-container border border-primary rounded-lg shadow-xs hover:bg-container-hover">
+  <%= link_to edit_forecasts_assumption_path(assumption),
+        class: "block p-3",
+        data: { turbo_frame: "modal" },
+        aria: { label: t("forecasts.workspace.card.edit", name: assumption.name) } do %>
+    <div class="flex items-baseline justify-between gap-2">
+      <span class="flex items-center gap-2 min-w-0">
+        <%= icon Forecasts::Assumptions::Registry.icon_for(assumption.kind), size: "sm" %>
+        <span class="text-sm font-medium text-primary truncate"><%= assumption.name %></span>
+      </span>
+      <span class="text-sm font-semibold text-primary whitespace-nowrap privacy-sensitive">
+        <%= t("forecasts.workspace.card.per_month",
+              amount: Money.new(assumption.amount, assumption.currency).format) %>
+      </span>
+    </div>
+    <div class="mt-1 flex items-center gap-2 text-xs text-secondary">
+      <% if assumption.review_state == "needs_review" %>
+        <%= render DS::Pill.new(label: t("forecasts.workspace.card.needs_review"), tone: :amber, marker: false) %>
+      <% end %>
+      <% if assumption.origin == "source_derived" %>
+        <span class="text-link"><%= t("forecasts.workspace.card.derived") %></span>
+      <% end %>
+    </div>
+  <% end %>
+</div>

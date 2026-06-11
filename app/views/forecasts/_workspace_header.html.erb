@@ -1,0 +1,9 @@
+<header class="flex flex-wrap items-center justify-between gap-3">
+  <div class="space-y-1">
+    <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.workspace.title") %></h1>
+    <p class="text-secondary text-sm">
+      <%= t("forecasts.workspace.horizon",
+            starts: plan.horizon_start_on.year, ends: plan.horizon_end_on.year) %>
+    </p>
+  </div>
+</header>

@@ -1,110 +1,17 @@
-<% content_for :title, t("forecasts.show.title") %>
+<% content_for :title, t("forecasts.workspace.title") %>
 
-<div class="space-y-6 pb-6 lg:pb-12">
-  <header class="flex flex-wrap items-center justify-between gap-3">
-    <div class="space-y-1">
-      <h1 class="text-primary text-2xl font-semibold"><%= t("forecasts.show.title") %></h1>
-      <p class="text-secondary text-sm">
-        <%= t("forecasts.show.description") %>
-      </p>
-    </div>
+<div id="forecast_workspace" class="space-y-6 pb-6 lg:pb-12">
+  <%= render "forecasts/workspace_header", plan: @plan %>
 
-    <%# Generate affordance. The onboarding/ready empty states carry their own
-        primary CTA, so the header button shows once a run/failure/in-flight
-        state exists. Disabled while a generation is in flight so a second run is
-        never stacked for the family (the controller enforces the same guard
-        server-side). %>
-    <% unless @workspace.onboarding? || @workspace.ready? %>
-      <div class="flex flex-wrap items-center gap-2">
-        <%= render DS::Link.new(
-          text: t("forecasts.canvas.open"),
-          icon: "chart-line",
-          href: forecast_canvas_path,
-          variant: "outline"
-        ) %>
-        <%= render DS::Button.new(
-          text: t("forecasts.show.generate"),
-          icon: "play",
-          href: forecast_runs_path,
-          disabled: @workspace.running?
-        ) %>
-      </div>
-    <% end %>
-  </header>
+  <div id="forecast_issues">
+    <%= render "forecasts/workspace_issues", issues: @issues %>
+  </div>
 
-  <% if @workspace.failed? %>
-    <%# Failure surface: most-recent run group failed. Dismissible so the user
-        can continue, but the error is always shown first so they are never left
-        on a blank or stale page. %>
-    <section data-controller="element-removal" aria-live="assertive">
-      <%= render DS::Alert.new(variant: :error, live: :assertive) do %>
-        <div class="flex items-start justify-between gap-3">
-          <div class="space-y-2">
-            <p class="font-semibold"><%= t("forecasts.failure.title") %></p>
-            <p><%= @workspace.error_message.presence || t("forecasts.failure.default_message") %></p>
-            <div class="pt-1">
-              <%# Retry re-POSTs to generate a fresh baseline run. %>
-              <%= render DS::Button.new(
-                text: t("forecasts.failure.retry"),
-                variant: "outline",
-                icon: "refresh-cw",
-                size: :sm,
-                href: forecast_runs_path
-              ) %>
-            </div>
-          </div>
-          <button type="button"
-                  class="shrink-0 text-secondary hover:text-primary"
-                  data-action="element-removal#remove"
-                  aria-label="<%= t("forecasts.failure.dismiss") %>">
-            <%= icon "x", size: "sm" %>
-          </button>
-        </div>
-      <% end %>
-    </section>
-  <% elsif @workspace.running? %>
-    <%= render "forecasts/running", workspace: @workspace %>
-  <% elsif @workspace.has_run? %>
-    <%= render "forecasts/run_summary_header", workspace: @workspace %>
-    <%= render "forecasts/brief", workspace: @workspace %>
+  <div id="forecast_projection_region">
+    <%= render "forecasts/projection_region", plan: @plan, island: @island %>
+  </div>
 
-    <% active_tab = @workspace.canonical_tab_id(params[:tab]) %>
-    <%= render DS::Tabs.new(active_tab: active_tab, url_param_key: "tab") do |tabs| %>
-      <% tabs.with_nav do |nav| %>
-        <% @workspace.tab_ids.each do |tab_id| %>
-          <% nav.with_btn(id: tab_id, label: t("forecasts.show.tabs.#{tab_id}")) %>
-        <% end %>
-      <% end %>
-
-      <%# Only the active tab renders its panel eagerly. Every other tab is a lazy
-          Turbo Frame whose body is fetched from ForecastsController#tab the first
-          time the tab is shown: DS::Tabs unhides the panel, the frame becomes
-          visible, and Turbo loads its src. This keeps a single /forecast load
-          from rendering every decision area (and its builders) server-side at once.
-
-          target: "_top" makes every link/form INSIDE a panel drive full-page
-          navigation by default — restoring the pre-frame behavior, since the
-          panels' forms redirect to standalone pages (forecast_scenarios_path,
-          etc.) that carry no matching frame. Links that must stay framed (modal
-          new/edit) set their own data-turbo-frame, which overrides this default. %>
-      <% @workspace.tab_ids.each do |tab_id| %>
-        <% tabs.with_panel(tab_id: tab_id) do %>
-          <% if tab_id == active_tab %>
-            <%= turbo_frame_tag forecast_tab_frame_id(tab_id), target: "_top" do %>
-              <%= render "forecasts/tab_panel", tab_id: tab_id, workspace: @workspace %>
-            <% end %>
-          <% else %>
-            <%= turbo_frame_tag forecast_tab_frame_id(tab_id),
-                                src: forecast_tab_path(tab_id: tab_id),
-                                loading: :lazy,
-                                target: "_top" do %>
-              <%= render "forecasts/tab_loading", tab_id: tab_id %>
-            <% end %>
-          <% end %>
-        <% end %>
-      <% end %>
-    <% end %>
-  <% else %>
-    <%= render "forecasts/empty_state", workspace: @workspace %>
-  <% end %>
+  <div id="forecast_assumption_rail">
+    <%= render "forecasts/assumption_rail", plan: @plan, groups: @groups %>
+  </div>
 </div>

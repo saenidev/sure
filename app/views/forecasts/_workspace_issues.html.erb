@@ -1,0 +1,10 @@
+<% if issues.present? %>
+  <%= render DS::Alert.new(variant: :warning) do %>
+    <p class="font-medium"><%= t("forecasts.workspace.issues.heading") %></p>
+    <ul class="mt-1 list-disc pl-5 text-sm">
+      <% issues.each_key do |code| %>
+        <li><%= t("forecasts.issues.#{code}", default: code.humanize) %></li>
+      <% end %>
+    </ul>
+  <% end %>
+<% end %>

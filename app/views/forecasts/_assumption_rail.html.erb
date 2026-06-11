@@ -1,0 +1,16 @@
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+  <% %w[income expenses other].each do |group| %>
+    <% cards = groups.fetch(group, []) %>
+    <% next if cards.empty? && group == "other" %>
+    <section>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-subdued mb-2">
+        <%= t("forecasts.workspace.groups.#{group}") %>
+      </h3>
+      <div class="space-y-2">
+        <% cards.each do |assumption| %>
+          <%= render "forecasts/assumption_card", assumption: assumption %>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+</div>
