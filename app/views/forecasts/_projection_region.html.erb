@@ -18,7 +18,9 @@
 
   <div class="flex flex-col lg:flex-row gap-5">
     <div class="flex-1 min-w-0">
-      <div data-forecast-chart-target="canvas" class="h-64 lg:h-72 w-full privacy-sensitive"></div>
+      <div data-forecast-chart-target="canvas"
+           class="relative touch-pan-y h-64 lg:h-72 w-full privacy-sensitive"
+           data-action="pointerdown->forecast-chart#pointerDown pointermove->forecast-chart#pointerMove pointerup->forecast-chart#pointerUp pointercancel->forecast-chart#pointerUp pointerleave->forecast-chart#pointerLeave"></div>
       <input type="range" min="0" value="0"
              autocomplete="off"
              class="w-full mt-2"

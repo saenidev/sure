@@ -41,6 +41,7 @@ export default class extends Controller {
     );
     this.preview = null;
     this.periods = this.island.periods;
+    this.dragging = false;
     this.formatter = new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: this.island.plan.currency,
@@ -121,6 +122,77 @@ export default class extends Controller {
     this.periods = this.preview || this.island.periods;
     this.renderChart();
     this.renderSelection(this.selectedIndex());
+  }
+
+  // --- pointer scrub & hover ---
+
+  pointerDown(event) {
+    if (!this.xScale) return;
+    this.dragging = true;
+    this.canvasTarget.setPointerCapture(event.pointerId);
+    this.hideHover();
+    this.scrubTo(this.indexAt(event));
+  }
+
+  pointerMove(event) {
+    if (!this.xScale) return;
+    if (this.dragging) {
+      this.scrubTo(this.indexAt(event));
+    } else {
+      this.showHover(this.indexAt(event));
+    }
+  }
+
+  pointerUp(event) {
+    if (!this.dragging) return;
+    this.dragging = false;
+    if (this.canvasTarget.hasPointerCapture(event.pointerId)) {
+      this.canvasTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  pointerLeave() {
+    // While dragging, pointer capture keeps the scrub alive past the edge —
+    // only hide hover artifacts on a plain mouse-out.
+    if (!this.dragging) this.hideHover();
+  }
+
+  indexAt(event) {
+    const rect = this.canvasTarget.getBoundingClientRect();
+    const raw = Math.round(this.xScale.invert(event.clientX - rect.left));
+    return Math.max(0, Math.min(raw, this.periods.length - 1));
+  }
+
+  scrubTo(index) {
+    this.scrubberTarget.value = String(index);
+    this.renderSelection(index);
+    this.positionScrubLine();
+  }
+
+  showHover(index) {
+    const period = this.periods[index];
+    if (!period || !this.hoverLine || !this.tooltip) return;
+    const px = this.xScale(index);
+    this.hoverLine
+      .attr("x1", px)
+      .attr("x2", px)
+      .attr("visibility", "visible");
+    this.tooltip.textContent = `${period.s.slice(0, 7)} · ${this.formatter.format(this.seriesValue(period))}`;
+    this.tooltip.classList.remove("hidden");
+    const left = Math.max(
+      0,
+      Math.min(
+        px + 8,
+        this.canvasTarget.clientWidth - this.tooltip.offsetWidth,
+      ),
+    );
+    this.tooltip.style.left = `${left}px`;
+    this.tooltip.style.top = "4px";
+  }
+
+  hideHover() {
+    this.hoverLine?.attr("visibility", "hidden");
+    this.tooltip?.classList.add("hidden");
   }
 
   // --- internals ---
@@ -212,6 +284,22 @@ export default class extends Controller {
       .attr("stroke", "currentColor")
       .attr("stroke-opacity", 0.4)
       .attr("stroke-dasharray", "3 3");
+
+    this.hoverLine = svg
+      .append("line")
+      .attr("y1", 0)
+      .attr("y2", height)
+      .attr("stroke", "currentColor")
+      .attr("stroke-opacity", 0.15)
+      .attr("visibility", "hidden");
+
+    // replaceChildren() above wiped any previous tooltip — recreate it each
+    // render. The canvas div is `relative`; the tooltip positions inside it.
+    this.tooltip = document.createElement("div");
+    this.tooltip.className =
+      "pointer-events-none absolute hidden rounded-md border border-primary bg-container px-2 py-1 text-xs text-primary shadow-xs privacy-sensitive";
+    this.canvasTarget.appendChild(this.tooltip);
+
     this.xScale = x;
     this.positionScrubLine();
   }
