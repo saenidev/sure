@@ -17,6 +17,16 @@ class Forecasts::DerivationTest < ActiveSupport::TestCase
     @budget.update!(budgeted_spending: 3_200)
   end
 
+  # --- supports? (re-derive eligibility, gates the card's refresh trigger) --
+
+  test "supports? is true for the registered derivable kinds and false otherwise" do
+    assert Forecasts::Derivation.supports?("salary")
+    assert Forecasts::Derivation.supports?("living_expense")
+    assert Forecasts::Derivation.supports?(:salary)
+    assert_not Forecasts::Derivation.supports?("windfall")
+    assert_not Forecasts::Derivation.supports?(nil)
+  end
+
   # --- salary: precedence chain (no existing:) -----------------------------
 
   test "salary proposal derives from the largest qualifying recurring inflow with the full params contract" do

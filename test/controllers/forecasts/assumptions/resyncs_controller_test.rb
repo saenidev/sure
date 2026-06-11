@@ -106,16 +106,78 @@ class Forecasts::Assumptions::ResyncsControllerTest < ActionDispatch::Integratio
     assert_response :not_found
   end
 
-  test "show rejects a non-derived assumption" do
+  test "show rejects an assumption whose kind Derivation cannot re-derive" do
+    other = @plan.forecast_assumptions.create!(
+      family: @family, kind: "windfall", name: "Bonus", status: :active,
+      origin: :source_derived, amount: 4_000, currency: "USD",
+      params: { "frequency" => "monthly" }
+    )
+
+    get forecasts_assumption_resync_path(other), as: :turbo_stream
+
+    assert_response :unprocessable_entity
+  end
+
+  test "show on a manual (user_created) salary card previews the full-chain proposal" do
     manual = @plan.forecast_assumptions.create!(
       family: @family, kind: "salary", name: "Manual salary", status: :active,
-      amount: 4_000, currency: "USD",
+      origin: :user_created, amount: 4_000, currency: "USD",
       params: { "frequency" => "monthly", "growth_policy" => "flat" }
     )
 
+    # An unlinked card re-runs the WHOLE chain: existing: nil, not the row.
+    Forecasts::Derivation.any_instance.expects(:salary_proposal).with(existing: nil)
+      .returns(Forecasts::Derivation::Proposal.new(
+        kind: "salary", name: "Acme Payroll", amount: BigDecimal("5000"),
+        currency: "USD", params: {}, confidence: "medium",
+        source_record: @payroll, source_refs: {}, needs_review: true
+      ))
+
     get forecasts_assumption_resync_path(manual), as: :turbo_stream
 
-    assert_response :unprocessable_entity
+    assert_response :success
+    streams = css_select("turbo-stream").map { |s| s["target"] }
+    assert_includes streams, ActionView::RecordIdentifier.dom_id(manual)
+    assert_includes response.body, Money.new(BigDecimal("5000"), "USD").format
+    assert_select "form[action=?][method=post]", forecasts_assumption_resync_path(manual)
+  end
+
+  test "show on a manual living_expense card re-runs the full chain and proposes the budget" do
+    manual = @plan.forecast_assumptions.create!(
+      family: @family, kind: "living_expense", name: "Manual expenses", status: :active,
+      origin: :user_created, amount: 1_000, currency: "USD",
+      params: { "frequency" => "monthly", "inflation_policy" => "flat" }
+    )
+
+    # budgets(:one) (dylan_family, current month, budgeted_spending 5000) is the
+    # top of the living-expense chain, so the full chain lands on it.
+    get forecasts_assumption_resync_path(manual), as: :turbo_stream
+
+    assert_response :success
+    assert_includes response.body, Money.new(BigDecimal("5000"), "USD").format
+    assert_select "form[action=?][method=post]", forecasts_assumption_resync_path(manual)
+  end
+
+  test "accept on a manual living_expense card re-links the source and flips origin to source_derived" do
+    manual = @plan.forecast_assumptions.create!(
+      family: @family, kind: "living_expense", name: "Manual expenses", status: :active,
+      origin: :user_created, amount: 1_000, currency: "USD",
+      params: { "frequency" => "monthly", "inflation_policy" => "flat" }
+    )
+
+    post forecasts_assumption_resync_path(manual),
+      params: { expected_lock_version: manual.lock_version.to_s },
+      as: :turbo_stream
+
+    assert_response :success
+    manual.reload
+    assert_equal "source_derived", manual.origin
+    assert_equal 5000, manual.amount
+    # Re-linked to the budget at the top of the chain — drift scanning, which
+    # keys off a non-null source_record_id, re-engages from here.
+    assert_equal "Budget", manual.source_record_type
+    assert_equal budgets(:one).id, manual.source_record_id
+    assert_equal "confirmed", manual.review_state
   end
 
   # --- create (accept) -------------------------------------------------------

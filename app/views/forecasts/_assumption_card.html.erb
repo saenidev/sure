@@ -58,7 +58,7 @@
               class: "mt-1 inline-block text-secondary underline hover:text-primary" %>
       <% end %>
     </div>
-  <% elsif assumption.origin == "source_derived" %>
+  <% elsif Forecasts::Derivation.supports?(assumption.kind) %>
     <div class="px-3 pb-2">
       <%= link_to forecasts_assumption_resync_path(assumption),
             data: { turbo_stream: true },

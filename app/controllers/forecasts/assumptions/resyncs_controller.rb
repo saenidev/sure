@@ -2,7 +2,8 @@
 
 module Forecasts
   module Assumptions
-    # Per-card "refresh from data" re-sync for source-derived assumptions.
+    # Per-card "refresh from data" re-sync for any assumption whose kind
+    # Forecasts::Derivation can re-derive — derived OR manual.
     #
     # show (GET, turbo_stream) is a pure PREVIEW: it re-runs
     # Forecasts::Derivation against the assumption's linked source and replaces
@@ -11,8 +12,9 @@ module Forecasts
     # writes. `?cancel=1` restreams the plain card (the Keep-current link).
     #
     # Family-scoped through Current.family on every query — an id from another
-    # family is a 404, never a 403 leak. Only source-derived rows are
-    # resyncable (the trigger is only rendered for them; the guard backs it).
+    # family is a 404, never a 403 leak. Rows of a derivable kind are resyncable
+    # (the trigger is rendered for them; the guard backs it). An unlinked card
+    # re-runs the full precedence chain and can re-link a real source on accept.
     class ResyncsController < ApplicationController
       include Forecasts::WorkspacePatching
 
@@ -58,6 +60,11 @@ module Forecasts
             currency: proposal.currency,
             params: proposal.params,
             confidence: proposal.confidence,
+            # Accepting a derived proposal makes the card data-derived again:
+            # restore the provenance so a re-linked manual card flips back to
+            # source_derived (and the "From your data" label / drift scanning,
+            # which keys off a non-null source_record_id, re-engage).
+            origin: :source_derived,
             source_record_type: proposal.source_record&.class&.name,
             source_record_id: proposal.source_record&.id,
             source_refs: proposal.source_refs,
@@ -83,20 +90,28 @@ module Forecasts
         def set_assumption
           @assumption = Current.family.forecast_assumptions.find_by(id: params[:assumption_id])
           return head :not_found if @assumption.nil?
-          # Only derived rows carry a source to re-sync against.
-          return head :unprocessable_entity unless @assumption.origin == "source_derived"
+          # Any assumption whose kind Derivation can re-derive is resyncable,
+          # regardless of origin: a manual card (origin user_created, source
+          # link dropped) re-runs the full chain to RE-LINK a real source. An
+          # unsupported kind has no derivation and is rejected.
+          return head :unprocessable_entity unless Forecasts::Derivation.supports?(@assumption.kind)
 
           @plan = @assumption.forecast_plan
         end
 
-        # Server-side re-derive from the assumption's OWN linked source (or its
-        # fallback basis). Registry kinds only; an unregistered kind has no
-        # derivation and reads as source-gone downstream (nil).
+        # Server-side re-derive. A LINKED card (source_record_type present)
+        # re-derives from its OWN source via `existing: @assumption` — a vanished
+        # or disqualified source reads as source-gone. An UNLINKED card
+        # (source_record_type blank: a manual card, or a median-fallback row)
+        # passes `existing: nil` to re-run the FULL precedence chain and so can
+        # RE-LINK a real source. Derivation kinds only; an unsupported kind has
+        # no entry point and reads as source-gone downstream (nil).
         def derive_proposal
           derivation = Forecasts::Derivation.new(family: Current.family, as_of: Date.current)
+          existing = @assumption.source_record_type.blank? ? nil : @assumption
           case @assumption.kind
-          when "salary" then derivation.salary_proposal(existing: @assumption)
-          when "living_expense" then derivation.living_expense_proposal(existing: @assumption)
+          when "salary" then derivation.salary_proposal(existing: existing)
+          when "living_expense" then derivation.living_expense_proposal(existing: existing)
           end
         end
 

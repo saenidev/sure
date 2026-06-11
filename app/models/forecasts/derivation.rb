@@ -16,11 +16,14 @@ module Forecasts
   #   derivation.living_expense_proposal(existing: nil)  # => Proposal or nil
   #
   # Without `existing:` the full precedence chain runs (exactly the seeder's
-  # rules). With `existing:` (an Assumption) the proposal re-derives FROM THAT
-  # assumption's linked source: a linked record that no longer exists or no
-  # longer qualifies yields a `status: :source_gone` proposal; a
-  # source-record-less existing (median-fallback basis) re-runs the same
-  # fallback basis. A nil return means "nothing to propose" (zero-skip).
+  # rules). Callers pass `existing: nil` to RE-DERIVE an unlinked card from
+  # scratch — e.g. a manual card the user wants to re-link to a real source —
+  # so it re-runs the whole chain (budget → recurring → median, etc.) and can
+  # land on a source record again. With `existing:` (an Assumption) the proposal
+  # re-derives FROM THAT assumption's linked source: a linked record that no
+  # longer exists or no longer qualifies yields a `status: :source_gone`
+  # proposal; a source-record-less existing (median-fallback basis) re-runs the
+  # same fallback basis. A nil return means "nothing to propose" (zero-skip).
   #
   # Family-scoping is anchored to the family passed in by the caller (always
   # Current.family at the call sites). Source records are re-resolved
@@ -46,6 +49,18 @@ module Forecasts
     DERIVED_GROWTH_POLICY = "flat"
     DERIVED_INFLATION_POLICY = "flat"
     DERIVED_ACTUALIZATION_POLICY = "none"
+
+    # Kinds this class can derive a proposal for — the two registered entry
+    # points below. Callers (e.g. the assumption card) gate the
+    # "refresh from data" trigger on this rather than hardcoding the kind list,
+    # so adding a `<kind>_proposal` entry point here lights up its trigger too.
+    PROPOSAL_KINDS = %w[salary living_expense].freeze
+
+    # True when `kind` has a derivation entry point (and so can be re-synced /
+    # re-derived from connected data), regardless of an assumption's origin.
+    def self.supports?(kind)
+      PROPOSAL_KINDS.include?(kind.to_s)
+    end
 
     attr_reader :family, :as_of
 

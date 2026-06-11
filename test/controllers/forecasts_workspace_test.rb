@@ -114,6 +114,25 @@ class ForecastsWorkspaceTest < ActionDispatch::IntegrationTest
       forecasts_assumption_review_confirmation_path(assumption), text: "Looks right"
   end
 
+  test "a manual (user_created) card of a derivable kind still renders the refresh-from-data trigger" do
+    plan = Forecasts::WorkspaceLoader.new(family: @user.family, today: Date.current).load.plan
+    manual = plan.forecast_assumptions.create!(
+      family: @user.family, kind: "living_expense", name: "Manual Expenses", status: :active,
+      origin: :user_created, amount: 1500, currency: "USD",
+      params: { "frequency" => "monthly", "inflation_policy" => "flat" }
+    )
+
+    get forecast_path
+
+    assert_response :success
+    card = "##{ActionView::RecordIdentifier.dom_id(manual)}"
+    # The re-derive affordance is gated on the kind, not the origin, so a manual
+    # card can still re-attempt derivation and re-link a source.
+    assert_select "#{card} a[href=?]", forecasts_assumption_resync_path(manual), count: 1
+    # ...but a manual card carries no "From your data" provenance label.
+    assert_select "#{card}", text: /#{Regexp.escape(I18n.t("forecasts.workspace.card.derived"))}/, count: 0
+  end
+
   test "the bootstrap load shows the derived callout exactly once" do
     # The fixture family derives at least a living_expense on first build
     # (see Forecasts::AssumptionsControllerTest's `.sole` on the derived row),
