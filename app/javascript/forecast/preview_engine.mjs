@@ -369,3 +369,84 @@ export function computeProjection(packet) {
   }
   return periods;
 }
+
+// --- Delta preview -----------------------------------------------------------
+
+function adjustedActivity(aa, baseOccupied, overOccupied, ordinal) {
+  if (baseOccupied === overOccupied) return aa;
+  if (overOccupied) {
+    // aa entries are numeric ordinals into the island's assumptions array.
+    return aa.includes(ordinal) ? aa : [...aa, ordinal].sort((a, b) => a - b);
+  }
+  return aa.filter((entry) => entry !== ordinal);
+}
+
+// Delta-path preview for ONE edited assumption — the chart's per-keystroke
+// path. Instead of re-simulating the whole packet, expand the edited card
+// twice (baseline params vs override) and shift the server-computed island
+// periods by the cumulative cash delta. This is EXACT, not approximate:
+// every flow the JS cannot model is identical on both sides of the
+// difference and cancels out.
+//
+// LINEARITY CAVEAT: valid while cash income/spending are the only flow
+// effects (current engine apply_period_totals: liquid_cash += income -
+// spending); phase-6 order-sensitive kinds must NOT ride this path (they're
+// `preview: false`).
+//
+// islandPeriods are the chart's island rows ({k, s, m: {nw,lc,inc,sp,db,pv,
+// rd}, aa: [ordinals]}; m values may be decimal strings — Number() them).
+// `ordinal` is the edited card's index in the island assumptions array.
+// Returns island-shaped periods, or null when the assumption isn't in the
+// packet (chart falls back to island data).
+export function previewPeriods(packet, islandPeriods, assumptionId, overrideParams, ordinal) {
+  const { horizon, assumptions } = normalizePacket(packet);
+  const assumption = assumptions.find((a) => a.id === assumptionId);
+  if (!assumption) return null;
+
+  const baseFlows = expandAssumption(assumption, horizon);
+  const overFlows = expandAssumption(
+    { ...assumption, params: { ...assumption.params, ...overrideParams } },
+    horizon,
+  );
+
+  let cum = 0;
+  return islandPeriods.map((period) => {
+    const base = baseFlows.get(period.k);
+    const over = overFlows.get(period.k);
+    const incDelta = (over ? over.income : 0) - (base ? base.income : 0);
+    const spDelta = (over ? over.spending : 0) - (base ? base.spending : 0);
+    cum += incDelta - spDelta;
+
+    // Untouched periods come back BY IDENTITY: re-rounding them could
+    // flicker pixels the user never edited. Occupancy must ALSO be
+    // unchanged: a 0-amount occurrence appearing or disappearing changes
+    // `aa` with zero cash delta (occupancy mirrors Ruby trace rows, which
+    // exist regardless of amount — see expandAssumption), so that edge
+    // flows into the rebuild below, whose adjustedActivity call handles it;
+    // the rebuilt metrics are numerically identical since all deltas are 0.
+    if (incDelta === 0 && spDelta === 0 && cum === 0 && Boolean(base) === Boolean(over)) {
+      return period;
+    }
+
+    // Runway floors the pre-rounding values, matching computeProjection's
+    // use of the unrounded running balance.
+    const lcPrime = Number(period.m.lc) + cum;
+    const spPrime = Number(period.m.sp) + spDelta;
+    const [y, m] = period.k.split("-").map(Number);
+
+    return {
+      k: period.k,
+      s: period.s,
+      m: {
+        nw: round2(Number(period.m.nw) + cum),
+        lc: round2(lcPrime),
+        inc: round2(Number(period.m.inc) + incDelta),
+        sp: round2(spPrime),
+        db: period.m.db, // static in this slice: pass through untouched
+        pv: period.m.pv,
+        rd: runwayDays(lcPrime, spPrime, daysInMonth(y, m)),
+      },
+      aa: adjustedActivity(period.aa, Boolean(base), Boolean(over), ordinal),
+    };
+  });
+}
