@@ -39,6 +39,15 @@ en:
         needs_review: "Review"
         derived: "From your data"
         edit: "Edit %{name}"
+        resync:
+          refresh: "Check %{name} against your data"
+          refresh_label: "Refresh from data"
+          proposal: "%{current} → %{proposed} — update from your data?"
+          accept: "Update"
+          keep: "Keep current"
+          dismiss: "Dismiss"
+          in_sync: "Already in sync with your data"
+          source_gone: "The data source behind this assumption is no longer available."
       issues:
         heading: "Needs attention"
       editor:

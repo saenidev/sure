@@ -294,7 +294,11 @@ Rails.application.routes.draw do
   # Plan-workspace editing endpoints (plural namespace; the V1 singular
   # `namespace :forecast` block below remains routable until the phase-9 cutover).
   namespace :forecasts do
-    resources :assumptions, only: %i[edit update]
+    resources :assumptions, only: %i[edit update] do
+      scope module: :assumptions do
+        resource :resync, only: %i[show create]
+      end
+    end
   end
 
   # THROWAWAY viability spike — proves disciplined Hotwire meets the Forecast V2

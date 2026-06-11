@@ -23,4 +23,50 @@
       <% end %>
     </div>
   <% end %>
+  <% resync_state = local_assigns[:resync_state] %>
+  <% proposal = local_assigns[:proposal] %>
+  <% if resync_state %>
+    <div class="px-3 pb-3 text-xs">
+      <% case resync_state %>
+      <% when :proposal %>
+        <p class="text-secondary privacy-sensitive">
+          <%= t("forecasts.workspace.card.resync.proposal",
+                current: Money.new(assumption.amount, assumption.currency).format,
+                proposed: Money.new(proposal.amount, proposal.currency).format) %>
+        </p>
+        <div class="mt-2 flex items-center gap-3">
+          <%= button_to t("forecasts.workspace.card.resync.accept"),
+                forecasts_assumption_resync_path(assumption),
+                params: { expected_lock_version: assumption.lock_version },
+                class: "text-link text-xs font-medium" %>
+          <%= link_to t("forecasts.workspace.card.resync.keep"),
+                forecasts_assumption_resync_path(assumption, cancel: 1),
+                data: { turbo_stream: true },
+                class: "text-secondary hover:text-primary" %>
+        </div>
+      <% when :in_sync %>
+        <p class="text-secondary"><%= t("forecasts.workspace.card.resync.in_sync") %></p>
+        <%= link_to t("forecasts.workspace.card.resync.dismiss"),
+              forecasts_assumption_resync_path(assumption, cancel: 1),
+              data: { turbo_stream: true },
+              class: "mt-1 inline-block text-secondary underline hover:text-primary" %>
+      <% when :source_gone %>
+        <p class="text-secondary"><%= t("forecasts.workspace.card.resync.source_gone") %></p>
+        <%= link_to t("forecasts.workspace.card.resync.dismiss"),
+              forecasts_assumption_resync_path(assumption, cancel: 1),
+              data: { turbo_stream: true },
+              class: "mt-1 inline-block text-secondary underline hover:text-primary" %>
+      <% end %>
+    </div>
+  <% elsif assumption.origin == "source_derived" %>
+    <div class="px-3 pb-2">
+      <%= link_to forecasts_assumption_resync_path(assumption),
+            data: { turbo_stream: true },
+            class: "inline-flex items-center gap-1 text-xs text-secondary hover:text-primary",
+            aria: { label: t("forecasts.workspace.card.resync.refresh", name: assumption.name) } do %>
+        <%= icon "refresh-cw", size: "xs", color: "current" %>
+        <span><%= t("forecasts.workspace.card.resync.refresh_label") %></span>
+      <% end %>
+    </div>
+  <% end %>
 </div>
