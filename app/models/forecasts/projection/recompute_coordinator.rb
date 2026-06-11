@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "bigdecimal"
+require "digest"
 
 module Forecasts
   module Projection
@@ -16,10 +17,12 @@ module Forecasts
     #   1. Build the engine packet (B11 PacketBuilder) — the last place models are
     #      touched.
     #   2. Call the pure engine (B7 Engine.call) — no ActiveRecord inside.
-    #   3. Persist a Forecasts::ProjectionCache + indexed ProjectionPeriod rows +
-    #      ProjectionTrace rows in ONE transaction, keyed by
-    #      forecast_plan_id + plan_version + scenario_stack_hash +
-    #      source_snapshot_hash + engine_version.
+    #   3. Persist a Forecasts::ProjectionCache + indexed ProjectionPeriod rows in
+    #      ONE transaction, keyed by forecast_plan_id + plan_version +
+    #      scenario_stack_hash + source_snapshot_hash + engine_version. Traces are
+    #      still persisted per period (spec 3.2.2) — embedded on each period row
+    #      as a compact ordered jsonb array (see ProjectionPeriod::TRACE_KEYS),
+    #      not as relational rows.
     #
     # The coordinator is NOT the engine: it owns persistence, key/version
     # management, and cache invalidation. It does NOT format UI strings or
@@ -35,9 +38,9 @@ module Forecasts
     # Coalescing + idempotency: duplicate work for the exact same key
     # (plan_version + scenario_stack_hash + source_snapshot_hash + engine_version)
     # coalesces onto the one existing current cache when its result hash is
-    # unchanged. Publishing a new current cache marks any prior current cache for
-    # the same plan + scenario stack as superseded, so there is at most one live
-    # cache per scenario stack.
+    # unchanged. Publishing a new current cache replaces (deletes, atomically in
+    # the same transaction) any prior cache for the same plan + scenario stack,
+    # so there is at most one live cache per scenario stack.
     #
     # Family scoping: the family is derived from the plan record, never from
     # caller params (the PacketBuilder enforces snapshot/plan/family ownership).
@@ -113,10 +116,11 @@ module Forecasts
 
         # --- Persistence ----------------------------------------------------
 
-        # Persists the cache, periods, and traces in one transaction and marks
-        # prior current caches for the same plan + scenario stack as superseded.
-        # The stale guard is re-checked INSIDE the transaction so a version bump
-        # racing with this write cannot publish over a newer plan version.
+        # Persists the cache and the period rows (which embed the traces) in one
+        # transaction, replacing any prior cache for the same plan + scenario
+        # stack. The stale guard is re-checked INSIDE the transaction so a
+        # version bump racing with this write cannot publish over a newer plan
+        # version.
         def persist(packet, result, target_version)
           outcome = nil
 
@@ -132,11 +136,9 @@ module Forecasts
               next
             end
 
-            supersede_current_caches!(packet)
+            replace_prior_caches!(packet)
             cache = write_cache!(packet, result)
             write_periods!(cache, packet, result)
-            write_traces!(cache, result)
-            prune_replaced_caches!(packet, keep: cache)
             outcome = cache
           end
 
@@ -155,25 +157,23 @@ module Forecasts
           existing&.fresh? && existing.projection_result_hash == result_hash(result)
         end
 
-        # At most one current cache per plan + scenario stack. Marking by
-        # scenario_stack_key (not the exact version key) ensures a newer version's
-        # cache supersedes the prior version's live cache for the same stack.
-        def supersede_current_caches!(packet)
+        # Supersede + prune in ONE statement (one PG round trip on the
+        # synchronous save path instead of two). At most one current cache per
+        # plan + scenario stack: matching by scenario_stack_key (not the exact
+        # version key) ensures a newer version's publish replaces the prior
+        # version's live cache for the same stack. The replaced rows are deleted
+        # outright rather than first being marked superseded — the delete and
+        # the publish happen inside this same transaction, so no reader can ever
+        # observe an intermediate state, and cache hygiene (spec §8) wants the
+        # rows gone anyway: auto-save bumps the plan version on every settle, so
+        # without this hard delete the table grows by ~361 period rows per
+        # keystroke-settle. Runs BEFORE the new cache row is written so the
+        # partial unique current-key index cannot collide with a replaced row.
+        # Pinned snapshot rows (phase 8 adds pinned_at) will be excluded here
+        # when pinning exists.
+        def replace_prior_caches!(packet)
           plan.forecast_projection_caches
-            .current
             .where(scenario_stack_key: packet.scenario_stack[:key])
-            .update_all(status: "superseded", updated_at: Time.current)
-        end
-
-        # Cache hygiene (spec §8): at most ONE cache row per scenario stack
-        # survives a publish — the row just written. Auto-save bumps the plan
-        # version on every settle, so without this hard delete the table grows by
-        # ~361 period rows per keystroke-settle. Pinned snapshot rows (phase 8
-        # adds pinned_at) will be excluded here when pinning exists.
-        def prune_replaced_caches!(packet, keep:)
-          plan.forecast_projection_caches
-            .where(scenario_stack_key: packet.scenario_stack[:key])
-            .where.not(id: keep.id)
             .delete_all
         end
 
@@ -197,9 +197,21 @@ module Forecasts
         # validations: acceptable here because rows are derived verbatim from the
         # engine result (already validated value objects), and required because a
         # 30-year plan writes ~361 rows inside the save round-trip budget.
+        #
+        # Each period row embeds its explanation traces as a compact ordered
+        # jsonb array (see ProjectionPeriod::TRACE_KEYS) built in the same pass:
+        # traces are still persisted per period (spec §3.2.2) — only the storage
+        # shape changed. Relational trace rows cost ~9k inserts per 30-year save
+        # (~43% of the synchronous save budget in PG I/O alone); the embedded
+        # blob rides along on the 361 period inserts.
         def write_periods!(cache, packet, result)
           traces_by_period = result_traces(result).group_by(&:period_key)
           now = Time.current
+          entry_jsons = {}
+          blob_jsons = {}
+          # Same-id-set periods share one frozen ids array (and one JSON string
+          # via the column's pass-through codec input being identical).
+          id_sets = {}
 
           rows = result.periods.map do |period|
             period_traces = traces_by_period.fetch(period[:key], [])
@@ -212,8 +224,9 @@ module Forecasts
               period_end_on: period[:ends_on],
               granularity: period[:granularity],
               metrics: period[:metrics],
+              traces: traces_json(period_traces, entry_jsons, blob_jsons),
               issue_codes: issue_codes_for(result, period),
-              active_assumption_ids: active_assumption_ids_for(period_traces),
+              active_assumption_ids: active_assumption_ids_for(period_traces, id_sets),
               plan_version: packet.plan[:version],
               engine_version: packet.engine_version,
               created_at: now,
@@ -224,90 +237,48 @@ module Forecasts
           Forecasts::ProjectionPeriod.insert_all!(rows) if rows.any?
         end
 
-        # Columns streamed by write_traces!. `id` is omitted on purpose so the
-        # table's uuid default applies, exactly as it does under insert_all!.
-        TRACE_COPY_COLUMNS = %w[
-          forecast_projection_cache_id period_key granularity assumption_id
-          source_type source_id metric_key direction amount currency category
-          display_order trace_kind explanation_key source_record_refs
-          created_at updated_at
-        ].freeze
-
-        # Bulk-persists traces, skipping zero-amount rows (spec §3.2.2: traces
-        # exist to explain flows; a zero flow explains nothing and at 30y scale
-        # zero rows dominate the table).
+        # Builds one period's embedded traces as a pre-generated JSON array
+        # string (ProjectionPeriod::TracesJsonbType passes it through), in the
+        # engine's ledger order (array position IS display order), skipping
+        # zero-amount traces (spec §3.2.2: traces exist to explain flows; a zero
+        # flow explains nothing and at 30y scale zero entries dominate the
+        # payload).
         #
-        # Streams via COPY instead of insert_all!: quoting ~9k rows x 17 columns
-        # into one INSERT's VALUES list cost multiple seconds of the synchronous
-        # save budget (Arel visits every literal), while COPY text format is a
-        # straight escaped-string stream. Runs on the transaction's own
-        # connection, so rollback semantics are identical.
-        def write_traces!(cache, result)
-          now = Time.current.utc.iso8601(6)
-          decimals = {}
-          # Refs JSON memoized per refs OBJECT (keyed by object_id): the
-          # builder shares one frozen refs array across every trace of one
-          # assumption, so a 30-year save generates ~25 distinct JSON strings
-          # instead of ~9k.
-          refs_json = {}
-          # Constant per cache write — escaped once instead of per row (~9k
-          # redundant copy_field passes each on a 30-year save).
-          cache_id = copy_field(cache.id)
-          now_field = copy_field(now)
-
-          lines = result_traces(result).each_with_index.filter_map do |trace, index|
-            amount = decimals[trace.amount] ||= BigDecimal(trace.amount.to_s)
-            next if amount.zero?
-
-            [
-              cache_id,
-              copy_field(trace.period_key),
-              "month",
-              copy_field(trace.assumption_id),
-              copy_field(trace.source_type),
-              '\N',
-              copy_field(metric_key_for(trace)),
-              copy_field(trace.direction || DIRECTION_FOR_CATEGORY[trace.category]),
-              copy_field(trace.amount),
-              copy_field(trace.currency),
-              copy_field(trace.category),
-              index.to_s,
-              copy_field(trace.category),
-              copy_field(trace.explanation_key),
-              refs_json[trace.source_record_refs.object_id] ||=
-                copy_field(JSON.generate(source_record_refs_payload(trace))),
-              now_field,
-              now_field
-            ].join("\t") << "\n"
+        # `entry_jsons` memoizes one entry's JSON (nil for a filtered zero
+        # amount) per [assumption_id, amount] across the whole save. That key is
+        # injective for the stored entry: every other stored field is a function
+        # of the assumption alone — the TraceBuilder derives source_type,
+        # category (hence metric_key and direction), currency, explanation_key,
+        # and the shared refs array from per-assumption data; only the amount
+        # varies across one assumption's occurrences. A 30-year save therefore
+        # encodes ~25 entry strings instead of ~9k.
+        def traces_json(period_traces, entry_jsons, blob_jsons)
+          parts = period_traces.filter_map do |trace|
+            entry_jsons.fetch([ trace.assumption_id, trace.amount ]) do |key|
+              entry_jsons[key] = trace_entry_json(trace)
+            end
           end
-          return if lines.empty?
-
-          connection = Forecasts::ProjectionTrace.connection
-          sql = "COPY #{Forecasts::ProjectionTrace.table_name} (#{TRACE_COPY_COLUMNS.join(', ')}) FROM STDIN"
-          connection.raw_connection.copy_data(sql) do
-            lines.each { |line| connection.raw_connection.put_copy_data(line) }
-          end
+          # Periods with identical entries (flat assumptions are identical every
+          # month) share ONE blob string instead of allocating ~5KB × 361.
+          blob_jsons[parts] ||= "[#{parts.join(',')}]"
         end
 
-        # Escapes one value for COPY text format: NULL marker for nil, and the
-        # four characters with special meaning (backslash, tab, newline,
-        # carriage return) for everything else. Escaping is gated on a match
-        # check — almost every field here (uuids, period keys, amounts,
-        # category words) never needs it, and an unconditional gsub allocated
-        # ~150k fresh strings per 30-year save.
-        def copy_field(value)
-          return '\N' if value.nil?
+        # Encodes one embedded trace entry (compact keys documented on
+        # ProjectionPeriod::TRACE_KEYS), or nil when the amount is zero.
+        def trace_entry_json(trace)
+          return nil if BigDecimal(trace.amount.to_s).zero?
 
-          string = value.to_s
-          return string unless string.match?(COPY_ESCAPES_PATTERN)
-
-          string.gsub(COPY_ESCAPES_PATTERN, COPY_ESCAPES)
+          JSON.generate(
+            "a" => trace.assumption_id,
+            "mk" => metric_key_for(trace),
+            "d" => trace.direction || DIRECTION_FOR_CATEGORY[trace.category],
+            "am" => trace.amount.to_s,
+            "c" => trace.currency,
+            "k" => trace.category,
+            "e" => trace.explanation_key,
+            "r" => trace.source_record_refs
+          )
         end
-
-        COPY_ESCAPES = {
-          "\\" => "\\\\", "\t" => "\\t", "\n" => "\\n", "\r" => "\\r"
-        }.freeze
-        COPY_ESCAPES_PATTERN = Regexp.union(COPY_ESCAPES.keys).freeze
 
         # --- Stale / superseded marker --------------------------------------
 
@@ -359,22 +330,37 @@ module Forecasts
         # Three fully-derived sections are deliberately excluded from the hashed
         # payload — each is a pure function of the packet and engine version,
         # both already inside the cache key, so two results that agree on
-        # everything else cannot differ in them, and canonicalizing them
-        # dominated the synchronous save budget:
+        # everything else cannot differ in them, and serializing them dominated
+        # the synchronous save budget:
         # - traces (~9k hashes; canonicalizing them doubled the save budget),
         # - series (a byte-for-byte duplicate of the periods' :metrics),
         # - per-period :trace_ids (~9k long derived id strings; per-period trace
         #   coverage is still pinned by the hashed periods + summary trace_count).
+        #
+        # Digested as a single JSON.generate pass instead of the order-canonical
+        # Forecasts::Projection.stable_hash walk: stable_hash exists to make
+        # hashes independent of hash-key insertion order, but every node of this
+        # payload is built with a FIXED key order by exactly two deterministic
+        # producers — hashable_result_payload below (literal key order) and the
+        # pure engine's envelope (periods/issues/goals/summary, constructed in
+        # one deterministic pass and deep-frozen). The same result therefore
+        # always serializes to the same bytes, and two structurally different
+        # results cannot share bytes (JSON encodes structure faithfully; the
+        # key-order/symbol-vs-string collisions stable_hash defends against
+        # cannot arise from a single fixed-order producer). Walking ~3k metric
+        # strings through canonicalize cost a measurable slice of the save
+        # budget; the C JSON encoder does not.
+        #
         # Memoized: the publish path needs the digest twice (coalescing check +
         # cache row).
         def result_hash(result)
           @result_hashes ||= {}
           @result_hashes[result.object_id] ||=
-            Forecasts::Projection.stable_hash(hashable_result_payload(result))
+            Digest::SHA256.hexdigest(JSON.generate(hashable_result_payload(result)))
         end
 
         # The slimmed envelope result_hash digests (see exclusions there). Field
-        # order is irrelevant — stable_hash canonicalizes — but mirrors
+        # order is FIXED — the JSON digest above depends on it — and mirrors
         # Result#to_h for readability.
         def hashable_result_payload(result)
           {
@@ -404,9 +390,13 @@ module Forecasts
         end
 
         # The assumption ids whose traces contribute to this period, sorted for a
-        # deterministic stored payload.
-        def active_assumption_ids_for(period_traces)
-          period_traces.map(&:assumption_id).compact.uniq.sort_by(&:to_s)
+        # deterministic stored payload and pre-encoded as JSON (the column's
+        # pass-through codec stores the string as-is). Memoized by id set — most
+        # periods of one plan share the same active set, so a 30-year save sorts
+        # and encodes once instead of 361 times.
+        def active_assumption_ids_for(period_traces, id_sets)
+          ids = period_traces.map(&:assumption_id)
+          id_sets[ids] ||= JSON.generate(ids.compact.uniq.sort_by(&:to_s))
         end
 
         # Privacy-safe issue code list scoped to this period (codes only, no
@@ -425,10 +415,6 @@ module Forecasts
             "issue_count" => result.issues.length,
             "codes" => result.issues.map(&:code).tally
           }
-        end
-
-        def source_record_refs_payload(trace)
-          { "refs" => trace.source_record_refs }
         end
 
         def started_at

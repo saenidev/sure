@@ -13,7 +13,7 @@ module Forecasts
   #
   # It consumes ALREADY-LOADED rows handed in by the controller — the committed
   # plan + assumption, and (when a synchronous recompute produced one) the current
-  # projection cache with its seeded period + trace rows. It NEVER calls the
+  # projection cache with its seeded period row (traces embedded). It NEVER calls the
   # engine, enqueues recompute, mutates records, or parses the full
   # projection-result JSON (spec "Read Model Contracts"). The regions are composed
   # from the same per-surface read models the first viewport uses, so the client
@@ -25,20 +25,20 @@ module Forecasts
   # state (spec "Live Recompute Model": "the card still updates and the projection
   # regions enter a visible stale/recomputing state").
   class SavedAssumptionPatchReadModel
-    attr_reader :assumption, :plan, :cache, :period, :traces
+    attr_reader :assumption, :plan, :cache, :period
 
     # `assumption` + `plan` are the committed records. `cache` is the current
     # projection cache for the new plan version (fresh after a sync recompute, or
     # a recomputing marker when deferred; may be nil only if no cache exists yet).
-    # `period` + `traces` are the seeded selected-period row + its trace rows for
-    # the selected-period inspector / metric strip, already loaded by the
-    # controller (nil when projection output is not ready).
-    def initialize(assumption:, plan:, cache: nil, period: nil, traces: [])
+    # `period` is the seeded selected-period row (its embedded `traces` blob
+    # carries the explanation traces) for the selected-period inspector / metric
+    # strip, already loaded by the controller (nil when projection output is not
+    # ready).
+    def initialize(assumption:, plan:, cache: nil, period: nil)
       @assumption = assumption
       @plan = plan
       @cache = cache
       @period = period
-      @traces = traces || []
     end
 
     def to_h
@@ -75,7 +75,7 @@ module Forecasts
             nil
           else
             Forecasts::SelectedPeriodReadModel.new(
-              period: period, traces: traces, cache: cache
+              period: period, cache: cache
             ).to_h
           end
       end

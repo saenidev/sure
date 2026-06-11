@@ -4,15 +4,15 @@ require "test_helper"
 
 # Tests for the Forecast V2 recompute coordinator. Given a plan + source
 # snapshot, it builds the engine packet (B11), calls the pure engine (B7), and
-# persists a Forecasts::ProjectionCache + indexed ProjectionPeriod rows +
-# ProjectionTrace rows in ONE transaction, keyed by plan_version +
-# scenario_stack_hash + source_snapshot_hash + engine_version.
+# persists a Forecasts::ProjectionCache + indexed ProjectionPeriod rows (each
+# embedding its traces as a compact jsonb array) in ONE transaction, keyed by
+# plan_version + scenario_stack_hash + source_snapshot_hash + engine_version.
 #
 # Critical behaviors (spec "Recompute coordinator", "Recompute Job Contract",
 # "Versioning rules"):
-#   - writes exactly one fresh current cache + 37 period rows + trace rows
-#     (37 = 36-month span inclusive of the horizon-end month; spec "Period
-#     Boundaries")
+#   - writes exactly one fresh current cache + 37 period rows with embedded
+#     traces (37 = 36-month span inclusive of the horizon-end month; spec
+#     "Period Boundaries")
 #   - coalesces duplicate keys (idempotent by key)
 #   - marks superseded older caches for the same plan + scenario stack
 #   - a STALE result (older plan_version than the plan's current_plan_version)
@@ -69,7 +69,7 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
 
   # --- Fresh write ---------------------------------------------------------
 
-  test "writes one fresh cache + 37 period rows + trace rows" do
+  test "writes one fresh cache + 37 period rows with embedded traces" do
     cache = nil
 
     assert_difference -> { Forecasts::ProjectionCache.count } => 1,
@@ -89,8 +89,8 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
     assert cache.finished_at.present?
 
     assert_equal 37, cache.forecast_projection_periods.count
-    assert cache.forecast_projection_traces.count.positive?,
-      "expected trace rows for the salary + living_expense flows"
+    assert cache.forecast_projection_periods.sum { |period| period.traces.length }.positive?,
+      "expected embedded traces for the salary + living_expense flows"
   end
 
   test "the keyed cache carries the packet hashes" do
@@ -123,16 +123,17 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
     assert first.period_end_on.present?
   end
 
-  test "trace rows reference the cache, period, and assumption" do
+  test "embedded trace entries carry metric, category, and assumption provenance" do
     cache = recompute
-    trace = cache.forecast_projection_traces.first
+    period = cache.forecast_projection_periods.ordered.first
+    trace = period.traces.first
 
-    assert_equal cache.id, trace.forecast_projection_cache_id
-    assert trace.period_key.present?
-    assert trace.month?
-    assert trace.metric_key.present?
-    assert trace.trace_kind.present?
-    assert trace.assumption_id.present?
+    assert trace.present?, "the first period must embed trace entries"
+    assert trace["mk"].present?, "metric key"
+    assert trace["k"].present?, "category"
+    assert trace["a"].present?, "assumption id"
+    assert trace["am"].present?, "amount"
+    assert trace["d"].present?, "direction"
   end
 
   # --- Stale-result protection (CRITICAL) ----------------------------------
@@ -216,8 +217,7 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
 
     assert_no_difference [
       -> { Forecasts::ProjectionCache.count },
-      -> { Forecasts::ProjectionPeriod.count },
-      -> { Forecasts::ProjectionTrace.count }
+      -> { Forecasts::ProjectionPeriod.count }
     ] do
       second = recompute
       assert_equal first.id, second.id, "same key must coalesce onto the same cache row"
@@ -250,8 +250,7 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
 
     assert_no_difference [
       -> { Forecasts::ProjectionCache.count },
-      -> { Forecasts::ProjectionPeriod.count },
-      -> { Forecasts::ProjectionTrace.count }
+      -> { Forecasts::ProjectionPeriod.count }
     ] do
       assert_raises(StandardError) { recompute }
     end
@@ -270,17 +269,19 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
 
     assert cache.fresh?
     assert_operator cache.forecast_projection_periods.count, :>, 0
-    # one INSERT for the cache + one bulk INSERT for periods + at most one for traces
-    assert_operator inserts, :<=, 3, "expected bulk inserts, saw #{inserts} INSERT statements"
+    # one INSERT for the cache + one bulk INSERT for periods (traces embedded)
+    assert_operator inserts, :<=, 2, "expected bulk inserts, saw #{inserts} INSERT statements"
   end
 
   test "does not persist zero-amount traces" do
     # A zero salary makes the engine emit zero-amount flow rows for every month;
-    # the persistence policy must filter them all.
+    # the persistence policy must filter them all from the embedded blobs.
     add_salary(name: "Zero salary", amount: 0)
     cache = recompute
 
-    assert_equal 0, cache.forecast_projection_traces.where(amount: 0).count
+    zero_entries = cache.forecast_projection_periods.flat_map(&:traces)
+      .select { |trace| BigDecimal(trace["am"]).zero? }
+    assert_equal [], zero_entries
   end
 
   # --- Re-anchoring (spec §10) ----------------------------------------------

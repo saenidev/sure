@@ -7,11 +7,13 @@ module Forecasts
   # Forecast V2 read model for the selected month/year. Answers exactly ONE UI
   # question: "what explains the currently selected period?"
   #
-  # It is loaded from the indexed Forecasts::ProjectionPeriod row plus its
-  # Forecasts::ProjectionTrace rows — NEVER by parsing the full projection-result
-  # JSON (spec "Read Model Contracts": "SelectedPeriodReadModel reads period/trace
-  # rows (not full JSON)"). The coordinator already indexed both row sets; this
-  # read model just shapes them into the selected-period UI payload.
+  # It is loaded from the indexed Forecasts::ProjectionPeriod row — NEVER by
+  # parsing the full projection-result JSON (spec "Read Model Contracts":
+  # "SelectedPeriodReadModel reads period/trace rows (not full JSON)"). Traces
+  # are still persisted per period; the coordinator embeds them on the period
+  # row as a compact ordered jsonb array (see ProjectionPeriod::TRACE_KEYS), so
+  # this read model shapes the one indexed row into the selected-period UI
+  # payload with no trace query at all.
   #
   # It may include the metric strip, active assumption IDs, trace-backed
   # explanation lines, period issues, and freshness state. It must NOT include the
@@ -31,14 +33,13 @@ module Forecasts
       "spending" => "expense"
     }.freeze
 
-    attr_reader :period, :traces, :cache
+    attr_reader :period, :cache
 
-    # `period` is one Forecasts::ProjectionPeriod row; `traces` are the already
-    # loaded Forecasts::ProjectionTrace rows for that period; `cache` supplies the
-    # freshness label only.
-    def initialize(period:, traces:, cache: nil)
+    # `period` is one Forecasts::ProjectionPeriod row (its `traces` jsonb blob
+    # carries the embedded explanation traces); `cache` supplies the freshness
+    # label only.
+    def initialize(period:, cache: nil)
       @period = period
-      @traces = traces
       @cache = cache
     end
 
@@ -76,18 +77,22 @@ module Forecasts
         Array(period.active_assumption_ids)
       end
 
-      # One explanation line per trace row, in the coordinator's stored
-      # display_order. Amount is the trace's decimal-string value; the client
+      # One explanation line per embedded trace entry, in the stored array order
+      # (the coordinator persists traces in display order — array position IS
+      # display order). Amount is the trace's decimal-string value; the client
       # renders the i18n `explanation_key`. This is the trace-backed explanation
-      # the spec requires (rendered from traces, not chart series).
+      # the spec requires (rendered from traces, not chart series). Compact blob
+      # keys (ProjectionPeriod::TRACE_KEYS) are translated here so the payload
+      # shape is unchanged.
       def explanation_lines
-        traces.map do |trace|
+        Array(period.traces).map do |trace|
+          category = trace["k"]
           {
-            kind: EXPLANATION_KIND_FOR_CATEGORY.fetch(trace.category, trace.category),
-            amount: money_string(trace.amount),
-            currency: trace.currency,
-            direction: trace.direction,
-            explanation_key: trace.explanation_key,
+            kind: EXPLANATION_KIND_FOR_CATEGORY.fetch(category, category),
+            amount: money_string(trace["am"]),
+            currency: trace["c"],
+            direction: trace["d"],
+            explanation_key: trace["e"],
             source: "trace"
           }
         end

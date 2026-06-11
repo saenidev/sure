@@ -12,13 +12,13 @@ require Rails.root.join("test/fixtures/files/forecasts/connected_family_proof")
 #
 #   source snapshot (B9) -> default plan + derived assumptions (B10) ->
 #   plan packet (B11) -> pure engine (B4-B7) -> recompute coordinator persists a
-#   keyed cache + >=36 indexed period rows + trace rows (B12) ->
+#   keyed cache + >=36 indexed period rows with embedded traces (B12) ->
 #   read models (B13) load the selected period from indexed rows.
 #
 # Pass criteria asserted here (spec "Backend Proof Slice"):
 #   - opening the default-plan path creates exactly one plan + one source
 #     snapshot + salary/living_expense assumptions + a baseline projection cache
-#     with >=36 period rows and trace rows;
+#     with >=36 period rows whose jsonb blobs embed the explanation traces;
 #   - NO V1 records are created or read (no forecast_run_groups / forecast_runs /
 #     forecast_days / forecast_months rows; no Forecast::Runner / Workspace /
 #     InputBuilder / Engine is invoked — mocha fails if any is);
@@ -101,11 +101,12 @@ class Forecasts::BackendProofSliceTest < ActiveSupport::TestCase
     assert_equal Forecasts::Projection::PacketBuilder::ENGINE_VERSION, cache.engine_version
     assert cache.projection_result_hash.present?
 
-    # >=36 indexed period rows and trace rows for the salary + living flows.
+    # >=36 indexed period rows, each embedding traces for the salary + living
+    # flows (traces are persisted per period as the row's jsonb blob).
     assert_operator cache.forecast_projection_periods.count, :>=, 36,
       "the baseline projection cache must index at least 36 period rows"
-    assert_operator cache.forecast_projection_traces.count, :>, 0,
-      "the baseline projection cache must index trace rows for the flows"
+    assert_operator cache.forecast_projection_periods.sum { |p| p.traces.length }, :>, 0,
+      "the baseline projection cache's period rows must embed traces for the flows"
   end
 
   # --- No V1 records created or read --------------------------------------
@@ -190,21 +191,20 @@ class Forecasts::BackendProofSliceTest < ActiveSupport::TestCase
     cache = recompute(plan, source_snapshot)
 
     period = cache.forecast_projection_periods.ordered.first
-    traces = cache.forecast_projection_traces.for_period(period.period_key).ordered.to_a
 
     payload = nil
-    # Period + traces are already loaded; shaping the read model must issue NO
-    # additional query (no per-trace, per-issue, or full-JSON read).
+    # The period row (traces embedded) is already loaded; shaping the read model
+    # must issue NO additional query (no per-trace, per-issue, or full-JSON read).
     assert_queries_count(max: 0) do
       payload = Forecasts::SelectedPeriodReadModel.new(
-        period: period, traces: traces, cache: cache
+        period: period, cache: cache
       ).to_h
     end
 
     assert_equal period.period_key, payload[:period_key]
     refute_empty payload[:metrics]
     refute_empty payload[:explanation]
-    assert_equal traces.length, payload[:explanation].length
+    assert_equal period.traces.length, payload[:explanation].length
   end
 
   test "no full projection-result JSON exists to parse for selected-period reads" do
@@ -356,11 +356,14 @@ class Forecasts::BackendProofSliceTest < ActiveSupport::TestCase
     assert_equal packet.source_snapshot_hash, cache.source_snapshot_hash
     assert_equal packet.plan[:version], cache.plan_version
 
-    # Selected-period trace IDs are recoverable from the indexed trace rows.
+    # Selected-period traces are recoverable from the period row's embedded
+    # blob (same per-period trace coverage; relational rows became the jsonb
+    # array on the period).
     period = cache.forecast_projection_periods.ordered.first
-    traces = cache.forecast_projection_traces.for_period(period.period_key).to_a
-    assert traces.any?, "the first period must have indexed trace rows"
-    assert traces.all? { |trace| trace.id.present? }
+    traces = period.traces
+    assert traces.any?, "the first period must embed trace entries"
+    assert traces.all? { |trace| trace["a"].present? && trace["am"].present? },
+      "each embedded trace entry carries its assumption provenance and amount"
   end
 
   private
@@ -383,8 +386,7 @@ class Forecasts::BackendProofSliceTest < ActiveSupport::TestCase
       return if cache.nil?
 
       period = cache.forecast_projection_periods.ordered.first
-      traces = cache.forecast_projection_traces.for_period(period.period_key).ordered.to_a
-      Forecasts::SelectedPeriodReadModel.new(period: period, traces: traces, cache: cache).to_h
+      Forecasts::SelectedPeriodReadModel.new(period: period, cache: cache).to_h
     end
 
     # Counts SELECT queries issued inside the block (ignoring SCHEMA/transaction

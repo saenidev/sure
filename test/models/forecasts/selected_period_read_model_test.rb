@@ -6,11 +6,12 @@ require "test_helper"
 #
 # This read model answers exactly ONE UI question: "what explains the currently
 # selected month/year?" It is loaded from the indexed Forecasts::ProjectionPeriod
-# row plus its Forecasts::ProjectionTrace rows — NEVER by parsing the full
-# projection-result JSON (spec "Read Model Contracts", "UI Payload Contracts").
+# row (whose `traces` jsonb blob embeds the per-period explanation traces) —
+# NEVER by parsing the full projection-result JSON (spec "Read Model Contracts",
+# "UI Payload Contracts").
 #
 # Critical contracts asserted here:
-#   - reads period + trace ROWS, not the cache's full result JSON
+#   - reads the indexed period row, not the cache's full result JSON
 #   - emits a metric strip, active_assumption_ids, trace-backed explanation lines,
 #     period issues, and freshness state — as a typed payload of i18n keys, never
 #     formatted strings
@@ -33,7 +34,6 @@ class Forecasts::SelectedPeriodReadModelTest < ActiveSupport::TestCase
       plan: @plan, source_snapshot: @snapshot
     ).recompute
     @period = @cache.forecast_projection_periods.ordered.first
-    @traces = @cache.forecast_projection_traces.for_period(@period.period_key).ordered.to_a
   end
 
   def add_salary(overrides = {})
@@ -62,8 +62,8 @@ class Forecasts::SelectedPeriodReadModelTest < ActiveSupport::TestCase
     }.merge(overrides))
   end
 
-  def build_model(period: @period, traces: @traces, cache: @cache)
-    Forecasts::SelectedPeriodReadModel.new(period: period, traces: traces, cache: cache)
+  def build_model(period: @period, cache: @cache)
+    Forecasts::SelectedPeriodReadModel.new(period: period, cache: cache)
   end
 
   # --- payload shape -------------------------------------------------------
@@ -102,7 +102,7 @@ class Forecasts::SelectedPeriodReadModelTest < ActiveSupport::TestCase
     refute_empty payload[:active_assumption_ids]
   end
 
-  test "explanation lines are derived from trace rows" do
+  test "explanation lines are derived from the period's embedded traces" do
     explanation = build_model.to_h[:explanation]
 
     refute_empty explanation
@@ -112,8 +112,9 @@ class Forecasts::SelectedPeriodReadModelTest < ActiveSupport::TestCase
     assert line.key?(:explanation_key)
     assert_equal "trace", line[:source]
 
-    # Each explanation line maps a trace; counts match the traces for this period.
-    assert_equal @traces.length, explanation.length
+    # Each explanation line maps one embedded trace entry; counts match the
+    # period row's stored trace blob.
+    assert_equal @period.traces.length, explanation.length
 
     income_line = explanation.find { |l| l[:kind] == "income" }
     assert_equal "6000.00", income_line[:amount]
@@ -142,8 +143,8 @@ class Forecasts::SelectedPeriodReadModelTest < ActiveSupport::TestCase
   test "does not read the cache projection result JSON" do
     # The cache row carries only a result HASH, never the full result body — there
     # is no full-JSON column to parse. This guards the contract structurally: the
-    # read model is constructed from the period + trace rows the coordinator
-    # indexed, and the cache contributes only freshness metadata.
+    # read model is constructed from the period row the coordinator indexed
+    # (traces embedded on it), and the cache contributes only freshness metadata.
     refute @cache.respond_to?(:projection_result),
       "the cache must not expose a full projection-result JSON body for read models to parse"
     refute @cache.attributes.key?("projection_result"),
@@ -157,9 +158,9 @@ class Forecasts::SelectedPeriodReadModelTest < ActiveSupport::TestCase
   # --- no per-trace / per-issue queries ------------------------------------
 
   test "building the payload issues no per-trace or per-issue queries" do
-    # Period + traces are already loaded in setup; assembling the payload must
-    # not lazy-load any additional row (spec: "No read model may query ... per
-    # issue, per trace line").
+    # The period row (traces embedded) is already loaded in setup; assembling
+    # the payload must not lazy-load any additional row (spec: "No read model
+    # may query ... per issue, per trace line").
     model = build_model
     assert_queries_count(max: 0) do
       payload = model.to_h

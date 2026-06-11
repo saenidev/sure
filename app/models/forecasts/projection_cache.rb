@@ -20,11 +20,6 @@ module Forecasts
       foreign_key: :forecast_projection_cache_id,
       inverse_of: :forecast_projection_cache,
       dependent: :destroy
-    has_many :forecast_projection_traces,
-      class_name: "Forecasts::ProjectionTrace",
-      foreign_key: :forecast_projection_cache_id,
-      inverse_of: :forecast_projection_cache,
-      dependent: :destroy
 
     enum :status, {
       fresh: "fresh",

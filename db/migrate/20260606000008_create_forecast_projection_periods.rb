@@ -9,6 +9,12 @@ class CreateForecastProjectionPeriods < ActiveRecord::Migration[7.2]
       t.date :period_end_on, null: false
       t.string :granularity, null: false
       t.jsonb :metrics, null: false, default: {}
+      # Per-period explanation traces, embedded as a compact jsonb array instead
+      # of relational rows (9k trace inserts -> 361 period inserts on a 30-year
+      # save). Ordered: array position IS display order (the engine's ledger
+      # order). Zero-amount traces are filtered before storage. Entry key map is
+      # documented on Forecasts::ProjectionPeriod::TRACE_KEYS.
+      t.jsonb :traces, null: false, default: []
       t.jsonb :issue_codes, null: false, default: []
       t.jsonb :active_assumption_ids, null: false, default: []
       t.integer :plan_version, null: false
