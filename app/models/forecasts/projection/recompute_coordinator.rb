@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "bigdecimal"
+
 module Forecasts
   module Projection
     # Forecast V2 recompute coordinator. The single seam that turns an editable
@@ -191,13 +193,19 @@ module Forecasts
           )
         end
 
+        # Bulk-persists period rows in one INSERT. insert_all skips AR callbacks/
+        # validations: acceptable here because rows are derived verbatim from the
+        # engine result (already validated value objects), and required because a
+        # 30-year plan writes ~361 rows inside the save round-trip budget.
         def write_periods!(cache, packet, result)
           traces_by_period = result.traces.group_by(&:period_key)
+          now = Time.current
 
-          result.periods.each do |period|
+          rows = result.periods.map do |period|
             period_traces = traces_by_period.fetch(period[:key], [])
-            cache.forecast_projection_periods.build(
-              forecast_plan: plan,
+            {
+              forecast_projection_cache_id: cache.id,
+              forecast_plan_id: plan.id,
               scenario_stack_key: packet.scenario_stack[:key],
               period_key: period[:key],
               period_start_on: period[:starts_on],
@@ -207,14 +215,27 @@ module Forecasts
               issue_codes: issue_codes_for(result, period),
               active_assumption_ids: active_assumption_ids_for(period_traces),
               plan_version: packet.plan[:version],
-              engine_version: packet.engine_version
-            ).save!
+              engine_version: packet.engine_version,
+              created_at: now,
+              updated_at: now
+            }
           end
+
+          Forecasts::ProjectionPeriod.insert_all!(rows) if rows.any?
         end
 
+        # Bulk-persists traces, skipping zero-amount rows (spec §3.2.2: traces
+        # exist to explain flows; a zero flow explains nothing and at 30y scale
+        # zero rows dominate the table).
         def write_traces!(cache, result)
-          result.traces.each_with_index do |trace, index|
-            cache.forecast_projection_traces.build(
+          now = Time.current
+
+          rows = result.traces.each_with_index.filter_map do |trace, index|
+            amount = BigDecimal(trace.amount.to_s)
+            next if amount.zero?
+
+            {
+              forecast_projection_cache_id: cache.id,
               period_key: trace.period_key,
               granularity: "month",
               assumption_id: trace.assumption_id,
@@ -222,15 +243,19 @@ module Forecasts
               source_id: nil,
               metric_key: metric_key_for(trace),
               direction: trace.direction || DIRECTION_FOR_CATEGORY[trace.category],
-              amount: trace.amount,
+              amount: amount,
               currency: trace.currency,
               category: trace.category,
               display_order: index,
               trace_kind: trace.category,
               explanation_key: trace.explanation_key,
-              source_record_refs: source_record_refs_payload(trace)
-            ).save!
+              source_record_refs: source_record_refs_payload(trace),
+              created_at: now,
+              updated_at: now
+            }
           end
+
+          Forecasts::ProjectionTrace.insert_all!(rows) if rows.any?
         end
 
         # --- Stale / superseded marker --------------------------------------

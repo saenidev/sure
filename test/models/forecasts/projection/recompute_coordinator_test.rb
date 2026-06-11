@@ -227,7 +227,7 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
   # --- Transactional integrity ---------------------------------------------
 
   test "a failed persistence rolls back the whole write" do
-    Forecasts::ProjectionPeriod.any_instance.stubs(:save!).raises(ActiveRecord::RecordInvalid.new(Forecasts::ProjectionPeriod.new))
+    Forecasts::ProjectionPeriod.stubs(:insert_all!).raises(ActiveRecord::RecordInvalid.new(Forecasts::ProjectionPeriod.new))
 
     assert_no_difference [
       -> { Forecasts::ProjectionCache.count },
@@ -236,6 +236,32 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
     ] do
       assert_raises(StandardError) { recompute }
     end
+  end
+
+  # --- Bulk persistence + zero-amount trace policy ---------------------------
+
+  test "persists periods and traces with bulk inserts" do
+    inserts = 0
+    counter = ->(*, payload) { inserts += 1 if payload[:sql].to_s.start_with?("INSERT") }
+
+    cache = nil
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+      cache = recompute
+    end
+
+    assert cache.fresh?
+    assert_operator cache.forecast_projection_periods.count, :>, 0
+    # one INSERT for the cache + one bulk INSERT for periods + at most one for traces
+    assert_operator inserts, :<=, 3, "expected bulk inserts, saw #{inserts} INSERT statements"
+  end
+
+  test "does not persist zero-amount traces" do
+    # A zero salary makes the engine emit zero-amount flow rows for every month;
+    # the persistence policy must filter them all.
+    add_salary(name: "Zero salary", amount: 0)
+    cache = recompute
+
+    assert_equal 0, cache.forecast_projection_traces.where(amount: 0).count
   end
 
   # --- Sync budget decision ------------------------------------------------
