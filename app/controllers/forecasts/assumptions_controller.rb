@@ -44,7 +44,11 @@ module Forecasts
         )
       end
 
-      render turbo_stream: workspace_patch_streams(result)
+      # The drawer's auto-submit controller (and the undo toast) read the
+      # fresh optimistic-lock token from this header — update! already bumped
+      # lock_version in memory, so no reload is needed.
+      response.set_header("X-Forecast-Assumption-Lock", @assumption.lock_version.to_s)
+      render turbo_stream: workspace_patch_streams(result, snapshot: snapshot)
     end
 
     private
@@ -146,12 +150,15 @@ module Forecasts
       # (compute failed before any cache was ever persisted) there is nothing
       # to refresh — the save itself succeeded, so the projection-region and
       # issues streams are omitted and only the card + lock token go out.
-      def workspace_patch_streams(result)
+      def workspace_patch_streams(result, snapshot: nil)
         plan = @plan.reload
         assumption = @assumption.reload
 
         if result
-          island = Forecasts::WorkspaceIsland.from_result(plan: plan, result: result)
+          island = Forecasts::WorkspaceIsland.from_result(
+            plan: plan, result: result,
+            snapshot: snapshot || last_good_cache&.forecast_source_snapshot
+          )
           issues = result.issues.map(&:code).tally
         elsif (cache = last_good_cache)
           island = Forecasts::WorkspaceIsland.from_cache(plan: plan, cache: cache)

@@ -123,6 +123,33 @@ class Forecasts::AssumptionsControllerTest < ActionDispatch::IntegrationTest
       @assumption.reload.lock_version.to_s
   end
 
+  test "successful update exposes the fresh lock version in the assumption-lock header" do
+    patch forecasts_assumption_path(@assumption),
+      params: { assumption: salary_params(amount: "6000") },
+      as: :turbo_stream
+
+    assert_response :success
+    assert_equal @assumption.reload.lock_version.to_s,
+      response.headers["X-Forecast-Assumption-Lock"]
+  end
+
+  test "update streams an island whose packet-lite previews the edited card" do
+    patch forecasts_assumption_path(@assumption),
+      params: { assumption: salary_params(amount: "6000") },
+      as: :turbo_stream
+
+    assert_response :success
+    island_json = response.body[%r{<script type="application/json" id="forecast-island">(.*?)</script>}m, 1]
+    assert island_json.present?, "projection region stream must embed the data island"
+    island = JSON.parse(island_json)
+
+    entry = island.dig("packet", "assumptions")&.find { |a| a["id"] == @assumption.id }
+    assert entry, "packet-lite must carry the edited assumption"
+    assert_equal true, entry["pv"]
+    # PacketBuilder serializes money via BigDecimal#to_s("F") — 6000 -> "6000.0".
+    assert_equal "6000.0", entry.dig("params", "amount")
+  end
+
   test "a stale lock restreams the server state alongside the 409" do
     patch forecasts_assumption_path(@assumption),
       params: { assumption: salary_params(amount: "6000", expected_lock_version: "99") },
