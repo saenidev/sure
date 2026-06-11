@@ -67,4 +67,31 @@ class ForecastsWorkspaceTest < ActionDispatch::IntegrationTest
     end
     assert_response :success
   end
+
+  test "a drifted assumption renders the localized nudge with accept and dismiss controls" do
+    plan = Forecasts::WorkspaceLoader.new(family: @user.family, today: Date.current).load.plan
+    assumption = plan.forecast_assumptions.create!(
+      family: @user.family, kind: "salary", name: "Drifty Salary", status: :active,
+      amount: 1100, currency: "USD",
+      params: { "frequency" => "monthly", "growth_policy" => "flat" }
+    )
+    assumption.update_columns(drift: {
+      "status" => "drifted", "proposed_amount" => "1340.0", "current_amount" => "1100.0",
+      "relative" => "0.218", "basis" => "source_rederive",
+      "computed_at" => Time.current.iso8601
+    })
+
+    get forecast_path
+
+    assert_response :success
+    card = "##{ActionView::RecordIdentifier.dom_id(assumption)}"
+    assert_select "#{card} [role=status] p",
+      text: /“Drifty Salary”: \$1,100\.00 → \$1,340\.00\?/
+    assert_select "#{card} form[action=?]",
+      forecasts_assumption_resync_path(assumption), count: 1
+    assert_select "#{card} form[action=?] input[name=expected_lock_version]",
+      forecasts_assumption_resync_path(assumption)
+    assert_select "#{card} form[action=?]",
+      forecasts_assumption_drift_dismissal_path(assumption), count: 2
+  end
 end

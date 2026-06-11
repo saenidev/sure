@@ -69,4 +69,35 @@
       <% end %>
     </div>
   <% end %>
+  <% if assumption.drift_nudge? %>
+    <aside role="status"
+           class="border-t border-warning/20 bg-warning/10 rounded-b-lg px-3 py-2">
+      <p class="text-xs text-warning privacy-sensitive">
+        <%= t("forecasts.workspace.card.drift.nudge",
+              name: assumption.name,
+              current: Money.new(assumption.amount, assumption.currency).format,
+              proposed: Money.new(assumption.drift_proposed_amount, assumption.currency).format) %>
+      </p>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <%= button_to t("forecasts.workspace.card.drift.accept"),
+              forecasts_assumption_resync_path(assumption),
+              params: { expected_lock_version: assumption.lock_version },
+              class: "text-xs font-medium text-primary bg-container border border-primary rounded-md px-2 py-1 hover:bg-container-hover" %>
+        <%= button_to t("forecasts.workspace.card.drift.dismiss"),
+              forecasts_assumption_drift_dismissal_path(assumption),
+              class: "text-xs font-medium text-secondary px-2 py-1 hover:text-primary" %>
+        <%= button_to t("forecasts.workspace.card.drift.dismiss_permanently"),
+              forecasts_assumption_drift_dismissal_path(assumption),
+              params: { permanent: "1" },
+              class: "text-xs text-secondary px-2 py-1 hover:text-primary" %>
+      </div>
+    </aside>
+  <% elsif assumption.drift_source_gone? %>
+    <aside role="status" class="border-t border-primary px-3 py-2">
+      <p class="text-xs text-secondary"><%= t("forecasts.workspace.card.drift.source_gone") %></p>
+      <%= button_to t("forecasts.workspace.card.drift.source_gone_ok"),
+            forecasts_assumption_drift_dismissal_path(assumption),
+            class: "mt-1 text-xs font-medium text-secondary border border-primary rounded-md px-2 py-1 hover:bg-container-hover" %>
+    </aside>
+  <% end %>
 </div>

@@ -204,4 +204,28 @@ class Forecasts::Assumptions::ResyncsControllerTest < ActionDispatch::Integratio
     assert_response :not_found
     assert_equal 5000, @assumption.reload.amount
   end
+
+  test "accept clears a pre-seeded drift verdict and dismissed amount" do
+    @payroll.update!(amount: -6_000)
+    # Seeded the way the Task-5 scanner writes them: update_columns, so the
+    # seeding itself never bumps lock_version.
+    @assumption.update_columns(
+      drift: {
+        "status" => "drifted", "proposed_amount" => "6000.0",
+        "current_amount" => "5000.0", "relative" => "0.2",
+        "basis" => "source_rederive", "computed_at" => Time.current.iso8601
+      },
+      drift_dismissed_amount: 5_500
+    )
+
+    post forecasts_assumption_resync_path(@assumption),
+      params: { expected_lock_version: @assumption.reload.lock_version.to_s },
+      as: :turbo_stream
+
+    assert_response :success
+    @assumption.reload
+    assert_equal 6000, @assumption.amount
+    assert_nil @assumption.drift, "accepting must resolve the nudge"
+    assert_nil @assumption.drift_dismissed_amount, "accept resets the soft-dismiss sentinel"
+  end
 end

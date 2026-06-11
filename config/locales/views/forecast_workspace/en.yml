@@ -39,6 +39,13 @@ en:
         needs_review: "Review"
         derived: "From your data"
         edit: "Edit %{name}"
+        drift:
+          nudge: "“%{name}”: %{current} → %{proposed}?"
+          accept: "Accept"
+          dismiss: "Dismiss"
+          dismiss_permanently: "Don't ask again"
+          source_gone: "Source gone — link removed. This assumption is now manual."
+          source_gone_ok: "OK"
         resync:
           refresh: "Check %{name} against your data"
           refresh_label: "Refresh from data"

@@ -63,5 +63,36 @@ module Forecasts
     validates :kind, :name, presence: true
 
     scope :for_kind, ->(kind) { where(kind: kind) }
+
+    # --- Drift nudge readers (phase 5) -------------------------------------
+    # The drift scanner and the dismissal endpoint write `drift` /
+    # `drift_silenced_at` / `drift_dismissed_amount` via update_columns ON
+    # PURPOSE: these are UI bookkeeping, and a regular save would bump
+    # lock_version, 409-ing an open editor drawer mid-autosave. These readers
+    # therefore treat `drift` as a plain hash, never as model state.
+
+    def drift_nudge?
+      drift_status == "drifted"
+    end
+
+    def drift_source_gone?
+      drift_status == "source_gone"
+    end
+
+    # BigDecimal or nil. Amounts in the drift payload are decimal STRINGS
+    # ("1340.0") per the scanner contract.
+    def drift_proposed_amount
+      raw = (drift || {})["proposed_amount"]
+      return nil if raw.blank?
+
+      BigDecimal(raw.to_s)
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    private
+      def drift_status
+        (drift || {})["status"]
+      end
   end
 end

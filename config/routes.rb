@@ -297,6 +297,7 @@ Rails.application.routes.draw do
     resources :assumptions, only: %i[edit update] do
       scope module: :assumptions do
         resource :resync, only: %i[show create]
+        resource :drift_dismissal, only: :create
       end
     end
   end

@@ -62,7 +62,12 @@ module Forecasts
             source_record_id: proposal.source_record&.id,
             source_refs: proposal.source_refs,
             derived_at: Time.current,
-            review_state: :confirmed
+            review_state: :confirmed,
+            # Accepting IS resolving the nudge: drop the cached drift verdict
+            # and the soft-dismiss sentinel so the streamed card comes back
+            # clean and the next scan starts from the freshly accepted figure.
+            drift: nil,
+            drift_dismissed_amount: nil
           )
           @plan.increment!(:current_plan_version)
         end
