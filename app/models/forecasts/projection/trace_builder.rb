@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "digest"
-
 module Forecasts
   module Projection
     # Builds per-flow explanation traces from the simulated flow ledger. The UI
@@ -51,34 +49,34 @@ module Forecasts
       private
         def trace_for(flow)
           Forecasts::Projection::Trace.new(
-            id: trace_id(flow),
-            period_key: flow.period_key,
-            source_type: "assumption",
-            source_id: flow.assumption_id,
-            assumption_id: flow.assumption_id,
-            scenario_layer_id: flow.scenario_layer_id,
-            flow_id: flow.flow_key,
-            category: category_for(flow),
-            amount: flow.amount,
-            currency: flow.currency,
-            direction: flow.direction,
-            display_name: nil,
-            explanation_key: EXPLANATION_KEY_FOR_KIND[flow.source_kind],
-            source_record_refs: source_record_refs(flow)
+            {
+              id: trace_id(flow),
+              period_key: flow.period_key,
+              source_type: "assumption",
+              source_id: flow.assumption_id,
+              assumption_id: flow.assumption_id,
+              scenario_layer_id: flow.scenario_layer_id,
+              flow_id: flow.flow_key,
+              category: category_for(flow),
+              amount: flow.amount,
+              currency: flow.currency,
+              direction: flow.direction,
+              display_name: nil,
+              explanation_key: EXPLANATION_KEY_FOR_KIND[flow.source_kind],
+              source_record_refs: source_record_refs(flow)
+            },
+            presymbolized: true
           )
         end
 
         # Stable trace key: plan version, assumption id, scenario layer, period,
-        # and flow key. Hashed so the id stays a short, stable, opaque token.
+        # and flow key — all of which the flow key already embeds (the period is
+        # determined by the occurrence date inside it), so the trace id derives
+        # directly from it. One trace per flow keeps the mapping injective, and
+        # skipping a per-trace SHA256 across ~9k traces on a 30-year plan was a
+        # measurable slice of the engine perf budget.
         def trace_id(flow)
-          parts = [
-            plan_version,
-            flow.assumption_id,
-            flow.scenario_layer_id || "baseline",
-            flow.period_key,
-            flow.flow_key
-          ]
-          "trace-#{Digest::SHA256.hexdigest(parts.join('|'))[0, 16]}"
+          "trace-#{flow.flow_key}"
         end
 
         def category_for(flow)
@@ -90,13 +88,22 @@ module Forecasts
         # Source record references behind the value, surfaced as trace metadata so
         # the UI can link to the records without re-querying. For this slice the
         # provenance is the assumption that produced the flow plus any category
-        # rollup the expander recorded.
+        # rollup the expander recorded. Memoized per (assumption, rollup) — the
+        # refs are identical for every occurrence of one assumption, so a
+        # 361-occurrence expansion shares one frozen array instead of building
+        # and freezing 361.
         def source_record_refs(flow)
-          refs = [ { type: "assumption", id: flow.assumption_id } ]
-          flow.category_ids.each do |category_id|
-            refs << { type: "category", id: category_id }
+          # Keyed by assumption id alone: every flow of one assumption carries
+          # the same category rollup (expanders build one shared metadata hash
+          # per assumption), so the rollup cannot vary within a key.
+          @refs_cache ||= {}
+          @refs_cache[flow.assumption_id] ||= begin
+            refs = [ { type: "assumption", id: flow.assumption_id }.freeze ]
+            flow.category_ids.each do |category_id|
+              refs << { type: "category", id: category_id }.freeze
+            end
+            refs.freeze
           end
-          refs
         end
     end
   end

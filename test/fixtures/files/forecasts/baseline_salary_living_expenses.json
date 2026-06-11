@@ -31,8 +31,13 @@
           "gross_or_net": "net",
           "currency": "USD",
           "frequency": "monthly",
-          "growth_policy": { "type": "none" },
-          "start_anchor": { "type": "date", "on": "2026-01-01" },
+          "growth_policy": {
+            "type": "none"
+          },
+          "start_anchor": {
+            "type": "date",
+            "on": "2026-01-01"
+          },
           "end_anchor": null
         }
       },
@@ -45,10 +50,20 @@
           "amount": "4000.00",
           "currency": "USD",
           "frequency": "monthly",
-          "category_ids": ["cat-groceries", "cat-rent"],
-          "inflation_policy": { "type": "none" },
-          "actualization_policy": { "type": "none" },
-          "start_anchor": { "type": "date", "on": "2026-01-01" },
+          "category_ids": [
+            "cat-groceries",
+            "cat-rent"
+          ],
+          "inflation_policy": {
+            "type": "none"
+          },
+          "actualization_policy": {
+            "type": "none"
+          },
+          "start_anchor": {
+            "type": "date",
+            "on": "2026-01-01"
+          },
           "end_anchor": null
         }
       }
@@ -113,7 +128,7 @@
     },
     "representative_traces": [
       {
-        "id": "trace-bcdb14df1d28a4e0",
+        "id": "trace-salary-7.baseline.assumption-salary-1.2026-01-01.0",
         "category": "income",
         "amount": "6000.00",
         "currency": "USD",
@@ -122,7 +137,7 @@
         "assumption_id": "assumption-salary-1"
       },
       {
-        "id": "trace-47f3e068b1ae93c1",
+        "id": "trace-living_expense-7.baseline.assumption-expense-1.2026-01-01.0",
         "category": "spending",
         "amount": "4000.00",
         "currency": "USD",

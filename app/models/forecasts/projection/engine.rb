@@ -60,19 +60,22 @@ module Forecasts
         status = derive_status(outcome, issues)
 
         Forecasts::Projection::Result.new(
-          schema_version: packet.schema_version,
-          engine_version: packet.engine_version,
-          input_packet_hash: packet.input_packet_hash,
-          source_snapshot_hash: packet.source_snapshot_hash,
-          scenario_stack_hash: packet.scenario_stack_hash,
-          plan_version: plan_version,
-          status: status,
-          periods: periods,
-          series: build_series(periods),
-          traces: traces,
-          issues: issues,
-          goals: goals,
-          summary: build_summary(outcome, traces, issues, status)
+          {
+            schema_version: packet.schema_version,
+            engine_version: packet.engine_version,
+            input_packet_hash: packet.input_packet_hash,
+            source_snapshot_hash: packet.source_snapshot_hash,
+            scenario_stack_hash: packet.scenario_stack_hash,
+            plan_version: plan_version,
+            status: status,
+            periods: periods,
+            series: build_series(periods),
+            traces: traces,
+            issues: issues,
+            goals: goals,
+            summary: build_summary(outcome, traces, issues, status)
+          },
+          presymbolized: true
         )
       end
 

@@ -32,7 +32,9 @@ module Forecasts
       SCHEMA_VERSION = 1
       # Bumped whenever the engine's SEMANTICS change. The engine echoes this back
       # in its result envelope; the recompute coordinator keys caches on it.
-      ENGINE_VERSION = "forecast_v2.1"
+      # v2.2: trace/flow ids moved from SHA256 digests to delimited composite
+      # keys (same stability + uniqueness contract); metric math unchanged.
+      ENGINE_VERSION = "forecast_v2.2"
 
       # Baseline stack: no scenario layers applied. Later slices add real stacks.
       BASELINE_SCENARIO_KEY = "baseline"

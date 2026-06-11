@@ -24,11 +24,17 @@ module Forecasts
         CATEGORIES = %w[income spending].freeze
         DIRECTIONS = %w[inflow outflow].freeze
 
+        # Intra-date ordering rank from spec "Flow Ordering" (income applies
+        # before spending), encoded as single sortable characters for the
+        # precomputed ledger sort key below. Unknown categories rank last.
+        SORT_RANK = { "income" => "1", "spending" => "4" }.freeze
+        DEFAULT_SORT_RANK = "9"
+
         InvalidFlowError = Class.new(ArgumentError)
 
         attr_reader :date, :amount, :currency, :category, :direction,
           :source_kind, :assumption_id, :scenario_layer_id, :flow_key,
-          :sequence, :metadata
+          :sequence, :metadata, :date_iso, :ledger_sort_key
 
         # rubocop:disable Metrics/ParameterLists
         def initialize(date:, amount:, currency:, category:, direction:,
@@ -51,20 +57,41 @@ module Forecasts
           @scenario_layer_id = scenario_layer_id
           @flow_key = flow_key
           @sequence = sequence
-          @metadata = Forecasts::Projection.deep_freeze(
-            Forecasts::Projection.deep_symbolize(metadata || {})
-          )
+          # A frozen hash is treated as already canonical (deeply symbolized +
+          # frozen) — expanders pass one shared frozen metadata hash per
+          # assumption, and re-walking it for each of ~9k flows on a 30-year
+          # plan was a measurable slice of the engine perf budget. Unfrozen
+          # input (tests, external callers) still takes the normalizing path.
+          @metadata = if metadata.is_a?(Hash) && metadata.frozen?
+            metadata
+          else
+            Forecasts::Projection.deep_freeze(
+              Forecasts::Projection.deep_symbolize(metadata || {})
+            )
+          end
+
+          # Derived values computed once here (the flow is immutable) — period
+          # simulation and ledger ordering read them in hot loops, and
+          # re-deriving per call dominated the engine perf budget:
+          #   date_iso        ISO-8601 date string (also the period_key source)
+          #   period_key      YYYY-MM month the flow falls into (a flow dated on
+          #                   a period boundary belongs to the period containing
+          #                   that date)
+          #   ledger_sort_key one string ordering by (date, spec category rank,
+          #                   sequence, flow key) — ISO dates and zero-padded
+          #                   sequences compare lexically exactly like the tuple,
+          #                   without per-comparison Date coercion
+          @date_iso = @date.iso8601
+          @period_key = @date_iso[0, 7]
+          @ledger_sort_key =
+            "#{@date_iso}|#{SORT_RANK.fetch(@category, DEFAULT_SORT_RANK)}|#{@sequence.to_s.rjust(8, '0')}|#{@flow_key}"
 
           validate!
           freeze
         end
         # rubocop:enable Metrics/ParameterLists
 
-        # Period key (YYYY-MM) the flow falls into. A flow dated on a period
-        # boundary belongs to the period containing that date.
-        def period_key
-          format("%04d-%02d", date.year, date.month)
-        end
+        attr_reader :period_key
 
         # --- Convenience readers over kind-specific trace metadata ----------
         # These surface the metadata fields read models and traces care about
@@ -123,10 +150,20 @@ module Forecasts
           end
       end
 
+      EMPTY_PERIOD = [].freeze
+      private_constant :EMPTY_PERIOD
+
       attr_reader :flows
 
       def initialize(flows = [])
         @flows = order(Array(flows)).freeze
+        # Period index built once at construction: `for_period` is called per
+        # simulated period (361 times on a 30-year plan) and a linear scan per
+        # call made the engine quadratic in periods x flows. Groups preserve the
+        # deterministic ledger order.
+        @flows_by_period = @flows.group_by(&:period_key)
+        @flows_by_period.each_value(&:freeze)
+        @flows_by_period.freeze
         freeze
       end
 
@@ -151,7 +188,7 @@ module Forecasts
       include Enumerable
 
       def for_period(period_key)
-        flows.select { |flow| flow.period_key == period_key }
+        @flows_by_period.fetch(period_key, EMPTY_PERIOD)
       end
 
       def to_a
@@ -162,26 +199,13 @@ module Forecasts
         # Deterministic ordering: by date, then by the spec's intra-period flow
         # order (income before spending), then by an explicit sequence and the
         # stable flow key as a final tiebreaker. This makes period simulation
-        # reproducible regardless of expander invocation order.
+        # reproducible regardless of expander invocation order. Each flow
+        # precomputes this ordering as one string at construction
+        # (Flow#ledger_sort_key): tuple keys with Date elements ran Date#<=>
+        # coercion ~120k times on a 30-year x 25-assumption ledger and
+        # dominated the engine perf budget.
         def order(input)
-          input.sort_by do |flow|
-            [
-              flow.date,
-              category_rank(flow.category),
-              flow.sequence,
-              flow.flow_key.to_s
-            ]
-          end
-        end
-
-        # Intra-period ordering from spec "Flow Ordering": income applies before
-        # spending. Lower rank applies first.
-        def category_rank(category)
-          case category
-          when "income" then 1
-          when "spending" then 4
-          else 99
-          end
+          input.sort_by(&:ledger_sort_key)
         end
     end
   end

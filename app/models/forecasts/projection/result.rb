@@ -18,8 +18,13 @@ module Forecasts
         :source_snapshot_hash, :scenario_stack_hash, :plan_version, :status,
         :periods, :series, :traces, :issues, :goals, :summary
 
-      def initialize(attributes)
-        attrs = Forecasts::Projection.deep_symbolize(attributes)
+      # `presymbolized: true` is an internal fast path for the engine, which
+      # builds the envelope from already-symbolized structures — re-walking
+      # 361 period rows plus ~9k traces was a measurable slice of the engine
+      # perf budget. External callers (raw hashes from JSON, tests) use the
+      # default normalizing path.
+      def initialize(attributes, presymbolized: false)
+        attrs = presymbolized ? attributes : Forecasts::Projection.deep_symbolize(attributes)
 
         @schema_version = attrs[:schema_version]
         @engine_version = attrs[:engine_version]
@@ -39,8 +44,11 @@ module Forecasts
         freeze
       end
 
-      def to_h
-        {
+      # `include_traces: false` omits the traces array entirely (without
+      # serializing ~9k trace hashes first) for consumers that hash or inspect
+      # the envelope minus its largest, fully-derived section.
+      def to_h(include_traces: true)
+        envelope = {
           schema_version: schema_version,
           engine_version: engine_version,
           input_packet_hash: input_packet_hash,
@@ -50,11 +58,12 @@ module Forecasts
           status: status,
           periods: periods,
           series: series,
-          traces: traces.map(&:to_h),
           issues: issues.map(&:to_h),
           goals: goals,
           summary: summary
         }
+        envelope[:traces] = traces.map(&:to_h) if include_traces
+        envelope
       end
 
       private

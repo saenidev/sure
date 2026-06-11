@@ -224,39 +224,80 @@ module Forecasts
           Forecasts::ProjectionPeriod.insert_all!(rows) if rows.any?
         end
 
+        # Columns streamed by write_traces!. `id` is omitted on purpose so the
+        # table's uuid default applies, exactly as it does under insert_all!.
+        TRACE_COPY_COLUMNS = %w[
+          forecast_projection_cache_id period_key granularity assumption_id
+          source_type source_id metric_key direction amount currency category
+          display_order trace_kind explanation_key source_record_refs
+          created_at updated_at
+        ].freeze
+
         # Bulk-persists traces, skipping zero-amount rows (spec §3.2.2: traces
         # exist to explain flows; a zero flow explains nothing and at 30y scale
         # zero rows dominate the table).
+        #
+        # Streams via COPY instead of insert_all!: quoting ~9k rows x 17 columns
+        # into one INSERT's VALUES list cost multiple seconds of the synchronous
+        # save budget (Arel visits every literal), while COPY text format is a
+        # straight escaped-string stream. Runs on the transaction's own
+        # connection, so rollback semantics are identical.
         def write_traces!(cache, result)
-          now = Time.current
+          now = Time.current.utc.iso8601(6)
+          decimals = {}
 
-          rows = result.traces.each_with_index.filter_map do |trace, index|
-            amount = BigDecimal(trace.amount.to_s)
+          lines = result.traces.each_with_index.filter_map do |trace, index|
+            amount = decimals[trace.amount] ||= BigDecimal(trace.amount.to_s)
             next if amount.zero?
 
-            {
-              forecast_projection_cache_id: cache.id,
-              period_key: trace.period_key,
-              granularity: "month",
-              assumption_id: trace.assumption_id,
-              source_type: trace.source_type,
-              source_id: nil,
-              metric_key: metric_key_for(trace),
-              direction: trace.direction || DIRECTION_FOR_CATEGORY[trace.category],
-              amount: amount,
-              currency: trace.currency,
-              category: trace.category,
-              display_order: index,
-              trace_kind: trace.category,
-              explanation_key: trace.explanation_key,
-              source_record_refs: source_record_refs_payload(trace),
-              created_at: now,
-              updated_at: now
-            }
+            [
+              cache.id,
+              trace.period_key,
+              "month",
+              trace.assumption_id,
+              trace.source_type,
+              nil,
+              metric_key_for(trace),
+              trace.direction || DIRECTION_FOR_CATEGORY[trace.category],
+              trace.amount,
+              trace.currency,
+              trace.category,
+              index,
+              trace.category,
+              trace.explanation_key,
+              JSON.generate(source_record_refs_payload(trace)),
+              now,
+              now
+            ].map! { |value| copy_field(value) }.join("\t") << "\n"
           end
+          return if lines.empty?
 
-          Forecasts::ProjectionTrace.insert_all!(rows) if rows.any?
+          connection = Forecasts::ProjectionTrace.connection
+          sql = "COPY #{Forecasts::ProjectionTrace.table_name} (#{TRACE_COPY_COLUMNS.join(', ')}) FROM STDIN"
+          connection.raw_connection.copy_data(sql) do
+            lines.each { |line| connection.raw_connection.put_copy_data(line) }
+          end
         end
+
+        # Escapes one value for COPY text format: NULL marker for nil, and the
+        # four characters with special meaning (backslash, tab, newline,
+        # carriage return) for everything else. Escaping is gated on a match
+        # check — almost every field here (uuids, period keys, amounts,
+        # category words) never needs it, and an unconditional gsub allocated
+        # ~150k fresh strings per 30-year save.
+        def copy_field(value)
+          return '\N' if value.nil?
+
+          string = value.to_s
+          return string unless string.match?(COPY_ESCAPES_PATTERN)
+
+          string.gsub(COPY_ESCAPES_PATTERN, COPY_ESCAPES)
+        end
+
+        COPY_ESCAPES = {
+          "\\" => "\\\\", "\t" => "\\t", "\n" => "\\n", "\r" => "\\r"
+        }.freeze
+        COPY_ESCAPES_PATTERN = Regexp.union(COPY_ESCAPES.keys).freeze
 
         # --- Stale / superseded marker --------------------------------------
 
@@ -304,8 +345,18 @@ module Forecasts
 
         # Stable digest of the result envelope, stored on the cache so identical
         # recomputes coalesce and changed regions are detectable.
+        #
+        # Traces are deliberately excluded from the hashed payload: they are a
+        # pure function of the packet and engine version — both already inside
+        # the cache key — so two results that agree on everything else cannot
+        # differ in traces, and the periods' trace_ids keep per-period trace
+        # coverage inside the hash. Canonicalizing ~9k trace hashes doubled the
+        # synchronous save budget. Memoized: the publish path needs the digest
+        # twice (coalescing check + cache row).
         def result_hash(result)
-          Forecasts::Projection.stable_hash(result.to_h)
+          @result_hashes ||= {}
+          @result_hashes[result.object_id] ||=
+            Forecasts::Projection.stable_hash(result.to_h(include_traces: false))
         end
 
         def metric_key_for(trace)

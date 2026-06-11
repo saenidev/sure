@@ -2,7 +2,6 @@
 
 require "bigdecimal"
 require "bigdecimal/util"
-require "digest"
 
 module Forecasts
   module Projection
@@ -145,10 +144,15 @@ module Forecasts
           # Compounding annual multiplier for the number of completed years
           # between the start anchor and the occurrence date. Anniversaries are
           # measured against the window start so a mid-year occurrence still
-          # belongs to its growth year.
+          # belongs to its growth year. Memoized per (rate, years): a 30-year
+          # monthly assumption has 361 occurrences but only ~31 distinct factor
+          # years, and BigDecimal exponentiation per occurrence dominated the
+          # engine perf budget.
           def annual_compounding_factor(rate, start_on, occurrence_on)
             years = elapsed_years(start_on, occurrence_on)
-            (BigDecimal("1") + to_decimal(rate)) ** years
+            @compounding_factors ||= {}
+            @compounding_factors[[ rate, years ]] ||=
+              (BigDecimal("1") + to_decimal(rate)) ** years
           end
 
           # Whole years elapsed since the start anchor's anniversary.
@@ -175,9 +179,14 @@ module Forecasts
           end
 
           # Round half-up to MONEY_PRECISION and serialize as a fixed-precision
-          # decimal string (never a float).
+          # decimal string (never a float). Memoized per distinct value: flat
+          # assumptions repeat the same amount every occurrence and grown ones
+          # have one value per year, so a 361-occurrence expansion serializes a
+          # handful of distinct decimals, not 361.
           def format_money(decimal)
-            decimal.round(MONEY_PRECISION).to_s("F").then { |s| pad_decimal(s) }
+            @money_strings ||= {}
+            @money_strings[decimal] ||=
+              decimal.round(MONEY_PRECISION).to_s("F").then { |s| pad_decimal(s) }
           end
 
           def pad_decimal(string)
@@ -191,16 +200,14 @@ module Forecasts
           # Stable flow key for trace links: derived from plan version,
           # assumption id, scenario layer, occurrence date, and an intra-day
           # sequence so the same plan+assumption always yields the same key.
+          # A plain delimited composite (not a digest): the trailing parts have
+          # rigid formats (ISO date, integer), so distinct inputs always yield
+          # distinct keys, and skipping SHA256 here matters — two digests per
+          # flow across a 30-year x 25-assumption expansion (~18k digests)
+          # consumed a meaningful slice of the <100ms engine budget on their own.
           def flow_key(kind:, date:, sequence:)
-            parts = [
-              kind,
-              context[:plan_version],
-              context[:assumption_id],
-              context[:scenario_layer_id] || "baseline",
-              date.iso8601,
-              sequence
-            ]
-            "#{kind}-#{Digest::SHA256.hexdigest(parts.join('|'))[0, 16]}"
+            @flow_key_prefix ||= "#{context[:plan_version]}.#{context[:scenario_layer_id] || 'baseline'}.#{context[:assumption_id]}"
+            "#{kind}-#{@flow_key_prefix}.#{date.iso8601}.#{sequence}"
           end
 
           def build_flow(category:, direction:, source_kind:, date:, amount:, currency:, sequence:, metadata:)

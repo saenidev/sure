@@ -200,10 +200,19 @@ module Forecasts
 
         # Flows whose date falls in the period, sorted by the spec's intra-period
         # flow order then by the ledger's stable ordering (date/sequence/key).
+        # The ledger already orders flows by (date, category, sequence, key), so
+        # a STABLE partition by flow rank yields exactly the tuple order
+        # (rank, date, sequence, key) without re-comparing dates — per-period
+        # tuple sorts ran ~120k Date comparisons across a 30-year horizon.
         def ordered_flows_for(period_key)
-          ledger.for_period(period_key).sort_by do |flow|
-            [ flow_rank(flow.category), flow.date, flow.sequence, flow.flow_key.to_s ]
-          end
+          flows = ledger.for_period(period_key)
+          return flows if flows.length < 2
+
+          buckets = {}
+          flows.each { |flow| (buckets[flow_rank(flow.category)] ||= []) << flow }
+          return flows if buckets.length == 1
+
+          buckets.keys.sort!.flat_map { |rank| buckets[rank] }
         end
 
         def flow_rank(category)
@@ -271,7 +280,11 @@ module Forecasts
         # FX table; a missing rate records a `missing_fx_rate` issue and returns
         # nil so the value is excluded/held per policy (no exception).
         def convert(flow, window)
-          amount = BigDecimal(flow.amount)
+          # Amount strings repeat heavily (one distinct value per assumption
+          # growth-year), so parse each distinct string once instead of running
+          # ~9k BigDecimal parses on a 30-year plan.
+          @decimal_cache ||= {}
+          amount = @decimal_cache[flow.amount] ||= BigDecimal(flow.amount)
           return amount if flow.currency == reporting_currency
 
           rate = fx_rate(flow.currency, reporting_currency, window)

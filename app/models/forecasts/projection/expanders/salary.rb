@@ -30,23 +30,19 @@ module Forecasts
           currency = params[:currency] || context[:reporting_currency]
 
           each_occurrence(params[:frequency], start_on, end_on).map do |date, index|
-            gross, net = amounts_for(base_amount, start_on, date)
+            years = elapsed_years(start_on, date)
+            gross, net = amounts_for(base_amount, start_on, date, years)
+            metadata = metadata_for(gross, net, years)
 
             build_flow(
               category: "income",
               direction: "inflow",
               source_kind: SOURCE_KIND,
               date: date,
-              amount: format_money(net),
+              amount: metadata[:net_amount],
               currency: currency,
               sequence: index,
-              metadata: {
-                person_key: params[:person_key],
-                gross_or_net: gross_or_net,
-                gross_amount: format_money(gross),
-                net_amount: format_money(net),
-                frequency: params[:frequency].to_s
-              }
+              metadata: metadata
             )
           end
         end
@@ -56,17 +52,37 @@ module Forecasts
             (params[:gross_or_net] || "net").to_s
           end
 
+          # Metadata varies only with the growth year (a single hash when
+          # flat), so a 361-occurrence expansion shares a handful of
+          # pre-symbolized frozen hashes instead of building and deep-freezing
+          # one per flow. Frozen here so Flow#initialize takes its
+          # canonical-metadata fast path.
+          def metadata_for(gross, net, years)
+            @metadata_cache ||= {}
+            @metadata_cache[years] ||= {
+              person_key: params[:person_key],
+              gross_or_net: gross_or_net,
+              gross_amount: format_money(gross),
+              net_amount: format_money(net),
+              frequency: params[:frequency].to_s
+            }.freeze
+          end
+
           # Returns [gross, net] decimals for the occurrence. Growth compounds
           # annually against the window start. When modeled as gross, net is
           # derived via `net_ratio` (defaulting to 1.0 when absent so we never
-          # silently fabricate a take-home cut).
-          def amounts_for(base_amount, start_on, occurrence_on)
-            grown = base_amount * growth_factor(start_on, occurrence_on)
+          # silently fabricate a take-home cut). Memoized per growth year — the
+          # decimals are identical for every occurrence inside one year.
+          def amounts_for(base_amount, start_on, occurrence_on, years)
+            @amounts_cache ||= {}
+            @amounts_cache[years] ||= begin
+              grown = base_amount * growth_factor(start_on, occurrence_on)
 
-            if gross_or_net == "gross"
-              [ grown, grown * net_ratio ]
-            else
-              [ grown, grown ]
+              if gross_or_net == "gross"
+                [ grown, grown * net_ratio ]
+              else
+                [ grown, grown ]
+              end
             end
           end
 
@@ -78,13 +94,22 @@ module Forecasts
           end
 
           def growth_factor(start_on, occurrence_on)
-            policy = symbolize(params[:growth_policy] || {})
-
-            case policy[:type].to_s
+            case growth_policy[:type].to_s
             when "annual_percentage"
-              annual_compounding_factor(policy[:rate], start_on, occurrence_on)
+              annual_compounding_factor(growth_policy[:rate], start_on, occurrence_on)
             else
               BigDecimal("1")
+            end
+          end
+
+          # Params are deep-symbolized once in Base#initialize; coerce
+          # defensively (mirroring LivingExpense#policy_hash) so a non-hash
+          # value can never raise a TypeError that escapes the engine's
+          # expander rescue.
+          def growth_policy
+            @growth_policy ||= begin
+              policy = params[:growth_policy] || {}
+              policy.is_a?(Hash) ? policy : {}
             end
           end
       end

@@ -31,8 +31,13 @@ module Forecasts
         :scenario_layer_id, :flow_id, :category, :amount, :currency,
         :direction, :display_name, :explanation_key, :source_record_refs
 
-      def initialize(attributes)
-        attrs = Forecasts::Projection.deep_symbolize(attributes)
+      # `presymbolized: true` is an internal fast path for builders that
+      # certify the hash (and any nested refs) is already deeply symbolized —
+      # re-walking every trace's attributes across ~9k traces on a 30-year plan
+      # was a measurable slice of the engine perf budget. External callers
+      # passing raw (possibly string-keyed) hashes use the default path.
+      def initialize(attributes, presymbolized: false)
+        attrs = presymbolized ? attributes : Forecasts::Projection.deep_symbolize(attributes)
 
         @id = attrs[:id]
         @period_key = attrs[:period_key]
@@ -103,6 +108,10 @@ module Forecasts
         end
 
         def freeze_refs(refs)
+          # An already-frozen array (the builder shares one per assumption) is
+          # used as-is instead of being re-walked and re-allocated per trace.
+          return refs if refs.is_a?(Array) && refs.frozen?
+
           Array(refs).map { |ref| Forecasts::Projection.deep_freeze(ref) }.freeze
         end
 
