@@ -16,13 +16,21 @@ module Forecasts
 
       attr_reader :schema_version, :engine_version, :input_packet_hash,
         :source_snapshot_hash, :scenario_stack_hash, :plan_version, :status,
-        :periods, :series, :traces, :issues, :goals, :summary
+        :periods, :series, :issues, :goals, :summary
 
       # `presymbolized: true` is an internal fast path for the engine, which
       # builds the envelope from already-symbolized structures — re-walking
       # 361 period rows plus ~9k traces was a measurable slice of the engine
       # perf budget. External callers (raw hashes from JSON, tests) use the
       # default normalizing path.
+      #
+      # Traces arrive through one of two keys:
+      # - `traces:` (legacy/external) — eagerly coerced into Trace value
+      #   objects, exactly as before.
+      # - `trace_rows:` (engine hot path) — compact TraceRow structs stored
+      #   as-is; Trace value objects are only materialized if a consumer asks
+      #   for #traces. Building ~9k validated frozen Trace VOs eagerly was the
+      #   single largest slice of the <100ms engine budget.
       def initialize(attributes, presymbolized: false)
         attrs = presymbolized ? attributes : Forecasts::Projection.deep_symbolize(attributes)
 
@@ -37,11 +45,31 @@ module Forecasts
         @series = Forecasts::Projection.deep_freeze(Array(attrs[:series]))
         @goals = Forecasts::Projection.deep_freeze(Array(attrs[:goals]))
         @summary = Forecasts::Projection.deep_freeze(attrs[:summary] || {})
-        @traces = coerce_traces(attrs[:traces]).freeze
+        @trace_rows = attrs[:trace_rows]&.freeze
+        @traces = @trace_rows ? nil : coerce_traces(attrs[:traces]).freeze
         @issues = coerce_issues(attrs[:issues]).freeze
+        # Mutable cache container created BEFORE freeze: Result is (shallowly)
+        # frozen, so lazy memoization mutates this hash's CONTENTS, never an
+        # ivar, which is legal under the shallow freeze.
+        @lazy = {}
 
         validate!
         freeze
+      end
+
+      # The compact engine trace rows when this result was built via
+      # `trace_rows:`, else nil. Persistence consumes these directly — every
+      # field reader is identical to Trace's.
+      def trace_rows
+        @trace_rows
+      end
+
+      # Trace value objects. Eager (constructor-coerced) on the legacy `traces:`
+      # path; lazily materialized from the compact rows — once, memoized — on
+      # the engine path, so callers that never read traces never pay for ~9k
+      # value objects.
+      def traces
+        @traces || @lazy[:traces] ||= materialize_traces
       end
 
       # `include_traces: false` omits the traces array entirely (without
@@ -62,11 +90,21 @@ module Forecasts
           goals: goals,
           summary: summary
         }
-        envelope[:traces] = traces.map(&:to_h) if include_traces
+        if include_traces
+          # TraceRow#to_h matches Trace#to_h byte-for-byte (same members, same
+          # order), so the rows serialize directly without materializing VOs.
+          envelope[:traces] = (@trace_rows || traces).map(&:to_h)
+        end
         envelope
       end
 
       private
+        def materialize_traces
+          @trace_rows.map do |row|
+            Forecasts::Projection::Trace.new(row.to_h, presymbolized: true)
+          end.freeze
+        end
+
         def coerce_traces(raw)
           Array(raw).map do |trace|
             trace.is_a?(Forecasts::Projection::Trace) ? trace : Forecasts::Projection::Trace.new(trace)

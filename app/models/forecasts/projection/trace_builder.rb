@@ -41,31 +41,38 @@ module Forecasts
       end
 
       # Returns an ordered array of Forecasts::Projection::Trace, one per ledger
-      # flow, in the ledger's deterministic order.
+      # flow, in the ledger's deterministic order. Materialized from the same
+      # rows #build_rows produces, so the two paths cannot drift apart.
       def build
-        ledger.flows.map { |flow| trace_for(flow) }
+        build_rows.map do |row|
+          Forecasts::Projection::Trace.new(row.to_h, presymbolized: true)
+        end
+      end
+
+      # Returns an ordered array of Forecasts::Projection::TraceRow — the
+      # engine's compact hot-path representation (see TraceRow for why). Field
+      # values are identical to #build's Trace VOs.
+      def build_rows
+        ledger.flows.map { |flow| trace_row_for(flow) }
       end
 
       private
-        def trace_for(flow)
-          Forecasts::Projection::Trace.new(
-            {
-              id: trace_id(flow),
-              period_key: flow.period_key,
-              source_type: "assumption",
-              source_id: flow.assumption_id,
-              assumption_id: flow.assumption_id,
-              scenario_layer_id: flow.scenario_layer_id,
-              flow_id: flow.flow_key,
-              category: category_for(flow),
-              amount: flow.amount,
-              currency: flow.currency,
-              direction: flow.direction,
-              display_name: nil,
-              explanation_key: EXPLANATION_KEY_FOR_KIND[flow.source_kind],
-              source_record_refs: source_record_refs(flow)
-            },
-            presymbolized: true
+        def trace_row_for(flow)
+          Forecasts::Projection::TraceRow.new(
+            trace_id(flow),
+            flow.period_key,
+            "assumption",
+            flow.assumption_id,
+            flow.assumption_id,
+            flow.scenario_layer_id,
+            flow.flow_key,
+            category_for(flow),
+            flow.amount,
+            flow.currency,
+            flow.direction,
+            nil,
+            EXPLANATION_KEY_FOR_KIND[flow.source_kind],
+            source_record_refs(flow)
           )
         end
 
@@ -75,8 +82,10 @@ module Forecasts
         # directly from it. One trace per flow keeps the mapping injective, and
         # skipping a per-trace SHA256 across ~9k traces on a 30-year plan was a
         # measurable slice of the engine perf budget.
+        # Frozen at creation: the ids are shared into the periods' `trace_ids`
+        # arrays, and pre-frozen leaves let deep_freeze skip re-walking them.
         def trace_id(flow)
-          "trace-#{flow.flow_key}"
+          "trace-#{flow.flow_key}".freeze
         end
 
         def category_for(flow)

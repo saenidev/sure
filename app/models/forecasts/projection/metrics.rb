@@ -57,11 +57,24 @@ module Forecasts
       private
         # Round half-up to MONEY_PRECISION and serialize as a fixed-precision
         # decimal string, never a float.
+        #
+        # After round(MONEY_PRECISION), to_s("F") prints "<whole>.<digits>"
+        # with 1..MONEY_PRECISION fraction digits, so fixing the precision is
+        # at most an appended zero — the previous split/ljust/slice pipeline
+        # allocated ~6 objects per value, and a 30-year envelope serializes
+        # ~2.2k metric values.
         def format_money(decimal)
-          rounded = decimal.round(MONEY_PRECISION, BigDecimal::ROUND_HALF_UP)
-          whole, frac = rounded.to_s("F").split(".")
-          frac = (frac || "").ljust(MONEY_PRECISION, "0")[0, MONEY_PRECISION]
-          "#{whole}.#{frac}"
+          string = decimal.round(MONEY_PRECISION, BigDecimal::ROUND_HALF_UP).to_s("F")
+          fraction_digits = string.length - string.index(".") - 1
+
+          if fraction_digits == MONEY_PRECISION
+            string
+          elsif fraction_digits < MONEY_PRECISION
+            (MONEY_PRECISION - fraction_digits).times { string << "0" }
+            string
+          else
+            string[0, string.length - (fraction_digits - MONEY_PRECISION)]
+          end
         end
     end
   end

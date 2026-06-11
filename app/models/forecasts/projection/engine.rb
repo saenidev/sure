@@ -52,9 +52,9 @@ module Forecasts
       def call
         ledger = build_ledger
         outcome = simulate(ledger)
-        traces = build_traces(ledger, outcome.periods)
+        trace_rows = build_traces(ledger, outcome.periods)
         issues = combined_issues(outcome)
-        periods = attach_trace_ids(outcome.periods, traces)
+        periods = attach_trace_ids(outcome.periods, trace_rows)
         periods = attach_issue_ids(periods, issues)
         goals = evaluate_goals(periods)
         status = derive_status(outcome, issues)
@@ -70,10 +70,12 @@ module Forecasts
             status: status,
             periods: periods,
             series: build_series(periods),
-            traces: traces,
+            # Compact rows, not Trace VOs — Result materializes value objects
+            # lazily only for consumers that read #traces (see Result).
+            trace_rows: trace_rows,
             issues: issues,
             goals: goals,
-            summary: build_summary(outcome, traces, issues, status)
+            summary: build_summary(outcome, trace_rows, issues, status)
           },
           presymbolized: true
         )
@@ -156,7 +158,7 @@ module Forecasts
             expander_class.new(
               params: assumption[:params] || {},
               context: expansion_context(assumption)
-            ).expand
+            ).expand_rows
           rescue Forecasts::Projection::Expanders::Base::InvalidExpansionError => error
             # Plan-validation failures during expansion (unresolved/invalid
             # milestone references, unknown anchor types) become structured
@@ -233,8 +235,16 @@ module Forecasts
             plan_version: plan_version,
             assumption_id: assumption[:id],
             scenario_layer_id: assumption[:scenario_layer_id],
-            milestone_dates: milestone_dates
+            milestone_dates: milestone_dates,
+            occurrence_cache: occurrence_cache
           }
+        end
+
+        # One shared occurrence-walk memo per engine run (see
+        # Expanders::Base::OccurrenceWalkCache): same-shaped assumptions reuse
+        # one expanded date sequence instead of re-walking it per expander.
+        def occurrence_cache
+          @occurrence_cache ||= Forecasts::Projection::Expanders::Base::OccurrenceWalkCache.new
         end
 
         def simulate(ledger)
@@ -247,19 +257,31 @@ module Forecasts
           ).simulate
         end
 
+        # A minimal ledger view for TraceBuilder (it only reads #flows). The
+        # engine filters the already-ordered ledger flows; rebuilding a full
+        # FlowLedger here re-sorted and re-indexed ~9k flows on a 30-year plan
+        # for ordering guarantees the filtered list already carries (Array#select
+        # preserves the ledger's deterministic order).
+        FilteredLedger = Struct.new(:flows)
+        private_constant :FilteredLedger
+
         # Traces are built only for flows that fall inside a simulated period, so
         # every trace references an existing period row and each period's
         # `trace_ids` are complete. Flows the simulator does not reach (e.g. a
         # flow dated on the horizon end boundary, which belongs to the month
         # after the last simulated period) produce no orphaned trace.
         def build_traces(ledger, periods)
-          period_keys = periods.map { |period| period[:key] }.to_set
-          simulated_flows = ledger.flows.select { |flow| period_keys.include?(flow.period_key) }
+          # Concatenating the ledger's per-period groups in (chronological)
+          # period order reproduces the ledger's global order exactly — the
+          # ledger sorts by date first, so all of one month's flows precede the
+          # next month's — while reusing the ledger's period index instead of a
+          # per-flow Set membership scan.
+          simulated_flows = periods.flat_map { |period| ledger.for_period(period[:key]) }
 
           Forecasts::Projection::TraceBuilder.new(
-            ledger: Forecasts::Projection::FlowLedger.new(simulated_flows),
+            ledger: FilteredLedger.new(simulated_flows),
             plan_version: plan_version
-          ).build
+          ).build_rows
         end
 
         def evaluate_goals(periods)
@@ -275,13 +297,35 @@ module Forecasts
         # Replaces each period row's `trace_ids` with the ids of the traces whose
         # period matches. The simulator leaves these empty because traces are
         # built after simulation; the engine is the single place that joins them.
+        # Shared frozen empty id list for periods with no traces/issues, so the
+        # envelope's deep_freeze can skip it as an already-canonical leaf.
+        EMPTY_IDS = [].freeze
+        private_constant :EMPTY_IDS
+
         def attach_trace_ids(periods, traces)
-          ids_by_period = traces.group_by(&:period_key).transform_values do |group|
-            group.map(&:id)
+          # Single pass straight into id arrays — group_by + transform_values
+          # built ~9k-element intermediate trace groups just to map them away.
+          # Traces arrive in ledger (period-contiguous) order, so the bucket is
+          # re-resolved only on a period change, not per trace.
+          ids_by_period = {}
+          bucket = nil
+          last_key = nil
+          traces.each do |trace|
+            key = trace.period_key
+            if key != last_key
+              last_key = key
+              bucket = (ids_by_period[key] ||= [])
+            end
+            bucket << trace.id
           end
+          # Id strings are frozen at creation (TraceBuilder#trace_id); freezing
+          # the filled arrays makes each trace_ids list an already-canonical
+          # sub-tree the envelope deep_freeze skips instead of re-walking ~9k
+          # leaves.
+          ids_by_period.each_value(&:freeze)
 
           periods.map do |period|
-            period.merge(trace_ids: ids_by_period.fetch(period[:key], []))
+            period.merge(trace_ids: ids_by_period.fetch(period[:key], EMPTY_IDS))
           end
         end
 

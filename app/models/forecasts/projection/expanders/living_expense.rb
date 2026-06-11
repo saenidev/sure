@@ -20,29 +20,24 @@ module Forecasts
       class LivingExpense < Base
         SOURCE_KIND = "living_expense"
 
-        def expand
-          window = occurrence_window
-          return [] if window.nil?
-
-          start_on, end_on = window
-          base_amount = to_decimal(params[:amount])
-          currency = params[:currency] || context[:reporting_currency]
-
-          each_occurrence(params[:frequency], start_on, end_on).map do |date, index|
-            build_flow(
-              category: "spending",
-              direction: "outflow",
-              source_kind: SOURCE_KIND,
-              date: date,
-              amount: amount_string(base_amount, start_on, date),
-              currency: currency,
-              sequence: index,
-              metadata: flow_metadata
-            )
-          end
-        end
-
         private
+          # One shared occurrence walk driving both Base#expand (Flow VOs) and
+          # Base#expand_rows (engine FlowRows) — see Base#each_flow's contract.
+          def each_flow
+            window = occurrence_window
+            return if window.nil?
+
+            start_on, end_on = window
+            base_amount = to_decimal(params[:amount])
+            currency = params[:currency] || context[:reporting_currency]
+
+            each_occurrence(params[:frequency], start_on, end_on) do |date, index, date_iso, period_key|
+              yield "spending", "outflow", SOURCE_KIND, date,
+                amount_string(base_amount, start_on, date), currency, index, flow_metadata,
+                date_iso, period_key
+            end
+          end
+
           def category_ids
             Array(params[:category_ids]).map(&:to_s)
           end

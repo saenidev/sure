@@ -30,12 +30,23 @@ module Forecasts
 
     # Recursively freezes a value (and its contents) so value objects are
     # genuinely immutable after construction.
+    #
+    # An ALREADY-frozen container is treated as canonical (deeply frozen) and
+    # returned without re-walking it — the same convention Flow#initialize and
+    # Trace#freeze_refs rely on. Engine envelopes share frozen sub-trees
+    # (simulator-frozen period metrics appear in both periods and series), and
+    # re-walking them per envelope was a measurable slice of the engine perf
+    # budget.
     def deep_freeze(value)
       case value
       when Hash
+        return value if value.frozen?
+
         value.each_value { |val| deep_freeze(val) }
         value.freeze
       when Array
+        return value if value.frozen?
+
         value.each { |element| deep_freeze(element) }
         value.freeze
       else

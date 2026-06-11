@@ -198,7 +198,7 @@ module Forecasts
         # engine result (already validated value objects), and required because a
         # 30-year plan writes ~361 rows inside the save round-trip budget.
         def write_periods!(cache, packet, result)
-          traces_by_period = result.traces.group_by(&:period_key)
+          traces_by_period = result_traces(result).group_by(&:period_key)
           now = Time.current
 
           rows = result.periods.map do |period|
@@ -245,30 +245,40 @@ module Forecasts
         def write_traces!(cache, result)
           now = Time.current.utc.iso8601(6)
           decimals = {}
+          # Refs JSON memoized per refs OBJECT (keyed by object_id): the
+          # builder shares one frozen refs array across every trace of one
+          # assumption, so a 30-year save generates ~25 distinct JSON strings
+          # instead of ~9k.
+          refs_json = {}
+          # Constant per cache write — escaped once instead of per row (~9k
+          # redundant copy_field passes each on a 30-year save).
+          cache_id = copy_field(cache.id)
+          now_field = copy_field(now)
 
-          lines = result.traces.each_with_index.filter_map do |trace, index|
+          lines = result_traces(result).each_with_index.filter_map do |trace, index|
             amount = decimals[trace.amount] ||= BigDecimal(trace.amount.to_s)
             next if amount.zero?
 
             [
-              cache.id,
-              trace.period_key,
+              cache_id,
+              copy_field(trace.period_key),
               "month",
-              trace.assumption_id,
-              trace.source_type,
-              nil,
-              metric_key_for(trace),
-              trace.direction || DIRECTION_FOR_CATEGORY[trace.category],
-              trace.amount,
-              trace.currency,
-              trace.category,
-              index,
-              trace.category,
-              trace.explanation_key,
-              JSON.generate(source_record_refs_payload(trace)),
-              now,
-              now
-            ].map! { |value| copy_field(value) }.join("\t") << "\n"
+              copy_field(trace.assumption_id),
+              copy_field(trace.source_type),
+              '\N',
+              copy_field(metric_key_for(trace)),
+              copy_field(trace.direction || DIRECTION_FOR_CATEGORY[trace.category]),
+              copy_field(trace.amount),
+              copy_field(trace.currency),
+              copy_field(trace.category),
+              index.to_s,
+              copy_field(trace.category),
+              copy_field(trace.explanation_key),
+              refs_json[trace.source_record_refs.object_id] ||=
+                copy_field(JSON.generate(source_record_refs_payload(trace))),
+              now_field,
+              now_field
+            ].join("\t") << "\n"
           end
           return if lines.empty?
 
@@ -346,17 +356,47 @@ module Forecasts
         # Stable digest of the result envelope, stored on the cache so identical
         # recomputes coalesce and changed regions are detectable.
         #
-        # Traces are deliberately excluded from the hashed payload: they are a
-        # pure function of the packet and engine version — both already inside
-        # the cache key — so two results that agree on everything else cannot
-        # differ in traces, and the periods' trace_ids keep per-period trace
-        # coverage inside the hash. Canonicalizing ~9k trace hashes doubled the
-        # synchronous save budget. Memoized: the publish path needs the digest
-        # twice (coalescing check + cache row).
+        # Three fully-derived sections are deliberately excluded from the hashed
+        # payload — each is a pure function of the packet and engine version,
+        # both already inside the cache key, so two results that agree on
+        # everything else cannot differ in them, and canonicalizing them
+        # dominated the synchronous save budget:
+        # - traces (~9k hashes; canonicalizing them doubled the save budget),
+        # - series (a byte-for-byte duplicate of the periods' :metrics),
+        # - per-period :trace_ids (~9k long derived id strings; per-period trace
+        #   coverage is still pinned by the hashed periods + summary trace_count).
+        # Memoized: the publish path needs the digest twice (coalescing check +
+        # cache row).
         def result_hash(result)
           @result_hashes ||= {}
           @result_hashes[result.object_id] ||=
-            Forecasts::Projection.stable_hash(result.to_h(include_traces: false))
+            Forecasts::Projection.stable_hash(hashable_result_payload(result))
+        end
+
+        # The slimmed envelope result_hash digests (see exclusions there). Field
+        # order is irrelevant — stable_hash canonicalizes — but mirrors
+        # Result#to_h for readability.
+        def hashable_result_payload(result)
+          {
+            schema_version: result.schema_version,
+            engine_version: result.engine_version,
+            input_packet_hash: result.input_packet_hash,
+            source_snapshot_hash: result.source_snapshot_hash,
+            scenario_stack_hash: result.scenario_stack_hash,
+            plan_version: result.plan_version,
+            status: result.status,
+            periods: result.periods.map { |period| period.except(:trace_ids) },
+            issues: result.issues.map(&:to_h),
+            goals: result.goals,
+            summary: result.summary
+          }
+        end
+
+        # Persistence consumes the engine's compact trace rows when present
+        # (their field readers are identical to Trace's) and falls back to
+        # Trace value objects for results built from raw hashes.
+        def result_traces(result)
+          result.trace_rows || result.traces
         end
 
         def metric_key_for(trace)

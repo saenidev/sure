@@ -24,6 +24,24 @@ module Forecasts
       class Base
         InvalidExpansionError = Class.new(ArgumentError)
 
+        # Shares expanded occurrence walks across the expanders of one engine
+        # run. A 30-year x 25-assumption plan expands 25 IDENTICAL monthly date
+        # sequences (same window, same frequency); walking Date#>> and
+        # serializing ISO strings 25 times over was a measurable slice of the
+        # engine perf budget. The engine threads one instance per run through
+        # context[:occurrence_cache] (a plain object, so deep_symbolize passes
+        # it through by identity). Purely a memo of deterministic derivations —
+        # sharing cannot change output.
+        class OccurrenceWalkCache
+          def initialize
+            @walks = {}
+          end
+
+          def fetch(frequency, start_on, end_on)
+            @walks[[ frequency, start_on, end_on ]] ||= yield
+          end
+        end
+
         # Money is computed with this many fractional digits then serialized to a
         # currency-agnostic decimal string. The UI rounds for display.
         MONEY_PRECISION = 2
@@ -35,12 +53,48 @@ module Forecasts
           @context = symbolize(context)
         end
 
-        # Returns an ordered array of Forecasts::Projection::FlowLedger::Flow.
+        # Returns an ordered array of Forecasts::Projection::FlowLedger::Flow —
+        # the validating boundary object. Both this and #expand_rows are driven
+        # by the subclass's #each_flow (one shared occurrence walk), so the two
+        # paths cannot drift apart.
         def expand
-          raise NotImplementedError, "#{self.class} must implement #expand"
+          flows = []
+          each_flow do |category, direction, source_kind, date, amount, currency, sequence, metadata|
+            flows << build_flow(
+              category: category, direction: direction, source_kind: source_kind,
+              date: date, amount: amount, currency: currency,
+              sequence: sequence, metadata: metadata
+            )
+          end
+          flows
+        end
+
+        # Returns an ordered array of Forecasts::Projection::FlowRow — the
+        # engine's compact hot-path representation (see FlowRow for why). Keys,
+        # ordering, and money strings are identical to #expand's Flow VOs.
+        def expand_rows
+          rows = []
+          each_flow do |category, direction, source_kind, date, amount, currency, sequence, metadata, date_iso, period_key|
+            rows << build_flow_row(
+              category, direction, source_kind, date, amount, currency, sequence, metadata,
+              date_iso, period_key
+            )
+          end
+          rows
         end
 
         private
+          # Subclasses yield one tuple per occurrence, in date order:
+          #   (category, direction, source_kind, date, amount_string, currency,
+          #    sequence, metadata[, date_iso, period_key])
+          # Positional (not a hash) on purpose — this runs once per flow in the
+          # engine's hot path. The two optional trailing strings are the
+          # occurrence's pre-derived ISO date / YYYY-MM period key (as yielded
+          # by each_occurrence); when omitted build_flow_row derives them.
+          def each_flow
+            raise NotImplementedError, "#{self.class} must implement #each_flow"
+          end
+
           # --- Anchor normalization ------------------------------------------
 
           # Resolve the inclusive [start, end] occurrence window for this
@@ -105,22 +159,48 @@ module Forecasts
 
           # Yields each occurrence date in [start, end] for the given frequency,
           # together with a zero-based index. Deterministic for the same inputs.
+          # Also yields the occurrence's derived ISO date string and YYYY-MM
+          # period key (Flow's own formulas) so hot-path callers can thread the
+          # shared, pre-computed strings into build_flow_row; blocks that only
+          # take |date, index| simply ignore them.
           def each_occurrence(frequency, start_on, end_on)
             return enum_for(:each_occurrence, frequency, start_on, end_on) unless block_given?
 
+            occurrence_walk(frequency, start_on, end_on).each_with_index do |(date, date_iso, period_key), index|
+              yield date, index, date_iso, period_key
+            end
+          end
+
+          # The [date, date_iso, period_key] tuples for one frequency window,
+          # shared across the run's expanders via the engine-provided
+          # OccurrenceWalkCache when present.
+          def occurrence_walk(frequency, start_on, end_on)
+            cache = context[:occurrence_cache]
+            return expand_occurrence_walk(frequency, start_on, end_on) unless cache
+
+            cache.fetch(frequency.to_s, start_on, end_on) do
+              expand_occurrence_walk(frequency, start_on, end_on)
+            end
+          end
+
+          def expand_occurrence_walk(frequency, start_on, end_on)
             freq = frequency.to_s
+            occurrences = []
             index = 0
             date = start_on
 
             loop do
               break if date > end_on
 
-              yield date, index
+              date_iso = date.iso8601.freeze
+              occurrences << [ date, date_iso, date_iso[0, 7].freeze ].freeze
               break if freq == "one_time"
 
               index += 1
               date = advance(start_on, freq, index)
             end
+
+            occurrences.freeze
           end
 
           # Advance `index` periods from the anchor. Month/year-based frequencies
@@ -155,19 +235,28 @@ module Forecasts
               (BigDecimal("1") + to_decimal(rate)) ** years
           end
 
-          # Whole years elapsed since the start anchor's anniversary.
+          # Whole years elapsed since the start anchor's anniversary, i.e.
+          # `occurrence year - start year`, minus one when the occurrence falls
+          # before that year's anniversary (month, day) — with a Feb 29 anchor
+          # falling back to Feb 28 in non-leap years, exactly as constructing
+          # the anniversary via Date.new with an ArgumentError rescue did.
+          # Plain integer comparisons: building an anniversary Date per
+          # occurrence (~9k on a 30-year plan) was a measurable slice of the
+          # engine perf budget.
           def elapsed_years(start_on, occurrence_on)
             years = occurrence_on.year - start_on.year
-            anniversary = safe_change_year(start_on, occurrence_on.year)
-            years -= 1 if occurrence_on < anniversary
-            [ years, 0 ].max
-          end
+            return 0 if years <= 0
 
-          def safe_change_year(date, year)
-            Date.new(year, date.month, date.day)
-          rescue ArgumentError
+            month = start_on.month
+            day = start_on.day
             # Feb 29 anchors in non-leap years fall back to Feb 28.
-            Date.new(year, date.month, date.day - 1)
+            day = 28 if day == 29 && month == 2 && !occurrence_on.leap?
+
+            occurrence_month = occurrence_on.month
+            if occurrence_month < month || (occurrence_month == month && occurrence_on.day < day)
+              years -= 1
+            end
+            years
           end
 
           # --- Money ----------------------------------------------------------
@@ -205,9 +294,9 @@ module Forecasts
           # distinct keys, and skipping SHA256 here matters — two digests per
           # flow across a 30-year x 25-assumption expansion (~18k digests)
           # consumed a meaningful slice of the <100ms engine budget on their own.
-          def flow_key(kind:, date:, sequence:)
+          def flow_key(kind:, date:, sequence:, date_iso: nil)
             @flow_key_prefix ||= "#{context[:plan_version]}.#{context[:scenario_layer_id] || 'baseline'}.#{context[:assumption_id]}"
-            "#{kind}-#{@flow_key_prefix}.#{date.iso8601}.#{sequence}"
+            "#{kind}-#{@flow_key_prefix}.#{date_iso || date.iso8601}.#{sequence}"
           end
 
           def build_flow(category:, direction:, source_kind:, date:, amount:, currency:, sequence:, metadata:)
@@ -224,6 +313,57 @@ module Forecasts
               sequence: sequence,
               metadata: metadata
             )
+          end
+
+          # Pre-padded sequence strings for ledger sort keys. Sequences are
+          # dense small integers (a 30-year monthly assumption peaks at 361,
+          # weekly at ~1.6k), so the table covers the realistic range and the
+          # rjust fallback handles anything beyond it. Identical output to
+          # `sequence.to_s.rjust(8, '0')` — Flow's own formula.
+          PADDED_SEQUENCES = Array.new(2048) { |i| format("%08d", i).freeze }.freeze
+          private_constant :PADDED_SEQUENCES
+
+          # Plain sequence strings for flow keys (same realistic range +
+          # fallback as PADDED_SEQUENCES). Interpolating the Integer directly
+          # allocated a fresh conversion string per flow.
+          SEQUENCE_STRINGS = Array.new(2048) { |i| i.to_s.freeze }.freeze
+          private_constant :SEQUENCE_STRINGS
+
+          # Hot-path twin of build_flow: same derived values (date_iso,
+          # period_key, flow key, ledger sort key — Flow's own formulas, with
+          # flow_key's interpolation inlined per-kind), no per-row
+          # validation/freeze (see FlowRow).
+          def build_flow_row(category, direction, source_kind, date, amount, currency, sequence, metadata, date_iso = nil, period_key = nil)
+            date_iso ||= date.iso8601
+            sequence_string = SEQUENCE_STRINGS[sequence] || sequence.to_s
+            key = "#{row_key_prefix(source_kind)}#{date_iso}.#{sequence_string}"
+            rank = Forecasts::Projection::FlowLedger::Flow::SORT_RANK
+              .fetch(category, Forecasts::Projection::FlowLedger::Flow::DEFAULT_SORT_RANK)
+            padded = PADDED_SEQUENCES[sequence] || sequence.to_s.rjust(8, "0")
+
+            Forecasts::Projection::FlowRow.new(
+              date_iso,
+              period_key || date_iso[0, 7],
+              amount,
+              currency,
+              category,
+              direction,
+              source_kind,
+              @assumption_id ||= context[:assumption_id],
+              @scenario_layer_id ||= context[:scenario_layer_id],
+              key,
+              sequence,
+              metadata,
+              "#{date_iso}|#{rank}|#{padded}|#{key}"
+            )
+          end
+
+          # The constant flow-key head for one source kind — everything before
+          # the occurrence date. Matches #flow_key's output byte-for-byte.
+          def row_key_prefix(kind)
+            @row_key_prefixes ||= {}
+            @row_key_prefixes[kind] ||=
+              "#{kind}-#{context[:plan_version]}.#{context[:scenario_layer_id] || 'baseline'}.#{context[:assumption_id]}."
           end
 
           # --- Helpers --------------------------------------------------------

@@ -165,13 +165,13 @@ module Forecasts
             converted = convert(flow, window)
             next if converted.nil? # held out per issue policy (e.g. missing FX)
 
-            apply_flow(flow, converted, balances)
             case flow.category
             when "income" then income += converted
             when "spending" then spending += converted
             end
           end
 
+          apply_period_totals(income, spending, balances)
           net_worth = household_net_worth(balances)
 
           metrics = Forecasts::Projection::Metrics.new(
@@ -219,16 +219,16 @@ module Forecasts
           FLOW_ORDER.fetch(category, 99)
         end
 
-        # Mutates running balances for one flow. Income raises liquid cash;
-        # spending lowers it. Later flow kinds (transfer/debt/portfolio) extend
-        # this in their slices; this proof slice covers cash income + spending.
-        def apply_flow(flow, amount, balances)
-          case flow.category
-          when "income"
-            balances[:liquid_cash] += amount
-          when "spending"
-            balances[:liquid_cash] -= amount
-          end
+        # Mutates running balances with one period's totals. Income raises
+        # liquid cash; spending lowers it. Applied once per period instead of
+        # per flow: the running balance is only read at period close, BigDecimal
+        # addition is exact and order-independent, so summing first yields the
+        # identical closing balance while skipping ~9k per-flow mutations on a
+        # 30-year plan. Later flow kinds (transfer/debt/portfolio) whose effects
+        # are order-sensitive slot into the ordered per-flow loop above in their
+        # slices; this proof slice covers cash income + spending.
+        def apply_period_totals(income, spending, balances)
+          balances[:liquid_cash] += income - spending
         end
 
         # Household net worth = liquid cash + portfolio value - debt balance.

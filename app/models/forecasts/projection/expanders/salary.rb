@@ -21,33 +21,27 @@ module Forecasts
       class Salary < Base
         SOURCE_KIND = "salary"
 
-        def expand
-          window = occurrence_window
-          return [] if window.nil?
-
-          start_on, end_on = window
-          base_amount = to_decimal(params[:amount])
-          currency = params[:currency] || context[:reporting_currency]
-
-          each_occurrence(params[:frequency], start_on, end_on).map do |date, index|
-            years = elapsed_years(start_on, date)
-            gross, net = amounts_for(base_amount, start_on, date, years)
-            metadata = metadata_for(gross, net, years)
-
-            build_flow(
-              category: "income",
-              direction: "inflow",
-              source_kind: SOURCE_KIND,
-              date: date,
-              amount: metadata[:net_amount],
-              currency: currency,
-              sequence: index,
-              metadata: metadata
-            )
-          end
-        end
-
         private
+          # One shared occurrence walk driving both Base#expand (Flow VOs) and
+          # Base#expand_rows (engine FlowRows) — see Base#each_flow's contract.
+          def each_flow
+            window = occurrence_window
+            return if window.nil?
+
+            start_on, end_on = window
+            base_amount = to_decimal(params[:amount])
+            currency = params[:currency] || context[:reporting_currency]
+
+            each_occurrence(params[:frequency], start_on, end_on) do |date, index, date_iso, period_key|
+              years = elapsed_years(start_on, date)
+              gross, net = amounts_for(base_amount, start_on, date, years)
+              metadata = metadata_for(gross, net, years)
+
+              yield "income", "inflow", SOURCE_KIND, date,
+                metadata[:net_amount], currency, index, metadata, date_iso, period_key
+            end
+          end
+
           def gross_or_net
             (params[:gross_or_net] || "net").to_s
           end
