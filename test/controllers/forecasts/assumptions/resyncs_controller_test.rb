@@ -105,4 +105,103 @@ class Forecasts::Assumptions::ResyncsControllerTest < ActionDispatch::Integratio
 
     assert_response :unprocessable_entity
   end
+
+  # --- create (accept) -------------------------------------------------------
+
+  test "accept re-derives server-side, applies the values, and streams the full patch set" do
+    @assumption.update!(name: "My salary") # user rename must survive the accept
+    @payroll.update!(amount: -6_000)
+    version_before = @plan.reload.current_plan_version
+
+    post forecasts_assumption_resync_path(@assumption),
+      params: { expected_lock_version: @assumption.reload.lock_version.to_s },
+      as: :turbo_stream
+
+    assert_response :success
+    @assumption.reload
+    assert_equal 6000, @assumption.amount
+    assert_equal "My salary", @assumption.name
+    assert_equal "confirmed", @assumption.review_state
+    assert_equal "6000.0", @assumption.params["amount"]
+    assert_in_delta Time.current.to_f, @assumption.derived_at.to_f, 10
+    assert_operator @plan.reload.current_plan_version, :>, version_before
+
+    streams = css_select("turbo-stream").map { |s| s["target"] }
+    assert_includes streams, "forecast_projection_region"
+    assert_includes streams, ActionView::RecordIdentifier.dom_id(@assumption)
+    assert_includes streams, "forecast_issues"
+    assert_includes streams, "forecast_drawer_lock"
+    assert_equal @assumption.lock_version.to_s,
+      response.headers["X-Forecast-Assumption-Lock"]
+  end
+
+  test "accept enqueues the persist job with the reused snapshot and bumped plan version" do
+    @payroll.update!(amount: -6_000)
+    snapshot_id = @plan.forecast_projection_caches.current
+      .order(created_at: :desc).first.forecast_source_snapshot_id
+
+    post forecasts_assumption_resync_path(@assumption),
+      params: { expected_lock_version: @assumption.lock_version.to_s },
+      as: :turbo_stream
+
+    assert_response :success
+    assert_enqueued_with(
+      job: ForecastProjectionPersistJob,
+      args: [ @plan.id, snapshot_id, @plan.reload.current_plan_version, Date.current ]
+    )
+  end
+
+  test "accept never trusts client-submitted derived values" do
+    @payroll.update!(amount: -6_000)
+
+    post forecasts_assumption_resync_path(@assumption),
+      params: {
+        expected_lock_version: @assumption.lock_version.to_s,
+        amount: "999999", assumption: { amount: "999999" }
+      },
+      as: :turbo_stream
+
+    assert_response :success
+    assert_equal 6000, @assumption.reload.amount
+  end
+
+  test "accept with a stale lock version returns 409, does not write, and restreams server state" do
+    @payroll.update!(amount: -6_000)
+
+    post forecasts_assumption_resync_path(@assumption),
+      params: { expected_lock_version: "99" },
+      as: :turbo_stream
+
+    assert_response :conflict
+    assert_equal 5000, @assumption.reload.amount
+    assert_equal "needs_review", @assumption.review_state
+    streams = css_select("turbo-stream").map { |s| s["target"] }
+    assert_includes streams, "forecast_projection_region"
+    assert_includes streams, ActionView::RecordIdentifier.dom_id(@assumption)
+    assert_includes streams, "forecast_drawer_lock"
+  end
+
+  test "accept when the source is gone is a no-write 422 with the source-gone card" do
+    @payroll.destroy!
+
+    assert_no_enqueued_jobs(only: ForecastProjectionPersistJob) do
+      post forecasts_assumption_resync_path(@assumption),
+        params: { expected_lock_version: @assumption.lock_version.to_s },
+        as: :turbo_stream
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal 5000, @assumption.reload.amount
+    assert_equal "needs_review", @assumption.review_state
+    assert_includes response.body, I18n.t("forecasts.workspace.card.resync.source_gone")
+  end
+
+  test "accept is family-scoped" do
+    sign_in users(:empty)
+    post forecasts_assumption_resync_path(@assumption),
+      params: { expected_lock_version: @assumption.lock_version.to_s },
+      as: :turbo_stream
+    assert_response :not_found
+    assert_equal 5000, @assumption.reload.amount
+  end
 end

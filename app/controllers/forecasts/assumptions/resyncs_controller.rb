@@ -14,6 +14,8 @@ module Forecasts
     # family is a 404, never a 403 leak. Only source-derived rows are
     # resyncable (the trigger is only rendered for them; the guard backs it).
     class ResyncsController < ApplicationController
+      include Forecasts::WorkspacePatching
+
       # Proposal/current amounts within a cent render as "already in sync".
       AMOUNT_TOLERANCE = BigDecimal("0.01")
 
@@ -26,6 +28,50 @@ module Forecasts
         render turbo_stream: card_stream(
           resync_state: resync_state_for(proposal), proposal: proposal
         )
+      end
+
+      # create (POST) is the ACCEPT: re-runs Derivation server-side — the form
+      # submits only expected_lock_version, so derived values are NEVER trusted
+      # from the client — applies the proposal, and then runs EXACTLY the
+      # drawer save's post-save flow (snapshot reuse, in-memory compute, async
+      # persist, fresh lock header, workspace patch streams) via
+      # Forecasts::WorkspacePatching.
+      #
+      # Accepted gap (sanctioned): resync accepts do not fire the undo toast —
+      # forecast:assumption-saved is dispatched by the drawer's auto-submit
+      # Stimulus controller only, and accepting a proposal is an explicit,
+      # user-confirmed action.
+      def create
+        proposal = derive_proposal
+        if proposal.nil? || proposal.source_gone?
+          return render status: :unprocessable_entity,
+            turbo_stream: card_stream(resync_state: :source_gone, proposal: nil)
+        end
+
+        return render_stale_lock if stale_lock?
+
+        Forecasts::Plan.transaction do
+          # Name intentionally kept: the user may have renamed the card; an
+          # accept updates the figure and provenance, never the label.
+          @assumption.update!(
+            amount: proposal.amount,
+            currency: proposal.currency,
+            params: proposal.params,
+            confidence: proposal.confidence,
+            source_record_type: proposal.source_record&.class&.name,
+            source_record_id: proposal.source_record&.id,
+            source_refs: proposal.source_refs,
+            derived_at: Time.current,
+            review_state: :confirmed
+          )
+          @plan.increment!(:current_plan_version)
+        end
+
+        snapshot = save_snapshot
+        result = compute_projection(snapshot)
+        enqueue_projection_persist(snapshot)
+        write_assumption_lock_header
+        render turbo_stream: workspace_patch_streams(result, snapshot: snapshot)
       end
 
       private
@@ -62,6 +108,21 @@ module Forecasts
           else
             :proposal
           end
+        end
+
+        # The accept form carries the lock token the proposal card was rendered
+        # with; any concurrent save (drawer or another accept) bumps
+        # lock_version and stales it.
+        def stale_lock?
+          params[:expected_lock_version].to_s != @assumption.lock_version.to_s
+        end
+
+        # Spec §4.6: on a stale lock the server state wins VISIBLY — 409 plus
+        # the standard workspace patch streams (card, lock token, projection
+        # from the last good cache), the same restream behavior the drawer's
+        # update action uses.
+        def render_stale_lock
+          render status: :conflict, turbo_stream: workspace_patch_streams(nil)
         end
 
         def card_stream(resync_state: nil, proposal: nil)
