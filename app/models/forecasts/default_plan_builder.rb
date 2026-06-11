@@ -29,8 +29,31 @@ module Forecasts
   # family's data and never trusts a family_id from arbitrary params.
   class DefaultPlanBuilder
     DERIVATION_VERSION = "forecast-derivation-v1"
-    DEFAULT_HORIZON_MONTHS = 360
+    # default 3y; the engine and perf budgets are sized for the 360-month
+    # maximum (user-configurable horizon UI arrives in a later phase)
+    DEFAULT_HORIZON_MONTHS = 36
     DEFAULT_PLAN_NAME = "Baseline plan"
+
+    # Salary sources are recurring inflows landing on asset CASH accounts only.
+    # An inflow on a liability account (CreditCard/Loan) is a bill payment TO
+    # the liability, never income.
+    SALARY_SOURCE_ACCOUNTABLE_TYPES = %w[Depository].freeze
+
+    # Defaults for the editable params contract on derived assumptions. The
+    # drawer forms (SalaryForm/LivingExpenseForm) validate these fields on every
+    # save, so a derived row must carry legal values the user can then review:
+    #   - person_key "primary": single-earner default; review confirms the earner.
+    #   - gross_or_net "net": a recurring bank deposit is take-home pay.
+    #   - frequency "monthly": recurring transactions and budgets are monthly.
+    #   - growth/inflation policy "flat": no fabricated growth until confirmed.
+    #   - actualization_policy "none": projection-only; never silently replaces
+    #     or offsets actuals before the user reviews the assumption.
+    DERIVED_PERSON_KEY = "primary"
+    DERIVED_GROSS_OR_NET = "net"
+    DERIVED_FREQUENCY = "monthly"
+    DERIVED_GROWTH_POLICY = "flat"
+    DERIVED_INFLATION_POLICY = "flat"
+    DERIVED_ACTUALIZATION_POLICY = "none"
 
     attr_reader :family, :as_of
 
@@ -78,32 +101,83 @@ module Forecasts
       # --- Salary (from recurring payroll deposit) ------------------------------
 
       # A recurring payroll deposit is an active, non-transfer recurring inflow
-      # (negative amount under Sure's sign convention). The most significant one
-      # (largest magnitude) becomes a reviewable `salary` assumption. Confidence
-      # is medium per "Source-To-Assumption Mapping": ask the user to confirm
-      # earner, gross/net interpretation, and end anchor.
+      # (negative amount under Sure's sign convention) on an asset CASH account.
+      # The most significant one (largest magnitude) becomes a reviewable
+      # `salary` assumption. Confidence is medium per "Source-To-Assumption
+      # Mapping": ask the user to confirm earner, gross/net interpretation, and
+      # end anchor.
+      #
+      # When no qualifying recurring inflow exists (e.g. the only recurring
+      # inflows are credit-card bill payments), fall back to the family's
+      # income-statement median monthly income as a low-confidence estimate, so
+      # the plan still starts with a reviewable income figure instead of either
+      # no income at all or a liability payment masquerading as a salary.
+      #
+      # Idempotency mirrors derive_living_expense: keyed by derivation purpose
+      # (family, plan, kind, source_derived) because the fallback has no source
+      # record, and the source can change between reopens.
       def derive_salary(plan)
+        return if existing_source_derived?(plan, "salary")
+
         deposit = primary_payroll_deposit
-        return if deposit.nil?
+        if deposit
+          upsert_derived_assumption(
+            plan: plan,
+            kind: "salary",
+            name: salary_name(deposit),
+            amount: income_magnitude(deposit),
+            currency: deposit.currency,
+            confidence: "medium",
+            source_record: deposit,
+            params: derived_salary_params(
+              amount: income_magnitude(deposit),
+              currency: deposit.currency,
+              cash_account_id: deposit.account_id
+            )
+          )
+          return
+        end
+
+        derive_salary_from_income_statement(plan)
+      end
+
+      # `joins(:account)` + the Depository filter restricts candidates to
+      # recurring inflows landing on asset cash accounts (and drops rows with
+      # no account, which cannot be proven to be income). Transfers are already
+      # excluded via `destination_account_id: nil` (RecurringTransaction#transfer?
+      # is `destination_account_id.present?`).
+      def primary_payroll_deposit
+        @primary_payroll_deposit ||= family.recurring_transactions
+          .joins(:account)
+          .where(status: "active", destination_account_id: nil)
+          .where(accounts: { accountable_type: SALARY_SOURCE_ACCOUNTABLE_TYPES })
+          .where("recurring_transactions.amount < 0")
+          .to_a
+          .max_by { |recurring| income_magnitude(recurring) }
+      end
+
+      # Median-income fallback: a low-confidence, source-record-less salary
+      # estimate from the income statement. Skipped when the family has no
+      # measurable income.
+      def derive_salary_from_income_statement(plan)
+        median = to_decimal(family.income_statement.median_income)
+        return unless median.positive?
 
         upsert_derived_assumption(
           plan: plan,
           kind: "salary",
-          name: salary_name(deposit),
-          amount: income_magnitude(deposit),
-          currency: deposit.currency,
-          confidence: "medium",
-          source_record: deposit,
-          params: { "annual_gross" => nil, "interpretation" => "unconfirmed" }
+          name: "Estimated income",
+          amount: median,
+          currency: reporting_currency,
+          confidence: "low",
+          source_record: nil,
+          source_refs: { "records" => [], "basis" => "income_statement_median_income" },
+          params: derived_salary_params(
+            amount: median,
+            currency: reporting_currency,
+            cash_account_id: nil
+          )
         )
-      end
-
-      def primary_payroll_deposit
-        @primary_payroll_deposit ||= family.recurring_transactions
-          .where(status: "active", destination_account_id: nil)
-          .where("amount < 0")
-          .to_a
-          .max_by { |recurring| income_magnitude(recurring) }
       end
 
       def salary_name(deposit)
@@ -145,7 +219,11 @@ module Forecasts
             currency: budget.currency,
             confidence: "medium",
             source_record: budget,
-            params: { "basis" => "budget", "inflation_rate" => nil }
+            params: derived_living_expense_params(
+              amount: to_decimal(budget.budgeted_spending),
+              currency: budget.currency,
+              basis: "budget"
+            )
           )
           return
         end
@@ -161,7 +239,11 @@ module Forecasts
           currency: spend.currency,
           confidence: "medium",
           source_record: spend,
-          params: { "basis" => "recurring_average", "inflation_rate" => nil }
+          params: derived_living_expense_params(
+            amount: to_decimal(spend.amount).abs,
+            currency: spend.currency,
+            basis: "recurring_average"
+          )
         )
       end
 
@@ -199,9 +281,12 @@ module Forecasts
       # (family, source_record_type, source_record_id). Reopening the plan finds
       # the existing row and makes no change. Always tagged with full provenance:
       # origin source_derived, review_state needs_review, source_refs, derived_at,
-      # derivation_version (spec "Derivation Confidence").
-      def upsert_derived_assumption(plan:, kind:, name:, amount:, currency:, confidence:, source_record:, params: {})
-        return if existing_for_source(source_record)
+      # derivation_version (spec "Derivation Confidence"). `source_record` may be
+      # nil for derivations with no single source row (the median-income salary
+      # fallback); those callers pass explicit `source_refs` and rely on the
+      # kind-level `existing_source_derived?` guard for idempotency.
+      def upsert_derived_assumption(plan:, kind:, name:, amount:, currency:, confidence:, source_record:, params: {}, source_refs: nil)
+        return if source_record && existing_for_source(source_record)
 
         plan.forecast_assumptions.create!(
           family: family,
@@ -214,9 +299,9 @@ module Forecasts
           origin: :source_derived,
           confidence: confidence,
           review_state: :needs_review,
-          source_record_type: source_record.class.name,
-          source_record_id: source_record.id,
-          source_refs: source_refs_for(source_record),
+          source_record_type: source_record&.class&.name,
+          source_record_id: source_record&.id,
+          source_refs: source_refs || source_refs_for(source_record),
           derived_at: Time.current,
           derivation_version: DERIVATION_VERSION
         )
@@ -247,6 +332,43 @@ module Forecasts
             { "type" => source_record.class.name, "id" => source_record.id }
           ]
         }
+      end
+
+      # --- Derived params contracts ----------------------------------------------
+
+      # Derived assumptions must persist the COMPLETE editable params contract
+      # (built through the same typed value objects the forms emit) so the
+      # drawer can save them: the forms validate required params (person_key,
+      # gross_or_net, actualization_policy, ...) on every edit, and a derived
+      # row missing them could never be saved. Defaults are documented on the
+      # DERIVED_* constants; the user reviews them (review_state needs_review).
+      def derived_salary_params(amount:, currency:, cash_account_id:)
+        Forecasts::Assumptions::SalaryParams.new(
+          person_key: DERIVED_PERSON_KEY,
+          amount: amount,
+          gross_or_net: DERIVED_GROSS_OR_NET,
+          currency: currency,
+          frequency: DERIVED_FREQUENCY,
+          growth_policy: DERIVED_GROWTH_POLICY,
+          cash_account_id: cash_account_id,
+          start_anchor: nil,
+          end_anchor: nil
+        ).to_h
+      end
+
+      # `basis` records which derivation source produced the figure (budget vs
+      # recurring_average) on top of the standard contract keys.
+      def derived_living_expense_params(amount:, currency:, basis:)
+        Forecasts::Assumptions::LivingExpenseParams.new(
+          amount: amount,
+          currency: currency,
+          frequency: DERIVED_FREQUENCY,
+          category_ids: [],
+          inflation_policy: DERIVED_INFLATION_POLICY,
+          actualization_policy: DERIVED_ACTUALIZATION_POLICY,
+          start_anchor: nil,
+          end_anchor: nil
+        ).to_h.merge("basis" => basis)
       end
 
       # --- Helpers --------------------------------------------------------------

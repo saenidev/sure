@@ -55,14 +55,52 @@ module Forecasts
         @plan = @assumption.forecast_plan
       end
 
+      # Submitted params merged OVER the assumption's stored values. The drawer
+      # partials submit only a subset of the typed form's required fields
+      # (name/amount/frequency/policy/currency/lock), so a partial submit must
+      # never blank out a stored required param (person_key, gross_or_net,
+      # actualization_policy, ...): any field the client did not send falls back
+      # to the persisted columns / params jsonb. A field that IS submitted —
+      # even blank — wins, so a user can still clear an optional value.
       def assumption_params
-        params.require(:assumption).permit(
+        submitted = params.require(:assumption).permit(
           :name, :amount, :currency, :person_key, :gross_or_net, :frequency,
           :growth_policy, :growth_rate, :net_ratio, :cash_account_id,
           :inflation_policy, :inflation_rate, :actualization_policy,
           :starts_on, :ends_on, :starts_at_milestone_id, :ends_at_milestone_id,
           :expected_lock_version, category_ids: []
-        )
+        ).to_h
+
+        stored_form_input.merge(submitted)
+      end
+
+      # The assumption re-expressed as raw form input: top-level columns for
+      # the shared fields, params jsonb for the kind-specific ones. Keys the
+      # assumption has no value for are compacted away so they stay "missing"
+      # (not blank) for the form's validations.
+      def stored_form_input
+        stored = @assumption.params.is_a?(Hash) ? @assumption.params : {}
+
+        {
+          "name" => @assumption.name,
+          "amount" => @assumption.amount,
+          "currency" => @assumption.currency,
+          "starts_on" => @assumption.starts_on,
+          "ends_on" => @assumption.ends_on,
+          "starts_at_milestone_id" => @assumption.starts_at_milestone_id,
+          "ends_at_milestone_id" => @assumption.ends_at_milestone_id,
+          "person_key" => stored["person_key"],
+          "gross_or_net" => stored["gross_or_net"],
+          "frequency" => stored["frequency"],
+          "growth_policy" => stored["growth_policy"],
+          "growth_rate" => stored["growth_rate"],
+          "net_ratio" => stored["net_ratio"],
+          "cash_account_id" => stored["cash_account_id"],
+          "inflation_policy" => stored["inflation_policy"],
+          "inflation_rate" => stored["inflation_rate"],
+          "actualization_policy" => stored["actualization_policy"],
+          "category_ids" => stored["category_ids"]
+        }.compact
       end
 
       # Amendment A snapshot reuse: the in-memory compute and the persist job

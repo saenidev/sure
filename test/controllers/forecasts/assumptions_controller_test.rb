@@ -154,6 +154,63 @@ class Forecasts::AssumptionsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes streams, "forecast_issues"
   end
 
+  # Production repro: the drawer partials submit only a SUBSET of the form's
+  # required params (name/amount/currency/frequency/policy/lock). A save of a
+  # real source-DERIVED row must succeed — unsubmitted fields fall back to the
+  # assumption's stored values, never to blank.
+  test "update saves a partial drawer submit for a derived salary" do
+    @family.recurring_transactions.create!(
+      account: accounts(:depository),
+      name: "Acme Payroll",
+      amount: -5_000,
+      currency: "USD",
+      expected_day_of_month: 1,
+      last_occurrence_date: Date.current - 1.month,
+      next_expected_date: Date.current + 1.month,
+      status: "active",
+      occurrence_count: 6
+    )
+    Forecasts::DefaultPlanBuilder.new(family: @family, as_of: Date.current).build
+    derived = @plan.forecast_assumptions.where(kind: "salary", origin: "source_derived").sole
+
+    patch forecasts_assumption_path(derived),
+      params: { assumption: {
+        name: derived.name,
+        amount: "6500",
+        currency: derived.currency,
+        frequency: "monthly",
+        growth_policy: "flat",
+        expected_lock_version: derived.lock_version.to_s
+      } },
+      as: :turbo_stream
+
+    assert_response :success
+    assert_equal 6500, derived.reload.amount
+    # The unsubmitted required params survive the partial save.
+    assert_equal "primary", derived.params["person_key"]
+    assert_equal "net", derived.params["gross_or_net"]
+  end
+
+  test "update saves a partial drawer submit for a derived living expense" do
+    derived = @plan.forecast_assumptions.where(kind: "living_expense", origin: "source_derived").sole
+
+    patch forecasts_assumption_path(derived),
+      params: { assumption: {
+        name: derived.name,
+        amount: "3100",
+        currency: derived.currency,
+        frequency: "monthly",
+        inflation_policy: "flat",
+        expected_lock_version: derived.lock_version.to_s
+      } },
+      as: :turbo_stream
+
+    assert_response :success
+    assert_equal 3100, derived.reload.amount
+    # The unsubmitted required actualization_policy survives the partial save.
+    assert_equal "none", derived.params["actualization_policy"]
+  end
+
   test "update is family-scoped" do
     sign_in users(:empty)
     patch forecasts_assumption_path(@assumption),

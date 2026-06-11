@@ -59,6 +59,95 @@ class Forecasts::DefaultPlanBuilderTest < ActiveSupport::TestCase
     assert_equal %w[living_expense salary], kinds
   end
 
+  test "default plan horizon is 3 years (36 months)" do
+    plan = build
+
+    assert_equal @as_of, plan.horizon_start_on
+    assert_equal @as_of >> 36, plan.horizon_end_on
+  end
+
+  test "a recurring inflow on a liability account is never picked as the salary source" do
+    # A credit-card payment is an inflow TO the liability account (e.g. a
+    # "CAPITAL ONE PAYMENT") — a bill payment, not income. Even when it is the
+    # largest recurring inflow it must never become the salary source.
+    cc_payment = @family.recurring_transactions.create!(
+      account: accounts(:credit_card),
+      name: "CAPITAL ONE PAYMENT",
+      amount: -8_000,
+      currency: "USD",
+      expected_day_of_month: 1,
+      last_occurrence_date: @as_of - 1.month,
+      next_expected_date: @as_of + 1.month,
+      status: "active",
+      occurrence_count: 6
+    )
+
+    plan = build
+    salary = plan.forecast_assumptions.find_by(kind: "salary")
+
+    assert_not_nil salary
+    assert_not_equal cc_payment.id, salary.source_record_id
+    assert_equal @payroll.id, salary.source_record_id
+    assert_equal BigDecimal("5000"), salary.amount
+  end
+
+  test "with no depository recurring inflow the salary falls back to median monthly income" do
+    @payroll.destroy!
+    # The only recurring inflow is a credit-card bill payment, which must not
+    # qualify; the derived salary amount comes from the income statement median.
+    @family.recurring_transactions.create!(
+      account: accounts(:credit_card),
+      name: "CAPITAL ONE PAYMENT",
+      amount: -11.99,
+      currency: "USD",
+      expected_day_of_month: 1,
+      last_occurrence_date: @as_of - 1.month,
+      next_expected_date: @as_of + 1.month,
+      status: "active",
+      occurrence_count: 6
+    )
+    IncomeStatement.any_instance.stubs(:median_income).returns(4_500)
+
+    plan = build
+    salary = plan.forecast_assumptions.find_by(kind: "salary")
+
+    assert_not_nil salary
+    assert_nil salary.source_record_type
+    assert_nil salary.source_record_id
+    assert_equal BigDecimal("4500"), salary.amount
+    assert_equal "source_derived", salary.origin
+    assert_equal "needs_review", salary.review_state
+  end
+
+  test "derives no salary when there is no qualifying inflow and median income is zero" do
+    @payroll.destroy!
+    IncomeStatement.any_instance.stubs(:median_income).returns(0)
+
+    plan = build
+
+    assert_nil plan.forecast_assumptions.find_by(kind: "salary")
+  end
+
+  test "derived assumptions store the complete editable params contract" do
+    # The drawer forms validate the full params contract on every save; a
+    # derived assumption missing required params (person_key, gross_or_net,
+    # actualization_policy, ...) could never be edited.
+    plan = build
+
+    salary = plan.forecast_assumptions.find_by(kind: "salary")
+    assert_equal "primary", salary.params["person_key"]
+    assert_equal "net", salary.params["gross_or_net"]
+    assert_equal "monthly", salary.params["frequency"]
+    assert_equal "flat", salary.params["growth_policy"]
+    assert_equal "USD", salary.params["currency"]
+
+    living = plan.forecast_assumptions.find_by(kind: "living_expense")
+    assert_equal "monthly", living.params["frequency"]
+    assert_equal "flat", living.params["inflation_policy"]
+    assert_equal "none", living.params["actualization_policy"]
+    assert_equal "USD", living.params["currency"]
+  end
+
   test "derived salary carries provenance keyed to the payroll source record" do
     plan = build
     salary = plan.forecast_assumptions.find_by(kind: "salary")
