@@ -29,7 +29,7 @@ module Forecasts
   # family's data and never trusts a family_id from arbitrary params.
   class DefaultPlanBuilder
     DERIVATION_VERSION = "forecast-derivation-v1"
-    DEFAULT_HORIZON_MONTHS = 36
+    DEFAULT_HORIZON_MONTHS = 360
     DEFAULT_PLAN_NAME = "Baseline plan"
 
     attr_reader :family, :as_of

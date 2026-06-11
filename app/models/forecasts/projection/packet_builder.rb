@@ -50,12 +50,13 @@ module Forecasts
 
       attr_reader :plan, :source_snapshot, :family
 
-      def initialize(plan:, source_snapshot:)
+      def initialize(plan:, source_snapshot:, anchor_on: nil)
         raise InvalidBuilderInputError, "plan is required" if plan.nil?
         raise InvalidBuilderInputError, "source_snapshot is required" if source_snapshot.nil?
 
         @plan = plan
         @source_snapshot = source_snapshot
+        @anchor_on = anchor_on&.to_date
         # Family scope is derived from the plan, never from caller-supplied params.
         @family = plan.family
 
@@ -98,7 +99,7 @@ module Forecasts
             version: plan_version,
             reporting_currency: plan.reporting_currency,
             horizon: {
-              starts_on: date_string(plan.horizon_start_on),
+              starts_on: date_string(effective_horizon_start_on),
               ends_on: date_string(plan.horizon_end_on),
               near_term_daily_days: near_term_daily_days
             }
@@ -115,6 +116,18 @@ module Forecasts
         def near_term_daily_days
           settings = plan.settings || {}
           settings["near_term_daily_days"] || settings[:near_term_daily_days] || 90
+        end
+
+        # Re-anchoring (spec §10): a recompute simulates from the anchor month
+        # forward — past months are history, rendered from actuals, never
+        # re-simulated. The anchor is threaded by the caller (controller passes
+        # the current date); this builder never reads the clock. Clamped so a
+        # plan whose horizon has fully elapsed still yields >= 1 period.
+        def effective_horizon_start_on
+          return plan.horizon_start_on if @anchor_on.nil?
+
+          anchored = [ @anchor_on.beginning_of_month, plan.horizon_start_on ].max
+          [ anchored, plan.horizon_end_on.beginning_of_month ].min
         end
 
         # --- Scenario stack -------------------------------------------------

@@ -60,12 +60,13 @@ module Forecasts
 
       attr_reader :plan, :source_snapshot, :family
 
-      def initialize(plan:, source_snapshot:)
+      def initialize(plan:, source_snapshot:, anchor_on: nil)
         raise InvalidRecomputeInputError, "plan is required" if plan.nil?
         raise InvalidRecomputeInputError, "source_snapshot is required" if source_snapshot.nil?
 
         @plan = plan
         @source_snapshot = source_snapshot
+        @anchor_on = anchor_on
         @family = plan.family
       end
 
@@ -95,7 +96,8 @@ module Forecasts
         def build_packet
           Forecasts::Projection::PacketBuilder.new(
             plan: plan,
-            source_snapshot: source_snapshot
+            source_snapshot: source_snapshot,
+            anchor_on: @anchor_on
           ).build
         end
 

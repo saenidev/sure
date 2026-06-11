@@ -282,4 +282,17 @@ class Forecasts::Projection::RecomputeCoordinatorTest < ActiveSupport::TestCase
 
     assert_equal 0, cache.forecast_projection_traces.where(amount: 0).count
   end
+
+  # --- Re-anchoring (spec §10) ----------------------------------------------
+
+  test "recompute with anchor_on starts the persisted periods at the anchor month" do
+    @plan.update!(horizon_start_on: Date.new(2026, 1, 1), horizon_end_on: Date.new(2027, 1, 1))
+
+    cache = Forecasts::Projection::RecomputeCoordinator
+      .new(plan: @plan, source_snapshot: @snapshot, anchor_on: Date.new(2026, 7, 9))
+      .recompute
+
+    assert_equal Date.new(2026, 7, 1),
+      cache.forecast_projection_periods.where(granularity: "month").minimum(:period_start_on)
+  end
 end

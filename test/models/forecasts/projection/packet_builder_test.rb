@@ -352,4 +352,32 @@ class Forecasts::Projection::PacketBuilderTest < ActiveSupport::TestCase
       build
     end
   end
+
+  # --- Re-anchoring (spec §10) ----------------------------------------------
+
+  test "anchor_on clamps the horizon start to the anchor month" do
+    @plan.update!(horizon_start_on: Date.new(2026, 1, 1), horizon_end_on: Date.new(2036, 1, 1))
+
+    packet = Forecasts::Projection::PacketBuilder
+      .new(plan: @plan, source_snapshot: @snapshot, anchor_on: Date.new(2027, 5, 17))
+      .build
+
+    assert_equal "2027-05-01", packet.plan[:horizon][:starts_on]
+    assert_equal "2036-01-01", packet.plan[:horizon][:ends_on]
+  end
+
+  test "anchor_on never starts past the horizon end" do
+    @plan.update!(horizon_start_on: Date.new(2026, 1, 1), horizon_end_on: Date.new(2026, 6, 30))
+
+    packet = Forecasts::Projection::PacketBuilder
+      .new(plan: @plan, source_snapshot: @snapshot, anchor_on: Date.new(2030, 1, 1))
+      .build
+
+    assert_equal "2026-06-01", packet.plan[:horizon][:starts_on]
+  end
+
+  test "without anchor_on the horizon is the plan's stored horizon" do
+    packet = build
+    assert_equal @plan.horizon_start_on.iso8601, packet.plan[:horizon][:starts_on]
+  end
 end
