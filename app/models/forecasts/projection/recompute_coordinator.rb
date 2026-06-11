@@ -245,16 +245,17 @@ module Forecasts
         # payload).
         #
         # `entry_jsons` memoizes one entry's JSON (nil for a filtered zero
-        # amount) per [assumption_id, amount] across the whole save. That key is
-        # injective for the stored entry: every other stored field is a function
-        # of the assumption alone — the TraceBuilder derives source_type,
-        # category (hence metric_key and direction), currency, explanation_key,
-        # and the shared refs array from per-assumption data; only the amount
-        # varies across one assumption's occurrences. A 30-year save therefore
-        # encodes ~25 entry strings instead of ~9k.
+        # amount) per [assumption_id, amount, category, currency, direction]
+        # across the whole save — every varying stored field is in the key, so
+        # a future flow kind emitting multiple categories/currencies/directions
+        # per assumption cannot collide onto a wrong cached entry. The two
+        # remaining fields (explanation_key, refs) derive from the assumption's
+        # kind/identity alone. A 30-year save still encodes ~25 entry strings
+        # instead of ~9k (flat assumptions repeat one key all horizon).
         def traces_json(period_traces, entry_jsons, blob_jsons)
           parts = period_traces.filter_map do |trace|
-            entry_jsons.fetch([ trace.assumption_id, trace.amount ]) do |key|
+            memo_key = [ trace.assumption_id, trace.amount, trace.category, trace.currency, trace.direction ]
+            entry_jsons.fetch(memo_key) do |key|
               entry_jsons[key] = trace_entry_json(trace)
             end
           end
