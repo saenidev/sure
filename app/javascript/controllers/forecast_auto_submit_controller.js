@@ -1,6 +1,11 @@
 import { Controller } from "@hotwired/stimulus";
 import { normalizeFormValues } from "forecast/form_params";
-import { hasQueued, requestSave, settled } from "forecast/save_pipeline";
+import {
+  WATCHDOG_MS,
+  hasQueued,
+  requestSave,
+  settled,
+} from "forecast/save_pipeline";
 
 // Settle-then-save for the assumption drawer (spec §4.6), riding the shared
 // save pipeline so edits across DIFFERENT cards coalesce too: at most one
@@ -62,17 +67,31 @@ export default class extends Controller {
     );
     clearTimeout(this.timer);
     this.timer = null;
-    // Drawer closed mid-edit: drop the live preview. A save already in
-    // flight still lands server-side and re-streams the island with the
-    // saved values — but its turbo:submit-end is dispatched on the
-    // DETACHED form and can never reach our (just-removed) element-scoped
-    // listener, so settle the pipeline here or it stays wedged until the
-    // watchdog (contract: every fired submitter MUST call settled()).
     if (this.awaitingSettle) {
+      // Drawer closed with a save in flight. It still lands server-side and
+      // re-streams the island with the values the preview already shows —
+      // but its turbo:submit-end is dispatched on the DETACHED form and can
+      // never reach our (just-removed) element-scoped listener, so settle
+      // the pipeline here or it stays wedged until the watchdog (contract:
+      // every fired submitter MUST call settled()).
       this.awaitingSettle = false;
       settled();
+      // KEEP the preview across the round trip: clearing now flashes the
+      // chart back to the pre-edit projection for ~0.5s until the restream
+      // lands (live-test feedback: distracting double flash). The restream
+      // replaces the island, so the fresh chart connects preview-free. If
+      // the save FAILS, only the (now detached) drawer form is re-streamed
+      // — the fallback below clears the stale preview; it is a no-op when
+      // the island was already replaced.
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("forecast:preview-clear"));
+      }, WATCHDOG_MS);
+    } else {
+      // No save will land for this edit (a pending debounce was dropped
+      // above; a queued-but-unfired save self-drops via the isConnected
+      // guard) — return the chart to the saved projection now.
+      window.dispatchEvent(new CustomEvent("forecast:preview-clear"));
     }
-    window.dispatchEvent(new CustomEvent("forecast:preview-clear"));
   }
 
   queue() {
