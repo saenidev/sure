@@ -2,7 +2,7 @@ class AccountsController < ApplicationController
   include StreamExtensions
 
   before_action :set_account, only: %i[show sparkline sync set_default remove_default]
-  before_action :set_manageable_account, only: %i[toggle_active destroy unlink confirm_unlink select_provider]
+  before_action :set_manageable_account, only: %i[toggle_active toggle_exclude_from_reports destroy unlink confirm_unlink select_provider]
   include Periodable
 
   def index
@@ -16,6 +16,7 @@ class AccountsController < ApplicationController
     @simplefin_items = visible_provider_items(family.simplefin_items.ordered.includes(:syncs))
     @lunchflow_items = visible_provider_items(family.lunchflow_items.ordered.includes(:syncs, :lunchflow_accounts))
     @akahu_items = visible_provider_items(family.akahu_items.ordered.includes(:syncs, :akahu_accounts))
+    @up_items = visible_provider_items(family.up_items.ordered.includes(:syncs, :up_accounts))
     @enable_banking_items = visible_provider_items(family.enable_banking_items.ordered.includes(:syncs))
     @coinstats_items = visible_provider_items(family.coinstats_items.ordered.includes(:coinstats_accounts, :accounts, :syncs))
     @mercury_items = visible_provider_items(family.mercury_items.ordered.includes(:syncs, :mercury_accounts))
@@ -26,6 +27,7 @@ class AccountsController < ApplicationController
     @indexa_capital_items = visible_provider_items(family.indexa_capital_items.ordered.includes(:syncs, :indexa_capital_accounts))
     @sophtron_items = visible_provider_items(family.sophtron_items.ordered.includes(:syncs, :sophtron_accounts))
     @binance_items = visible_provider_items(family.binance_items.ordered.includes(:binance_accounts, :accounts, :syncs))
+    @questrade_items = visible_provider_items(family.questrade_items.ordered.includes(:syncs, questrade_accounts: :account_provider))
 
     # Build sync stats maps for all providers
     build_sync_stats_maps
@@ -102,6 +104,14 @@ class AccountsController < ApplicationController
     elsif @account.disabled?
       @account.enable!
     end
+    redirect_to accounts_path
+  end
+
+  # Toggles the exclude_from_reports flag on the account and redirects to the
+  # account list. The flag controls whether the account's data appears in
+  # financial reports, dashboards, and exports.
+  def toggle_exclude_from_reports
+    @account.update!(exclude_from_reports: !@account.exclude_from_reports?)
     redirect_to accounts_path
   end
 
@@ -334,6 +344,13 @@ class AccountsController < ApplicationController
         @akahu_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
       end
 
+      # Up sync stats
+      @up_sync_stats_map = {}
+      @up_items.each do |item|
+        latest_sync = item.syncs.ordered.first
+        @up_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
+      end
+
       # Enable Banking sync stats
       @enable_banking_sync_stats_map = {}
       @enable_banking_latest_sync_error_map = {}
@@ -420,6 +437,19 @@ class AccountsController < ApplicationController
           .where(account_providers: { id: nil })
           .count
         @binance_unlinked_count_map[item.id] = count
+      end
+
+      # Questrade sync stats and account counts
+      @questrade_sync_stats_map = {}
+      @questrade_account_counts_map = {}
+      @questrade_items.each do |item|
+        latest_sync = item.syncs.ordered.first
+        @questrade_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
+        accounts = item.questrade_accounts.to_a
+        linked = accounts.count { |a| a.account_provider.present? }
+        @questrade_account_counts_map[item.id] = {
+          linked: linked, unlinked: accounts.size - linked, total: accounts.size
+        }
       end
     end
 end

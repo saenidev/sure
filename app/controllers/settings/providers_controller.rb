@@ -183,6 +183,7 @@ class Settings::ProvidersController < ApplicationController
     # them (see prepare_show_context).
     FAMILY_PANELS = [
       { key: "akahu",          title: "Akahu",           turbo_id: "akahu",          partial: "akahu_panel" },
+      { key: "up",             title: "Up",              turbo_id: "up",             partial: "up_panel" },
       { key: "lunchflow",      title: "Lunch Flow",      turbo_id: "lunchflow",      partial: "lunchflow_panel" },
       { key: "simplefin",      title: "SimpleFIN",       turbo_id: "simplefin",      partial: "simplefin_panel" },
       { key: "enable_banking", title: "Enable Banking",  turbo_id: "enable_banking", partial: "enable_banking_panel" },
@@ -195,7 +196,8 @@ class Settings::ProvidersController < ApplicationController
       { key: "snaptrade",      title: "SnapTrade",       turbo_id: "snaptrade",      partial: "snaptrade_panel", auto_open: "manage" },
       { key: "ibkr",           title: "Interactive Brokers", turbo_id: "ibkr",      partial: "ibkr_panel" },
       { key: "indexa_capital", title: "Indexa Capital",  turbo_id: "indexa_capital", partial: "indexa_capital_panel" },
-      { key: "sophtron",       title: "Sophtron",        turbo_id: "sophtron",       partial: "sophtron_panel" }
+      { key: "sophtron",       title: "Sophtron",        turbo_id: "sophtron",       partial: "sophtron_panel" },
+      { key: "questrade",      title: "Questrade",       turbo_id: "questrade",      partial: "questrade_panel" }
     ].freeze
 
     FAMILY_PANEL_KEYS = FAMILY_PANELS.map { |p| p[:key] }.freeze
@@ -203,6 +205,7 @@ class Settings::ProvidersController < ApplicationController
     # Maps panel key → ActiveRecord model name for sync health queries
     PANEL_SYNCABLE_TYPES = {
       "akahu"          => "AkahuItem",
+      "up"             => "UpItem",
       "simplefin"      => "SimplefinItem",
       "lunchflow"      => "LunchflowItem",
       "enable_banking" => "EnableBankingItem",
@@ -213,6 +216,7 @@ class Settings::ProvidersController < ApplicationController
       "binance"        => "BinanceItem",
       "kraken"         => "KrakenItem",
       "snaptrade"      => "SnaptradeItem",
+      "questrade"      => "QuestradeItem",
       "ibkr"           => "IbkrItem",
       "indexa_capital" => "IndexaCapitalItem",
       "sophtron"       => "SophtronItem"
@@ -222,6 +226,8 @@ class Settings::ProvidersController < ApplicationController
       case provider_key
       when "akahu"
         @akahu_items = Current.family.akahu_items.active.ordered
+      when "up"
+        @up_items = Current.family.up_items.active.ordered
       when "simplefin"
         @simplefin_items = Current.family.simplefin_items.ordered
       when "lunchflow"
@@ -248,6 +254,8 @@ class Settings::ProvidersController < ApplicationController
         @indexa_capital_items = Current.family.indexa_capital_items.ordered
       when "sophtron"
         @sophtron_items = Current.family.sophtron_items.ordered
+      when "questrade"
+        @questrade_items = Current.family.questrade_items.active.ordered
       end
     end
 
@@ -260,6 +268,7 @@ class Settings::ProvidersController < ApplicationController
       end
 
       @akahu_items = Current.family.akahu_items.active.ordered
+      @up_items = Current.family.up_items.active.ordered
       # Providers page only needs to know whether any SimpleFin/Lunchflow connections exist with valid credentials
       @simplefin_items = Current.family.simplefin_items.where.not(access_url: [ nil, "" ]).ordered.select(:id)
       @lunchflow_items = Current.family.lunchflow_items.where.not(api_key: [ nil, "" ]).ordered.select(:id)
@@ -275,6 +284,7 @@ class Settings::ProvidersController < ApplicationController
       @indexa_capital_items = Current.family.indexa_capital_items.ordered.select(:id)
       @binance_items = Current.family.binance_items.active.ordered
       @kraken_items = Current.family.kraken_items.active.ordered
+      @questrade_items = Current.family.questrade_items.active.ordered.select(:id)
 
       @provider_sync_health = compute_provider_sync_health(family_panel_items)
 
@@ -293,6 +303,7 @@ class Settings::ProvidersController < ApplicationController
     def family_panel_items
       {
         "akahu"          => @akahu_items,
+        "up"             => @up_items,
         "simplefin"      => @simplefin_items,
         "lunchflow"      => @lunchflow_items,
         "enable_banking" => @enable_banking_items,
@@ -303,6 +314,7 @@ class Settings::ProvidersController < ApplicationController
         "binance"        => @binance_items,
         "kraken"         => @kraken_items,
         "snaptrade"      => @snaptrade_items,
+        "questrade"      => @questrade_items,
         "ibkr"           => @ibkr_items,
         "indexa_capital" => @indexa_capital_items,
         "sophtron"       => @sophtron_items

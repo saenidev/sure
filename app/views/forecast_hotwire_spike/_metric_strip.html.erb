@@ -1,5 +1,5 @@
-<%# locals: (plan:, index:, symbol: "$") — JS rewrites these spans on scrub;
-    server replaces the whole strip on save. Both write to the same metric targets. %>
+<%# locals: (plan:, index:, symbol: "$") %>
+<%# JS rewrites these spans on scrub; the server replaces the whole strip on save. %>
 <% sym = local_assigns.fetch(:symbol, "$") %>
 <% p = plan.period(index) %>
 <div id="forecast-spike-metrics" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">

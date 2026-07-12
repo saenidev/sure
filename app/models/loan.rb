@@ -7,6 +7,9 @@ class Loan < ApplicationRecord
     "mortgage" => { short: "Mortgage", long: "Mortgage" },
     "student" => { short: "Student Loan", long: "Student Loan" },
     "auto" => { short: "Auto Loan", long: "Auto Loan" },
+    "home_equity" => { short: "Home Equity", long: "Home Equity Loan" },
+    "line_of_credit" => { short: "Line of Credit", long: "Line of Credit" },
+    "business" => { short: "Business Loan", long: "Business Loan" },
     "other" => { short: "Other Loan", long: "Other Loan" }
   }.freeze
   RATE_TYPES = %w[fixed variable adjustable].freeze

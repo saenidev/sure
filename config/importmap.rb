@@ -10,6 +10,7 @@ pin_all_from "app/components", under: "controllers", to: "", preload: [ "authent
 pin_all_from "app/javascript/services", under: "services", to: "services", preload: [ "authenticated" ]
 pin_all_from "app/javascript/utils", under: "utils", to: "utils", preload: [ "authenticated" ]
 pin "utils/sankey_zoom", to: "utils/sankey_zoom.mjs", preload: [ "authenticated" ]
+pin "utils/transactions_filter_url", to: "utils/transactions_filter_url.mjs", preload: [ "authenticated" ]
 # Forecast workspace preview engine (phase 4): pure .mjs modules shared with
 # the node --test parity suite (test/javascript).
 pin "forecast/preview_engine", to: "forecast/preview_engine.mjs", preload: [ "authenticated" ]

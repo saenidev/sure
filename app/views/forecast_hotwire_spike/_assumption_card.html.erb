@@ -1,4 +1,5 @@
-<%# locals: (card:, index:, symbol: "$") — root owns its id so a save can replace just this card. %>
+<%# locals: (card:, index:, symbol: "$") %>
+<%# The root owns its id so a save can replace just this card. %>
 <% sym = local_assigns.fetch(:symbol, "$") %>
 <div id="forecast-spike-card-<%= card[:key] %>"
      class="border border-primary rounded-lg p-3 flex items-start gap-3">
