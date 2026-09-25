@@ -464,6 +464,20 @@ class Account::ProviderImportAdapter
           currency: currency,
           account_provider_id: account_provider_id
         )
+
+        # A row found by external_id carries the lot's previous snapshot date. Moving
+        # it to today collides with the calculated (provider-less) row the holdings
+        # materializer already wrote for today, and the collision handler below
+        # cannot adopt that row because this row still owns the external_id. The
+        # snapshot then silently stays on its old date. The calculated row is
+        # exactly what `cleanup_shadowed_calculated_holdings` would remove once a
+        # provider row lands on its date, so clear it here.
+        if holding.persisted? && holding.date != date
+          account.holdings
+            .where(security: security, date: date, currency: currency, account_provider_id: nil)
+            .where.not(id: holding.id)
+            .delete_all
+        end
       else
         holding = account.holdings.find_or_initialize_by(
           security: security,

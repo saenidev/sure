@@ -381,6 +381,46 @@ class Account::ProviderImportAdapterTest < ActiveSupport::TestCase
     assert_equal "security is required", exception.message
   end
 
+  test "moves an external_id holding onto a date that already has a calculated row" do
+    # The holdings materializer writes provider-less (calculated) rows for every
+    # day, including today. A provider row located by external_id still sits on
+    # its previous snapshot date; moving it to today used to hit the unique
+    # (account, security, date, currency) index, and the fallback could not adopt
+    # the calculated row because this row still owned the external_id. The
+    # provider snapshot then silently stayed on the old date.
+    account = accounts(:investment)
+    adapter = Account::ProviderImportAdapter.new(account)
+    security = securities(:aapl)
+    provider = AccountProvider.create!(account: account, provider: plaid_accounts(:one))
+    today = Date.current
+    account.holdings.where(security: security).delete_all
+
+    previous = account.holdings.create!(
+      security: security, date: today - 70.days, currency: "USD",
+      qty: 12, price: 60, amount: 720,
+      external_id: "simplefin_HOL-1", account_provider_id: provider.id
+    )
+    account.holdings.create!(
+      security: security, date: today, currency: "USD",
+      qty: 12, price: 60, amount: 720
+    )
+
+    holding = adapter.import_holding(
+      security: security, quantity: 0, amount: 0, price: 0,
+      currency: "USD", date: today,
+      external_id: "simplefin_HOL-1", source: "simplefin",
+      account_provider_id: provider.id
+    )
+
+    assert_equal previous.id, holding.id
+    holding.reload
+    assert_equal today, holding.date
+    assert_equal 0, holding.qty
+    assert_equal 0, holding.amount
+    assert_equal today, account.latest_provider_holdings_snapshot_date
+    assert_equal 1, account.holdings.where(security: security, date: today).count
+  end
+
   test "stores account_provider_id when importing holding" do
     investment_account = accounts(:investment)
     adapter = Account::ProviderImportAdapter.new(investment_account)
