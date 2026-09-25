@@ -296,4 +296,114 @@ class SimplefinAccount::Investments::HoldingsProcessorTest < ActiveSupport::Test
     # but the basis is unknown for the position as a whole, NOT $100/share
     assert_nil position[:cost_basis]
   end
+
+  test "a position reported at zero shares and zero value is imported as closed" do
+    # SimpleFIN keeps reporting a sold position at 0 shares / $0 (Schwab does
+    # this). Skipping it left the last non-zero snapshot as the latest provider
+    # holding, so a fully sold position kept showing as held.
+    processor = build_recording_processor([
+      { "id" => "HOL-sold", "symbol" => "AAPL", "shares" => "0.00", "market_value" => "0.00",
+        "cost_basis" => "74846.44", "purchase_price" => "61.049299" }
+    ])
+
+    processor.process
+
+    assert_equal 1, @recorder.calls.size, "a closed position must still be written"
+    position = @recorder.calls.first
+    assert_equal 0, position[:quantity].to_d
+    assert_equal 0, position[:amount].to_d
+    assert_equal "simplefin_HOL-sold", position[:external_id]
+    # With no shares there is nothing to average a per-share basis over.
+    assert_nil position[:cost_basis]
+  end
+
+  test "a closed lot does not reduce or rename a position with open lots" do
+    processor = build_recording_processor([
+      { "id" => "lot-a-closed", "symbol" => "AAPL", "shares" => "0", "market_value" => "0" },
+      { "id" => "lot-b-open",   "symbol" => "AAPL", "shares" => "10", "market_value" => "2000.00", "cost_basis" => "150.00" }
+    ])
+
+    processor.process
+
+    assert_equal 1, @recorder.calls.size
+    position = @recorder.calls.first
+    assert_in_delta 10.0,   position[:quantity].to_f, 0.000001
+    assert_in_delta 2000.0, position[:amount].to_f,   0.01
+    assert_in_delta 150.0,  position[:cost_basis].to_f, 0.01
+    # The open lot keeps identifying the row, even though the closed lot's id
+    # sorts first.
+    assert_equal "simplefin_lot-b-open", position[:external_id]
+  end
+
+  test "a sold SimpleFIN position stops showing as a current holding" do
+    family = families(:dylan_family)
+    item = SimplefinItem.create!(family: family, name: "Brokerage", access_url: "https://example.com/access")
+    sfa = SimplefinAccount.create!(
+      simplefin_item: item, account_id: "ACT-brokerage", name: "Individual", currency: "USD",
+      current_balance: 5000, account_type: "investment",
+      raw_holdings_payload: [
+        { "id" => "HOL-aapl", "symbol" => "AAPL", "shares" => "10", "market_value" => "2000.00", "currency" => "USD" }
+      ]
+    )
+    account = Account.create!(
+      family: family, name: "Individual", currency: "USD", balance: 5000, cash_balance: 3000,
+      accountable: Investment.create!
+    )
+    AccountProvider.create!(account: account, provider: sfa)
+    security = securities(:aapl)
+    processor = SimplefinAccount::Investments::HoldingsProcessor.new(sfa.reload)
+    processor.stubs(:resolve_security).returns(security)
+
+    travel_to Date.new(2026, 7, 15) do
+      processor.process
+    end
+    assert_equal [ 10 ], account.reload.current_holdings.map { |h| h.qty.to_i }
+
+    # The position is sold; SimpleFIN now reports the same holding at zero.
+    sfa.update!(raw_holdings_payload: [
+      { "id" => "HOL-aapl", "symbol" => "AAPL", "shares" => "0.00", "market_value" => "0.00", "currency" => "USD" }
+    ])
+    processor = SimplefinAccount::Investments::HoldingsProcessor.new(sfa.reload)
+    processor.stubs(:resolve_security).returns(security)
+
+    travel_to Date.new(2026, 9, 25) do
+      processor.process
+    end
+
+    account.reload
+    assert_equal Date.new(2026, 9, 25), account.latest_provider_holdings_snapshot_date,
+      "the zero report must advance the provider snapshot past the old position"
+    closed = account.holdings.find_by!(date: Date.new(2026, 9, 25), security: security)
+    assert_equal 0, closed.qty
+    assert_equal 0, closed.amount
+    assert_empty account.current_holdings
+  end
+
+  private
+    def build_recording_processor(payload)
+      processor = SimplefinAccount::Investments::HoldingsProcessor.new(nil)
+      processor.stubs(:holdings_data).returns(payload)
+      processor.stubs(:account).returns(accounts(:investment))
+      processor.stubs(:resolve_security).returns(securities(:aapl))
+      processor.stubs(:institution_reports_total_basis?).returns(false)
+      processor.stubs(:simplefin_account).returns(
+        stub(id: "sfa-test", name: "Test Investment Account", account_provider: nil)
+      )
+
+      @recorder = Class.new do
+        attr_reader :calls
+
+        def initialize = @calls = []
+
+        def import_holding(**kwargs)
+          @calls << kwargs
+          Struct.new(:id, :security_id, :qty, :amount, :currency, :date, :external_id)
+                .new("h", kwargs[:security].id, kwargs[:quantity], kwargs[:amount],
+                     kwargs[:currency], kwargs[:date], kwargs[:external_id])
+        end
+      end.new
+
+      processor.stubs(:import_adapter).returns(@recorder)
+      processor
+    end
 end

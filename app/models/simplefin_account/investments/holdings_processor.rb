@@ -80,8 +80,13 @@ class SimplefinAccount::Investments::HoldingsProcessor
         # the holding was first seen by SimpleFIN, not when we observed it).
         holding_date = Date.current
 
-        # Skip zero positions with no value to avoid invisible rows
-        next if qty.to_d.zero? && computed_amount.to_d.zero?
+        # A position SimpleFIN reports at 0 shares and $0 is a closed position,
+        # not noise. Dropping it leaves the last non-zero snapshot as the
+        # account's latest provider holding, so a fully sold position is still
+        # shown (and reverse-calculated) as held. Zero lots are carried into the
+        # position below and always written, so the latest provider snapshot
+        # records the security as no longer held.
+        closed_lot = qty.to_d.zero? && computed_amount.to_d.zero?
 
         currency = simplefin_holding["currency"].presence || "USD"
         position = positions[[ security.id, currency, holding_date ]] ||= {
@@ -97,8 +102,16 @@ class SimplefinAccount::Investments::HoldingsProcessor
           basis_qty: 0.to_d,
           basis_complete: true,
           fallback_price: nil,
-          external_ids: []
+          external_ids: [],
+          closed_external_ids: []
         }
+
+        if closed_lot
+          # Kept apart so a closed lot never becomes the identifier of a
+          # position that still has open lots.
+          position[:closed_external_ids] << "simplefin_#{holding_id}"
+          next
+        end
 
         position[:qty] += qty.to_d
         position[:amount] += computed_amount.to_d
@@ -140,7 +153,10 @@ class SimplefinAccount::Investments::HoldingsProcessor
       # Sorted so the identifier stays stable across syncs when a provider
       # reorders lots. If the chosen lot later disappears, import_holding falls
       # back to matching on security/date/currency and updates the same row.
-      external_id = position[:external_ids].sort.first
+      # A fully closed position has no open lots, so it is identified by its
+      # closed lot -- which is the same id the row carried while it was held,
+      # so the existing provider row is updated to 0 rather than left stale.
+      external_id = (position[:external_ids].presence || position[:closed_external_ids]).sort.first
 
       saved = import_adapter.import_holding(
         security: position[:security],
