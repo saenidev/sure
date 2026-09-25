@@ -1,18 +1,40 @@
 class ForecastsController < ApplicationController
   def show
-    loader = Forecasts::WorkspaceLoader.new(family: Current.family, today: Date.current).load
-    @plan = loader.plan
-    @cache = loader.cache
-    @island = Forecasts::WorkspaceIsland.from_cache(plan: @plan, cache: @cache)
-    @groups = assumption_groups
-    @derived_count =
+    load_workspace
+    @breadcrumbs = [ [ t("breadcrumbs.home"), root_path ], [ t("forecasts.workspace.title"), nil ] ]
+  end
+
+  # Everything forecasts/show renders from. Public so Forecast::RunsController
+  # can re-render the workspace for a rejected run without duplicating it.
+  def self.workspace_assigns(family:, today: Date.current)
+    loader = Forecasts::WorkspaceLoader.new(family: family, today: today).load
+    plan = loader.plan
+    cache = loader.cache
+    groups = assumption_groups_for(plan)
+    derived_count =
       if loader.bootstrapped?
-        @groups.values.sum { |list| list.count { |a| a.origin == "source_derived" } }
+        groups.values.sum { |list| list.count { |a| a.origin == "source_derived" } }
       else
         0
       end
-    @issues = (@cache.issue_summary || {}).fetch("codes", {})
-    @breadcrumbs = [ [ t("breadcrumbs.home"), root_path ], [ t("forecasts.workspace.title"), nil ] ]
+
+    {
+      plan: plan,
+      cache: cache,
+      island: Forecasts::WorkspaceIsland.from_cache(plan: plan, cache: cache),
+      groups: groups,
+      derived_count: derived_count,
+      issues: (cache.issue_summary || {}).fetch("codes", {})
+    }
+  end
+
+  # Cards grouped for the rail, in registry order. Kind -> group mapping lives
+  # on the island read model so client and server agree.
+  def self.assumption_groups_for(plan)
+    plan.forecast_assumptions
+      .where.not(status: %w[disabled archived])
+      .order(:created_at)
+      .group_by { |a| Forecasts::WorkspaceIsland::GROUP_FOR_KIND.fetch(a.kind, "other") }
   end
 
   # V1 lazy tab endpoint — still routable until the phase-9 cutover. Unchanged.
@@ -28,12 +50,9 @@ class ForecastsController < ApplicationController
   end
 
   private
-    # Cards grouped for the rail, in registry order. Kind -> group mapping lives
-    # on the island read model so client and server agree.
-    def assumption_groups
-      @plan.forecast_assumptions
-        .where.not(status: %w[disabled archived])
-        .order(:created_at)
-        .group_by { |a| Forecasts::WorkspaceIsland::GROUP_FOR_KIND.fetch(a.kind, "other") }
+    def load_workspace
+      self.class.workspace_assigns(family: Current.family).each do |name, value|
+        instance_variable_set("@#{name}", value)
+      end
     end
 end

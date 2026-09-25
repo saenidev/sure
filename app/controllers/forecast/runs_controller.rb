@@ -156,8 +156,10 @@ module Forecast
       def reject_stacks(message)
         respond_to do |format|
           format.html do
-            @workspace = Forecast::Workspace.new(family: @family)
-            @breadcrumbs = [ [ t("breadcrumbs.home"), root_path ], [ t("forecasts.show.title"), nil ] ]
+            ForecastsController.workspace_assigns(family: @family).each do |name, value|
+              instance_variable_set("@#{name}", value)
+            end
+            @breadcrumbs = [ [ t("breadcrumbs.home"), root_path ], [ t("forecasts.workspace.title"), nil ] ]
             flash.now[:alert] = message
             render "forecasts/show", status: :unprocessable_entity
           end

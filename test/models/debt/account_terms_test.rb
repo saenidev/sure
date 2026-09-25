@@ -120,4 +120,20 @@ class Debt::AccountTermsTest < ActiveSupport::TestCase
     assert_not terms.accrual_ready?
     assert_includes terms.missing_fields, :annual_rate
   end
+
+  # A variable-rate loan's interest_rate is the origination rate; a recorded
+  # change on or before as_of is what the loan is charging.
+  test "variable-rate loan default uses the rate change in force, not the origination rate" do
+    @loan_account.loan.update!(
+      subtype: nil, rate_type: "variable", interest_rate: 6, start_date: Date.new(2024, 1, 1),
+      variable_rate_schedule: { "2026-03-01" => "7.25" }
+    )
+
+    before_change = Debt::AccountTerms.new(@loan_account, as_of: Date.new(2026, 2, 1)).resolve
+    after_change = Debt::AccountTerms.new(@loan_account, as_of: Date.new(2026, 5, 1)).resolve
+
+    assert_equal BigDecimal("6"), before_change.annual_rate
+    assert_equal BigDecimal("7.25"), after_change.annual_rate
+    assert_equal "account", after_change.source
+  end
 end

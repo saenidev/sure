@@ -46,7 +46,9 @@ class UI::AccountPage < ApplicationComponent
     base_tabs = case account.accountable_type
     when "Investment", "Crypto"
       [ :activity, :holdings ]
-    when "Property", "Vehicle", "Loan", "CreditCard", "OtherLiability"
+    when "Loan"
+      account.loan.amortizable? ? [ :activity, :overview, :schedule ] : [ :activity, :overview ]
+    when "Property", "Vehicle", "CreditCard", "OtherLiability"
       [ :activity, :overview ]
     else
       [ :activity ]
@@ -76,7 +78,7 @@ class UI::AccountPage < ApplicationComponent
     case tab
     when :activity
       activity_feed
-    when :holdings, :overview
+    when :holdings, :overview, :schedule
       # Accountable is responsible for implementing the partial in the correct folder
       render "#{account.accountable_type.underscore.pluralize}/tabs/#{tab}", account: account
     when :statements

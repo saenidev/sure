@@ -4,7 +4,8 @@ class LoansController < ApplicationController
   before_action :set_debt_profile_for_manage_modal, only: %i[edit update]
 
   permitted_accountable_attributes(
-    :id, :subtype, :rate_type, :interest_rate, :term_months, :initial_balance
+    :id, :subtype, :rate_type, :interest_rate, :term_months, :initial_balance, :start_date,
+    { rate_changes: [ :effective_date, :rate ] }
   )
 
   private

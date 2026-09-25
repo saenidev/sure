@@ -5,3 +5,10 @@ en:
     ibkr_missing_positions_or_trades: "IBKR Flex returned cash balances but no open positions or trades. If you expect holdings or buys, update the Flex Query to include the Open Positions and Trades sections, then run sync again."
     ibkr_zero_holdings_imported: "IBKR returned Open Positions rows but imported 0 holdings for one linked account."
     ibkr_zero_trades_imported: "IBKR returned Trades rows but imported 0 trades for one linked account."
+    lunchflow_accounts_failed:
+      one: "Lunchflow import: %{count} account failed to update"
+      other: "Lunchflow import: %{count} accounts failed to update"
+    lunchflow_transactions_failed:
+      one: "Lunchflow import: transaction fetch failed for %{count} account"
+      other: "Lunchflow import: transaction fetch failed for %{count} accounts"
+    lunchflow_import_error: "Lunchflow import: %{error}"

@@ -63,11 +63,15 @@ class Forecasts::Assumptions::DriftDismissalsControllerTest < ActionDispatch::In
     assert_equal "user_created", @assumption.origin,
       "acknowledge flips origin so the card is genuinely manual"
     assert_equal lock, @assumption.lock_version
-    # The streamed card is the post-acknowledge state: no notice strip, no
-    # "From your data" provenance label, no refresh-from-data trigger.
+    # The streamed card is the post-acknowledge state: no notice strip and no
+    # "From your data" provenance label. The refresh-from-data trigger stays:
+    # derivable kinds keep it on manual cards so the user can re-link a source
+    # (see "a manual (user_created) card of a derivable kind still renders the
+    # refresh-from-data trigger").
     assert_select "[role=status]", count: 0
     assert_not_includes response.body, I18n.t("forecasts.workspace.card.derived")
-    assert_select "a[href=?]", forecasts_assumption_resync_path(@assumption), count: 0
+    assert_select "a[href=?]", forecasts_assumption_resync_path(@assumption),
+      count: Forecasts::Derivation.supports?(@assumption.kind) ? 1 : 0
   end
 
   test "dismissal without any drift is an idempotent no-op that still streams the card" do

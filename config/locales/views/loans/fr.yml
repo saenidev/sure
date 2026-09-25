@@ -9,6 +9,9 @@ fr:
       interest_rate_placeholder: '5,25'
       none: Aucun
       rate_type: Type de taux
+      rate_type_adjustable: Révisable
+      rate_type_fixed: Fixe
+      rate_type_variable: Variable
       subtype_none: Aucun
       subtype_prompt: Sélectionner le type de prêt
       term_months: Durée (mois)
@@ -18,7 +21,7 @@ fr:
     overview:
       interest_rate: Taux d'intérêt
       monthly_payment: Paiement mensuel
-      not_applicable: N/A
+      not_applicable: N/D
       original_principal: Principal initial
       remaining_principal: Principal restant
       term: Durée

@@ -229,4 +229,70 @@ class InvitationTest < ActiveSupport::TestCase
     assert_not user.show_ai_sidebar?
     assert user.ai_enabled?
   end
+
+  test "accept_for auto-shares existing family accounts when family shares by default" do
+    @family.update!(default_account_sharing: "shared")
+    user = users(:empty)
+    user.update_columns(family_id: families(:empty).id, role: "admin")
+    invitation = @family.invitations.create!(email: user.email, role: "member", inviter: @inviter)
+
+    expected_ids = @family.accounts.where.not(owner_id: user.id).pluck(:id).sort
+    assert expected_ids.any?
+
+    assert invitation.accept_for(user)
+
+    assert_equal expected_ids, AccountShare.where(user: user).pluck(:account_id).sort
+  end
+
+  test "accept_for auto-shares read_only for guest invitations" do
+    @family.update!(default_account_sharing: "shared")
+    user = users(:empty)
+    user.update_columns(family_id: families(:empty).id, role: "admin")
+    invitation = @family.invitations.create!(email: user.email, role: "guest", inviter: @inviter)
+
+    expected_ids = @family.accounts.where.not(owner_id: user.id).pluck(:id).sort
+    assert expected_ids.any?
+
+    assert invitation.accept_for(user)
+
+    user.reload
+    shares = AccountShare.where(user: user)
+    assert_equal "guest", user.role
+    assert_equal expected_ids, shares.pluck(:account_id).sort
+    assert shares.all?(&:read_only?), "guest invitation shares must grant read_only"
+  end
+
+  test "accept_for does not auto-share when family sharing is private" do
+    @family.update!(default_account_sharing: "private")
+    user = users(:empty)
+    user.update_columns(family_id: families(:empty).id, role: "admin")
+    invitation = @family.invitations.create!(email: user.email, role: "member", inviter: @inviter)
+
+    assert_no_difference "AccountShare.count" do
+      assert invitation.accept_for(user)
+    end
+  end
+
+  test "accepting an invitation releases provider items left behind" do
+    # The item's owner is leaving the family but the item stays. Without
+    # releasing it, the orphaned owner fails ProviderItemOwnable's same-family
+    # validation on the next save and the connection becomes unsyncable.
+    user = users(:family_member)
+    old_family = user.family
+    item = PlaidItem.create!(
+      family: old_family, plaid_id: "item_invite_#{SecureRandom.hex(4)}",
+      access_token: "token", name: "Left Behind Bank", owner: user
+    )
+    new_family = Family.create!(name: "Invited Family")
+    invitation = Invitation.create!(
+      family: new_family, email: user.email, role: "member",
+      inviter: users(:family_admin)
+    )
+
+    assert invitation.accept_for(user)
+
+    assert_nil item.reload.owner_id
+    assert_equal old_family, item.family
+    assert item.valid?, "the left-behind item must still be savable"
+  end
 end

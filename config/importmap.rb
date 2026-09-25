@@ -61,3 +61,12 @@ pin "@floating-ui/utils/dom", to: "@floating-ui--utils--dom.js", preload: [ "aut
 pin "d3-sankey", preload: [ "authenticated" ] # @0.12.3
 pin "d3-array-src", to: "d3-array.js", preload: [ "authenticated" ]
 pin "d3-shape-src", to: "d3-shape.js", preload: [ "authenticated" ]
+
+# "What's new" release highlight popover
+pin "driver.js", to: "driver.js.mjs", preload: [ "authenticated" ] # @1.8.0
+pin "utils/cash_flow_chart_data", to: "utils/cash_flow_chart_data.mjs", preload: [ "authenticated" ]
+pin "utils/sankey_preview_analytics", to: "utils/sankey_preview_analytics.mjs", preload: [ "authenticated" ]
+
+pin "utils/sankey_comparison", to: "utils/sankey_comparison.mjs", preload: [ "authenticated" ]
+
+pin "utils/sankey_labels", to: "utils/sankey_labels.mjs", preload: [ "authenticated" ]

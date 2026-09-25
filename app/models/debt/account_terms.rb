@@ -32,7 +32,7 @@ module Debt
     def resolve
       rate_period = rate_period_for(as_of)
       federal_weighted_rate = federal_student_loan_weighted_rate
-      annual_rate = decimal_or_nil(rate_period&.annual_rate || federal_weighted_rate || account_default(:debt_default_annual_rate))
+      annual_rate = decimal_or_nil(rate_period&.annual_rate || federal_weighted_rate || account_default_annual_rate)
       rate_type = rate_period&.rate_type || profile&.rate_type || account_default(:debt_default_rate_type)
       monthly_payment = decimal_or_nil(profile&.minimum_payment_amount || account_default(:debt_default_monthly_payment))
       opening_balance = decimal_or_nil(account.balance)
@@ -71,6 +71,15 @@ module Debt
         rate_periods
           .select { |rate_period| rate_period.starts_on <= as_of && (rate_period.ends_on.nil? || rate_period.ends_on >= as_of) }
           .min_by { |rate_period| [ -rate_period.priority, -rate_period.starts_on.jd ] }
+      end
+
+      # A variable-rate loan's recorded changes decide the rate in force on
+      # `as_of`; its `interest_rate` is only the origination rate.
+      def account_default_annual_rate
+        accountable = account.accountable
+        return accountable.current_variable_rate(as_of) if accountable.respond_to?(:current_variable_rate)
+
+        account_default(:debt_default_annual_rate)
       end
 
       def account_default(method_name)
