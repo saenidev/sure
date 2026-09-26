@@ -135,6 +135,18 @@ class Assistant::Function::GetTransactionsTest < ActiveSupport::TestCase
     assert_empty member_result[:transactions]
   end
 
+  # Composed reports (one-time windfalls, a transfer audit) need one kind, not a
+  # whole year of transactions paged through the API.
+  test "kinds filter narrows results to those transaction kinds" do
+    @transaction.update!(kind: "one_time")
+
+    result = @function.call("kinds" => [ "one_time" ])
+
+    assert_includes result[:transactions].map { |t| t[:id] }, @transaction.id
+    assert result[:transactions].all? { |t| t[:kind] == "one_time" }
+    assert_operator result[:total_results], :<, @function.call({})[:total_results]
+  end
+
   # is_transfer alone could not tell a card payment from an investment move or a
   # one-time windfall, so callers could not separate real spending and income
   # from money moving between the user's own accounts.

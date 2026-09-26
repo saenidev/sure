@@ -92,6 +92,13 @@ class Assistant::Function::GetTransactions < Assistant::Function
           type: "string",
           description: "End date for transactions in YYYY-MM-DD format"
         },
+        kinds: {
+          type: "array",
+          description: "Only these transaction kinds (e.g. [\"one_time\"] for windfalls, [\"funds_movement\"] for transfers)",
+          items: { enum: Transaction.kinds.keys },
+          minItems: 1,
+          uniqueItems: true
+        },
         types: {
           type: "array",
           description: "Filter by kind; [\"income\", \"expense\"] excludes transfers between the user's own accounts",
