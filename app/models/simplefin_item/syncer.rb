@@ -1,6 +1,15 @@
 class SimplefinItem::Syncer
   include SyncStats::Collector
 
+  # SimpleFIN outages (5xx, 429, dropped connections) can outlast the provider
+  # client's in-request retries. Retry the item once the outage has had time to
+  # clear instead of waiting for the next nightly sync, but cap the retries so a
+  # long outage cannot loop.
+  TRANSIENT_ERROR_TYPES = %i[server_error rate_limited request_failed network_error].freeze
+  AUTO_RETRY_DELAY = 45.minutes
+  AUTO_RETRY_WINDOW = 12.hours
+  MAX_AUTO_RETRIES = 2
+
   attr_reader :simplefin_item
 
   def initialize(simplefin_item)
@@ -53,7 +62,12 @@ class SimplefinItem::Syncer
 
     # Full sync path
     sync.update!(status_text: "Importing accounts from SimpleFin...") if sync.respond_to?(:status_text)
-    simplefin_item.import_latest_simplefin_data(sync: sync)
+    begin
+      simplefin_item.import_latest_simplefin_data(sync: sync)
+    rescue Provider::Simplefin::SimplefinError => e
+      schedule_auto_retry(sync) if TRANSIENT_ERROR_TYPES.include?(e.error_type)
+      raise
+    end
 
     finalize_setup_counts(sync)
 
@@ -89,6 +103,17 @@ class SimplefinItem::Syncer
   end
 
   private
+    def schedule_auto_retry(sync)
+      recent_failures = simplefin_item.syncs
+        .where(status: :failed)
+        .where("syncs.created_at > ?", AUTO_RETRY_WINDOW.ago)
+        .where.not(id: sync.id)
+        .count
+      return if recent_failures >= MAX_AUTO_RETRIES
+
+      SimplefinRetrySyncJob.set(wait: AUTO_RETRY_DELAY).perform_later(simplefin_item)
+    end
+
     def finalize_setup_counts(sync)
       sync.update!(status_text: "Checking account configuration...") if sync.respond_to?(:status_text)
       total_accounts = simplefin_item.simplefin_accounts.count
