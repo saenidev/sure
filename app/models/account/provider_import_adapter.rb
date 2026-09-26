@@ -116,8 +116,11 @@ class Account::ProviderImportAdapter
 
         # PRIORITY 1: Use Plaid's pending_transaction_id if provided (most reliable)
         # Plaid explicitly links pending→posted with this ID - no guessing required
+        # Excluded entries are never claimed: a stale pending the sync already
+        # excluded, or an original converted to a trade (zeroed, the trade holds
+        # its cash). Claiming one would write the posted amount back onto it.
         if pending_transaction_id.present?
-          pending_match = account.entries.find_by(external_id: pending_transaction_id, source: source)
+          pending_match = account.entries.where(excluded: false).find_by(external_id: pending_transaction_id, source: source)
           if pending_match
             Rails.logger.info("Reconciling pending→posted via Plaid pending_transaction_id: claiming entry #{pending_match.id} (#{pending_match.name}) with new external_id #{external_id}")
           end
@@ -815,6 +818,7 @@ class Account::ProviderImportAdapter
     # 6. Is a Transaction (not Trade or Valuation)
     # 7. Has pending=true in transaction.extra[<provider>]["pending"] for any provider
     #    in Transaction::PENDING_PROVIDERS
+    # 8. Not excluded
     candidates = account.entries
       .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
       .where(source: source)
@@ -822,6 +826,7 @@ class Account::ProviderImportAdapter
       .where(currency: currency)
       .where(date: (date - date_window.days)..date) # Pending must be ON or BEFORE posted date
       .where(PENDING_LOOKUP_SQL)
+      .where(excluded: false) # See the claim path: excluded entries are never claimed
       .order(date: :desc) # Prefer most recent pending transaction
 
     candidates.first
@@ -864,6 +869,7 @@ class Account::ProviderImportAdapter
       .where(date: (date - date_window.days)..date) # Pending ON or BEFORE posted
       .where("ABS(entries.amount) BETWEEN ? AND ?", min_pending_abs, max_pending_abs)
       .where(PENDING_LOOKUP_SQL)
+      .where(excluded: false)
 
     # If merchant_id is provided, prioritize matching by merchant
     if merchant_id.present?
@@ -929,6 +935,7 @@ class Account::ProviderImportAdapter
       .where(date: (date - date_window.days)..date)
       .where("ABS(entries.amount) BETWEEN ? AND ?", min_pending_abs, max_pending_abs)
       .where(PENDING_LOOKUP_SQL)
+      .where(excluded: false)
 
     # For low confidence, require BOTH merchant AND name match (stronger signal needed)
     if merchant_id.present? && name.present?

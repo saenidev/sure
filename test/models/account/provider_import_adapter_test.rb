@@ -1578,6 +1578,67 @@ class Account::ProviderImportAdapterTest < ActiveSupport::TestCase
     assert_equal "plaid_pending_1", pending1.external_id
   end
 
+  # A transaction converted to a trade is kept excluded with its amount zeroed
+  # (the trade carries the cash). Pending→posted reconciliation must not claim
+  # it, or the posted amount is written back and the cash is counted twice.
+  test "Plaid pending_transaction_id does not claim an excluded converted original" do
+    converted = converted_pending_original(external_id: "plaid_pending_converted", source: "plaid", amount: 40.00)
+
+    assert_difference "@account.entries.count", 1 do
+      posted = @adapter.import_transaction(
+        external_id: "plaid_posted_converted",
+        amount: 40.00,
+        currency: "USD",
+        date: Date.today,
+        name: "Brokerage buy",
+        source: "plaid",
+        pending_transaction_id: "plaid_pending_converted",
+        extra: { "plaid" => { "pending" => false } }
+      )
+      assert_not_equal converted.id, posted.id
+    end
+
+    converted.reload
+    assert_equal 0, converted.amount
+    assert_equal "plaid_pending_converted", converted.external_id
+    assert converted.excluded?
+  end
+
+  test "amount-based pending matching does not claim an excluded converted original" do
+    converted = converted_pending_original(external_id: "simplefin_pending_converted", source: "simplefin", amount: 55.00)
+
+    assert_difference "@account.entries.count", 1 do
+      @adapter.import_transaction(
+        external_id: "simplefin_posted_converted",
+        amount: 55.00,
+        currency: "USD",
+        date: Date.today,
+        name: "Brokerage buy",
+        source: "simplefin",
+        extra: { "simplefin" => { "pending" => false } }
+      )
+    end
+
+    converted.reload
+    assert_equal 0, converted.amount
+    assert_equal "simplefin_pending_converted", converted.external_id
+  end
+
+  test "find_pending_transaction ignores excluded pending entries" do
+    pending = @adapter.import_transaction(
+      external_id: "simplefin_pending_excluded",
+      amount: 12.00,
+      currency: "USD",
+      date: Date.today - 1.day,
+      name: "Excluded pending",
+      source: "simplefin",
+      extra: { "simplefin" => { "pending" => true } }
+    )
+    pending.update!(excluded: true)
+
+    assert_nil @adapter.find_pending_transaction(date: Date.today, amount: 12.00, currency: "USD", source: "simplefin")
+  end
+
   # =========================================================================
   # Same-external-id pending → booked (e.g. Revolut Italy via Enable Banking)
   # Some ASPSPs reuse the same transaction_id for pending and booked, so the
@@ -1650,4 +1711,24 @@ class Account::ProviderImportAdapterTest < ActiveSupport::TestCase
         "pending flag must be cleared even for user-modified entries"
     end
   end
+
+  private
+    # Mirrors what converting a transaction to a trade leaves behind, for an
+    # original that was still pending when converted.
+    def converted_pending_original(external_id:, source:, amount:)
+      entry = @adapter.import_transaction(
+        external_id: external_id,
+        amount: amount,
+        currency: "USD",
+        date: Date.today - 1.day,
+        name: "Brokerage buy",
+        source: source,
+        extra: { source => { "pending" => true } }
+      )
+      entry.transaction.update!(extra: entry.transaction.extra.merge(
+        "converted_to_trade" => { "trade_entry_id" => SecureRandom.uuid, "original_amount" => amount.to_s }
+      ))
+      entry.update!(excluded: true, amount: 0)
+      entry
+    end
 end
