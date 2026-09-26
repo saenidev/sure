@@ -156,6 +156,23 @@ class Assistant::Function::GetAccountsTest < ActiveSupport::TestCase
     assert_nil accounts[manual.id][:provider_balance_as_of]
   end
 
+  # Manual balances (a foreign bank, a deposit) go stale silently; the date of
+  # the latest entry is the only signal of when anyone last touched them.
+  test "each account reports the date of its latest entry" do
+    manual = @family.accounts.create!(name: "Old Manual", balance: 50, currency: "USD", accountable: Depository.new)
+    manual.entries.create!(date: Date.new(2026, 1, 11), name: "Balance update", amount: 50, currency: "USD",
+                           entryable: Valuation.new(kind: "reconciliation"))
+    manual.entries.create!(date: Date.new(2025, 12, 1), name: "Coffee", amount: 5, currency: "USD",
+                           entryable: Transaction.new)
+    empty = @family.accounts.create!(name: "Empty Manual", balance: 0, currency: "USD", accountable: Depository.new)
+
+    accounts = @fn.call[:accounts].index_by { |a| a[:id] }
+
+    assert_equal "2026-01-11", accounts[manual.id][:last_entry_on]
+    assert accounts[empty.id].key?(:last_entry_on)
+    assert_nil accounts[empty.id][:last_entry_on]
+  end
+
   test "a manual account reports no sync status" do
     manual = @family.accounts.create!(
       name: "Manual Cash",

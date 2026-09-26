@@ -21,6 +21,8 @@ class Assistant::Function::GetAccounts < Assistant::Function
         for their provider connection (null for manual accounts), and
         provider_balance_as_of: when the institution last dated this account's
         balance. A successful sync can still carry an old balance date.
+        last_entry_on is the date of the account's newest transaction or balance
+        entry; for a manual account it shows when anyone last updated it.
 
         Returns account ids. Use them for account_ids filters in other tools.
 
@@ -57,6 +59,7 @@ class Assistant::Function::GetAccounts < Assistant::Function
 
     accounts = accounts_scope(include_series).to_a
     sync_status = SyncStatus.new(accounts)
+    last_entry_on = Entry.where(account_id: accounts.map(&:id)).group(:account_id).maximum(:date)
 
     {
       as_of_date: Date.current,
@@ -73,7 +76,8 @@ class Assistant::Function::GetAccounts < Assistant::Function
           is_linked: account.linked?,
           provider: account.provider_name,
           status: account.status,
-          provider_balance_as_of: provider_balance_as_of(account)
+          provider_balance_as_of: provider_balance_as_of(account),
+          last_entry_on: last_entry_on[account.id]&.iso8601
         }.merge(sync_status.for(account))
 
         if include_series
