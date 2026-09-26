@@ -196,14 +196,27 @@ class Provider::TwelveData < Provider
     end
   end
 
+  # TwelveData's time_series end_date is exclusive for daily bars, so a
+  # start_date == end_date range is empty (400 "No data is available"). Ask for
+  # a short lookback window through the next day and take the latest close on
+  # or before `date`, which also covers weekends and market holidays.
+  SINGLE_PRICE_LOOKBACK_DAYS = 7
+
   def fetch_security_price(symbol:, exchange_operating_mic: nil, date:)
     with_provider_response do
-      historical_data = fetch_security_prices(symbol:, exchange_operating_mic:, start_date: date, end_date: date)
+      historical_data = fetch_security_prices(
+        symbol:,
+        exchange_operating_mic:,
+        start_date: date - SINGLE_PRICE_LOOKBACK_DAYS,
+        end_date: date + 1
+      )
 
       raise historical_data.error if historical_data.error.present?
-      raise InvalidSecurityPriceError, "No prices found for security #{symbol} on date #{date}" if historical_data.data.blank?
 
-      historical_data.data.first
+      price = historical_data.data.select { |p| p.date <= date }.max_by(&:date)
+      raise InvalidSecurityPriceError, "No prices found for security #{symbol} on date #{date}" if price.nil?
+
+      price
     end
   end
 

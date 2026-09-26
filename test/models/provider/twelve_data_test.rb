@@ -175,6 +175,65 @@ class Provider::TwelveDataTest < ActiveSupport::TestCase
   #       Throttle Tests
   # ================================
 
+  # TwelveData treats end_date as exclusive, so start_date == end_date is an
+  # empty range and answers 400 "No data is available on the specified dates".
+  # The daily health check prices every security through this path, so a
+  # same-day range marked healthy securities offline and deleted their prices.
+  test "fetch_security_price queries a non-empty range and returns the latest close on or before the date" do
+    captured = {}
+    body = {
+      "meta" => { "symbol" => "DRAM", "currency" => "USD" },
+      "values" => [
+        { "datetime" => "2026-09-25", "close" => "61.91" },
+        { "datetime" => "2026-09-24", "close" => "60.72" },
+        { "datetime" => "2026-09-23", "close" => "61.90" }
+      ],
+      "status" => "ok"
+    }.to_json
+
+    response = Struct.new(:body).new(body)
+    client = Object.new
+    client.define_singleton_method(:get) do |_url, &blk|
+      request = Struct.new(:params).new({})
+      blk.call(request)
+      captured.merge!(request.params)
+      response
+    end
+    @provider.stubs(:client).returns(client)
+    @provider.stubs(:throttle_request)
+
+    result = @provider.fetch_security_price(symbol: "DRAM", exchange_operating_mic: "XASE", date: Date.new(2026, 9, 26))
+
+    assert result.success?, result.error&.message
+    assert_operator Date.parse(captured["end_date"]), :>, Date.parse(captured["start_date"])
+    assert_operator Date.parse(captured["end_date"]), :>, Date.new(2026, 9, 26)
+    assert_equal Date.new(2026, 9, 25), result.data.date
+    assert_equal 61.91, result.data.price.to_f
+  end
+
+  test "fetch_security_price ignores closes after the requested date" do
+    body = {
+      "meta" => { "symbol" => "DRAM", "currency" => "USD" },
+      "values" => [
+        { "datetime" => "2026-09-25", "close" => "61.91" },
+        { "datetime" => "2026-09-24", "close" => "60.72" }
+      ],
+      "status" => "ok"
+    }.to_json
+
+    response = mock
+    response.stubs(:body).returns(body)
+    client = mock
+    client.stubs(:get).returns(response)
+    @provider.stubs(:client).returns(client)
+    @provider.stubs(:throttle_request)
+
+    result = @provider.fetch_security_price(symbol: "DRAM", exchange_operating_mic: "XASE", date: Date.new(2026, 9, 24))
+
+    assert result.success?, result.error&.message
+    assert_equal Date.new(2026, 9, 24), result.data.date
+  end
+
   test "throttle_request enforces minimum interval between calls" do
     @provider.send(:instance_variable_set, :@last_request_time, Time.current)
 
