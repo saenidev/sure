@@ -3,8 +3,9 @@ class AutoCategorizeJob < ApplicationJob
 
   PROVIDER_ATTEMPTS = 3
 
-  # LLM calls fail transiently (upstream 5xx, truncated JSON). Retry those, and
-  # only record the rule run failure once the retries are spent — failing it on
+  # LLM calls fail transiently (upstream 5xx, timeouts, truncated JSON). Retry
+  # those (permanent failures raise plain AutoCategorizer::Error and fail at
+  # once), and only record the rule run failure once the retries are spent — failing it on
   # an early attempt would mark the run failed even if a retry then succeeds.
   retry_on Family::AutoCategorizer::ProviderError, wait: 5.minutes, attempts: PROVIDER_ATTEMPTS do |job, error|
     options = job.arguments.last.is_a?(Hash) ? job.arguments.last : {}

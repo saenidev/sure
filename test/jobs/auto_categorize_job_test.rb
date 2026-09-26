@@ -59,7 +59,7 @@ class AutoCategorizeJobTest < ActiveJob::TestCase
   test "retries an unsuccessful provider response without failing the rule run" do
     transaction = create_transaction(account: @account, name: "Coffee shop").transaction
     provider = mock
-    provider_error = Provider::Error.new("the server responded with status 502")
+    provider_error = Provider::Error.new("the server responded with status 502", transient: true)
 
     Provider::Registry.stubs(:preferred_llm_provider).returns(provider)
     provider.expects(:auto_categorize).returns(provider_error_response(provider_error))
@@ -79,7 +79,7 @@ class AutoCategorizeJobTest < ActiveJob::TestCase
   test "completes the rule run when a retried provider call succeeds" do
     transaction = create_transaction(account: @account, name: "Coffee shop").transaction
     provider = mock
-    provider_error = Provider::Error.new("Could not parse JSON from response")
+    provider_error = Provider::Error.new("Could not parse JSON from response", transient: true)
 
     Provider::Registry.stubs(:preferred_llm_provider).returns(provider)
     provider.expects(:auto_categorize).twice.returns(provider_error_response(provider_error))
@@ -99,10 +99,32 @@ class AutoCategorizeJobTest < ActiveJob::TestCase
     assert_equal "Food", transaction.reload.category&.name
   end
 
+  test "fails the rule run immediately without retrying a permanent provider failure" do
+    transaction = create_transaction(account: @account, name: "Coffee shop").transaction
+    provider = mock
+    provider_error = Provider::Error.new("the server responded with status 401")
+
+    Provider::Registry.stubs(:preferred_llm_provider).returns(provider)
+    provider.expects(:auto_categorize).once.returns(provider_error_response(provider_error))
+
+    assert_difference "DebugLogEntry.count", 1 do
+      assert_no_enqueued_jobs only: AutoCategorizeJob do
+        assert_raises(Family::AutoCategorizer::Error) do
+          AutoCategorizeJob.perform_now(@family, transaction_ids: [ transaction.id ], rule_run_id: @rule_run.id)
+        end
+      end
+    end
+
+    @rule_run.reload
+    assert_equal "failed", @rule_run.status
+    assert_equal "Family::AutoCategorizer::Error: Failed to auto-categorize transactions: the server responded with status 401", @rule_run.error_message
+    assert_equal 0, @rule_run.pending_jobs_count
+  end
+
   test "fails the rule run once after provider retries are exhausted" do
     transaction = create_transaction(account: @account, name: "Coffee shop").transaction
     provider = mock
-    provider_error = Provider::Error.new("Fixed prompt tokens exceed context budget")
+    provider_error = Provider::Error.new("Fixed prompt tokens exceed context budget", transient: true)
 
     Provider::Registry.stubs(:preferred_llm_provider).returns(provider)
     provider.expects(:auto_categorize).times(AutoCategorizeJob::PROVIDER_ATTEMPTS).returns(provider_error_response(provider_error))

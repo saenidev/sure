@@ -678,6 +678,32 @@ class Provider::OpenaiTest < ActiveSupport::TestCase
     Setting.llm_context_window = nil
   end
 
+  test "auto_categorize reports unparseable model output as a transient failure" do
+    subject = Provider::Openai.new("test-token", uri_base: "https://llm.example.com/v1", model: "local-model")
+    fake_client = mock
+    fake_client.stubs(:chat).returns({ "choices" => [ { "message" => { "content" => "I cannot help with that" } } ] })
+    subject.stubs(:client).returns(fake_client)
+
+    response = subject.auto_categorize(
+      transactions: [ { id: "1", name: "Coffee", amount: 5, classification: "expense" } ],
+      user_categories: [ { id: "cat1", name: "Food", is_subcategory: false, parent_id: nil, classification: "expense" } ],
+      json_mode: "none"
+    )
+
+    assert_not response.success?
+    assert_match(/Could not parse JSON from response/, response.error.message)
+    assert response.error.transient?
+  end
+
+  test "auto_categorize reports a missing-categories guard as a permanent failure" do
+    subject = Provider::Openai.new("test-token")
+
+    response = subject.auto_categorize(transactions: [ { id: "1" } ], user_categories: [])
+
+    assert_not response.success?
+    assert_not response.error.transient?
+  end
+
   test "auto_categorize fans out oversized batches into sequential sub-calls" do
     with_env_overrides("LLM_MAX_ITEMS_PER_CALL" => "10") do
       subject = Provider::Openai.new("test-token")

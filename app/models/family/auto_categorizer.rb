@@ -1,7 +1,9 @@
 class Family::AutoCategorizer
   Error = Class.new(StandardError)
-  # The provider call itself failed (upstream 5xx, truncated/unparseable output).
-  # Distinct from configuration errors so callers can retry it.
+  # The provider call failed in a way a later retry could fix (upstream 5xx,
+  # timeout, dropped connection, unparseable output). Distinct from permanent
+  # failures (bad key, unknown model, exhausted quota, validation guards) so
+  # callers retry only what can succeed.
   ProviderError = Class.new(Error)
 
   def initialize(family, transaction_ids: [])
@@ -51,7 +53,8 @@ class Family::AutoCategorizer
     )
 
     unless result.success?
-      raise ProviderError, "Failed to auto-categorize transactions: #{result.error.message}"
+      error_class = transient_provider_error?(result.error) ? ProviderError : Error
+      raise error_class, "Failed to auto-categorize transactions: #{result.error.message}"
     end
 
     shadow_decisions = run_shadow(categories_input)
@@ -117,6 +120,10 @@ class Family::AutoCategorizer
 
   private
     attr_reader :family, :transaction_ids
+
+    def transient_provider_error?(error)
+      error.respond_to?(:transient?) && error.transient?
+    end
 
     # Memoized: this is read once to guard, once per DebugLogEntry and once to
     # run, and each registry lookup builds a fresh provider object. Memoizing

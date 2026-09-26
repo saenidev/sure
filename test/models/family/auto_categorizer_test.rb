@@ -38,19 +38,39 @@ class Family::AutoCategorizerTest < ActiveSupport::TestCase
     assert_equal 1, @account.transactions.reload.enrichable(:category_id).count
   end
 
-  test "raises when provider returns an unsuccessful response" do
+  test "raises a retryable ProviderError when the provider call fails transiently" do
     txn = create_transaction(account: @account, name: "Coffee shop").transaction
     @family.categories.create!(name: "Coffee")
 
     @llm_provider.expects(:auto_categorize)
-                 .returns(provider_error_response(Provider::Error.new("Fixed prompt tokens exceed context budget")))
+                 .returns(provider_error_response(Provider::Error.new("the server responded with status 502", transient: true)))
 
     error = assert_raises(Family::AutoCategorizer::ProviderError) do
       Family::AutoCategorizer.new(@family, transaction_ids: [ txn.id ]).auto_categorize
     end
 
     assert_kind_of Family::AutoCategorizer::Error, error
-    assert_equal "Failed to auto-categorize transactions: Fixed prompt tokens exceed context budget", error.message
+    assert_equal "Failed to auto-categorize transactions: the server responded with status 502", error.message
+  end
+
+  test "raises a non-retryable Error when the provider call fails permanently" do
+    txn = create_transaction(account: @account, name: "Coffee shop").transaction
+    @family.categories.create!(name: "Coffee")
+
+    [
+      Provider::Error.new("Fixed prompt tokens exceed context budget"),
+      Provider::Openai::Error.new("the server responded with status 401"),
+      Provider::Anthropic::Error.new("Too many transactions to auto-categorize. Max is 25 per request.")
+    ].each do |provider_error|
+      @llm_provider.expects(:auto_categorize).returns(provider_error_response(provider_error))
+
+      error = assert_raises(Family::AutoCategorizer::Error) do
+        Family::AutoCategorizer.new(@family, transaction_ids: [ txn.id ]).auto_categorize
+      end
+
+      assert_not_kind_of Family::AutoCategorizer::ProviderError, error
+      assert_equal "Failed to auto-categorize transactions: #{provider_error.message}", error.message
+    end
   end
 
   test "logs and raises when no categories are available" do

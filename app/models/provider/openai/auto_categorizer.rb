@@ -348,7 +348,7 @@ class Provider::Openai::AutoCategorizer
 
       JSON.parse(raw).dig("categorizations")
     rescue JSON::ParserError => e
-      raise Provider::Openai::Error, "Invalid JSON in native categorization: #{e.message}"
+      raise Provider::Openai::Error.new("Invalid JSON in native categorization: #{e.message}", transient: true)
     end
 
     def extract_categorizations_generic(response)
@@ -433,7 +433,9 @@ class Provider::Openai::AutoCategorizer
         end
       end
 
-      raise Provider::Openai::Error, "Could not parse JSON from response: #{raw.truncate(200)}"
+      # A model can emit garbled or truncated output on one call and valid JSON
+      # on the next, so this is worth retrying.
+      raise Provider::Openai::Error.new("Could not parse JSON from response: #{raw.truncate(200)}", transient: true)
     end
 
     # Strip thinking model tags (<think>...</think>) from response
