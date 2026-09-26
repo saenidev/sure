@@ -107,6 +107,19 @@ class McpController < ApplicationController
       end
 
       fn = fn_class.new(mcp_user)
+
+      # Every tool schema is additionalProperties: false, but nothing enforced it:
+      # a misspelled argument blew up deep inside the tool and reached the
+      # client only as "The tool failed to run". Name it so the caller can fix it.
+      schema = fn.params_schema
+      if schema[:additionalProperties] == false
+        unknown = arguments.keys.map(&:to_s) - schema.fetch(:properties, {}).keys.map(&:to_s)
+        if unknown.any?
+          render_jsonrpc_error(request_id, -32602, "Unknown argument(s) for #{name}: #{unknown.sort.join(', ')}")
+          return nil
+        end
+      end
+
       result = fn.call(arguments)
 
       { content: [ { type: "text", text: result.to_json } ] }

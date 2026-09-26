@@ -431,6 +431,25 @@ class McpControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # A misspelled argument (per_page for page_size) raised UnknownAttributeError
+  # deep in Transaction::Search and surfaced only as "The tool failed to run",
+  # leaving the caller no way to correct the request.
+  test "tools/call names arguments the tool does not accept" do
+    with_mcp_env do
+      post "/mcp", params: jsonrpc_request("tools/call", {
+        name: "get_transactions",
+        arguments: { per_page: 3, page_size: 3 }
+      }, id: 7).to_json, headers: mcp_headers(@token)
+
+      assert_response :ok
+      body = JSON.parse(response.body)
+      assert_equal(-32602, body["error"]["code"])
+      assert_includes body["error"]["message"], "per_page"
+      assert_not_includes body["error"]["message"], "page_size"
+      assert_equal 7, body["id"]
+    end
+  end
+
   test "tools/call returns error for unknown tool with request id preserved" do
     with_mcp_env do
       post "/mcp", params: jsonrpc_request("tools/call", { name: "nonexistent_tool", arguments: {} }, id: 99).to_json,

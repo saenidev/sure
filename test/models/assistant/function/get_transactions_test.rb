@@ -134,4 +134,17 @@ class Assistant::Function::GetTransactionsTest < ActiveSupport::TestCase
 
     assert_empty member_result[:transactions]
   end
+
+  # is_transfer alone could not tell a card payment from an investment move or a
+  # one-time windfall, so callers could not separate real spending and income
+  # from money moving between the user's own accounts.
+  test "each transaction reports its kind" do
+    @transaction.update!(kind: "one_time")
+
+    result = @function.call("search" => @transaction.entry.name)
+    item = result[:transactions].find { |t| t[:id] == @transaction.id }
+
+    assert_equal "one_time", item[:kind]
+    assert result[:transactions].all? { |t| Transaction.kinds.key?(t[:kind]) }
+  end
 end

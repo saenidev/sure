@@ -24,6 +24,10 @@ class Assistant::Function::GetTransactions < Assistant::Function
         types: ["income", "expense"] to exclude transfers between the user's
         own accounts. Use a small page_size when you only need a few rows.
 
+        Each transaction carries `kind`: standard, funds_movement, cc_payment,
+        loan_payment, investment_contribution, one_time (a windfall or one-off
+        expense kept out of budgets) or debt_interest.
+
         Note on pagination:
 
         This function can be paginated.  You can expect the following properties in the response:
@@ -195,7 +199,8 @@ class Assistant::Function::GetTransactions < Assistant::Function
         category: txn.category&.name,
         merchant: txn.merchant&.name,
         tags: txn.tags.map(&:name),
-        is_transfer: txn.transfer?
+        is_transfer: txn.transfer?,
+        kind: txn.kind
       }
     end
 

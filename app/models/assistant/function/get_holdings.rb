@@ -101,6 +101,8 @@ class Assistant::Function::GetHoldings < Assistant::Function
         currency: holding.currency,
         amount: holding.amount.to_f,
         formatted_amount: holding.amount_money.format,
+        family_currency: family.currency,
+        amount_in_family_currency: in_family_currency(holding.amount, holding.currency)&.to_f&.round(2),
         weight: holding.weight&.round(2),
         average_cost: holding.avg_cost&.to_f,
         formatted_average_cost: holding.avg_cost&.format,
@@ -109,19 +111,44 @@ class Assistant::Function::GetHoldings < Assistant::Function
       }
     end
 
-    {
+    totals = holdings_query.group(:currency).sum(:amount)
+    unconvertible = totals.keys.reject { |currency| in_family_currency(1, currency) }
+    result = {
       holdings: normalized_holdings,
       total_results: pagy.count,
       page: pagy.page,
       page_size: default_page_size,
-      total_pages: pagy.pages,
-      total_value: Money.new(total_value, family.currency).format
+      total_pages: pagy.pages
     }
+
+    if unconvertible.any?
+      result.merge(
+        total_value: nil,
+        total_value_warning: "No exchange rate to #{family.currency} for #{unconvertible.sort.join(', ')}; " \
+                             "total omitted rather than mixing currencies."
+      )
+    else
+      total_value = totals.sum { |currency, amount| in_family_currency(amount, currency) }
+      result.merge(total_value: Money.new(total_value, family.currency).format)
+    end
   end
 
   private
     def default_page_size
       self.class.default_page_size
+    end
+
+    # Holdings keep their native currency (a Stockholm listing is priced in SEK),
+    # so totals must convert before summing. Returns nil when no rate is known,
+    # instead of Money's silent 1:1 fallback.
+    def in_family_currency(amount, currency)
+      return amount if currency == family.currency
+
+      @rates ||= {}
+      rate = @rates.fetch(currency) do
+        @rates[currency] = ExchangeRate.find_or_fetch_rate(from: currency, to: family.currency)&.rate
+      end
+      rate && amount * rate
     end
 
     def build_holdings_query(params)
