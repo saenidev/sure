@@ -212,7 +212,8 @@ class Assistant::Function::GetTransactions < Assistant::Function
         merchant: txn.merchant&.name,
         tags: txn.tags.map(&:name),
         is_transfer: txn.transfer?,
-        kind: txn.kind
+        kind: txn.kind,
+        investment_activity_label: txn.investment_activity_label
       }
     end
 

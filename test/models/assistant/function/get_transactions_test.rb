@@ -176,4 +176,16 @@ class Assistant::Function::GetTransactionsTest < ActiveSupport::TestCase
     assert_equal "one_time", item[:kind]
     assert result[:transactions].all? { |t| Transaction.kinds.key?(t[:kind]) }
   end
+
+  # A broker trade imported as a cash row and relabelled Buy/Sell is kind
+  # funds_movement like a real transfer; without the label a caller cannot
+  # tell it apart from a transfer that lost its other side.
+  test "each transaction reports its investment activity label" do
+    @transaction.update!(kind: "funds_movement", investment_activity_label: "Buy")
+
+    result = @function.call("search" => @transaction.entry.name)
+    item = result[:transactions].find { |t| t[:id] == @transaction.id }
+
+    assert_equal "Buy", item[:investment_activity_label]
+  end
 end
