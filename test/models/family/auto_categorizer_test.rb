@@ -45,10 +45,11 @@ class Family::AutoCategorizerTest < ActiveSupport::TestCase
     @llm_provider.expects(:auto_categorize)
                  .returns(provider_error_response(Provider::Error.new("Fixed prompt tokens exceed context budget")))
 
-    error = assert_raises(Family::AutoCategorizer::Error) do
+    error = assert_raises(Family::AutoCategorizer::ProviderError) do
       Family::AutoCategorizer.new(@family, transaction_ids: [ txn.id ]).auto_categorize
     end
 
+    assert_kind_of Family::AutoCategorizer::Error, error
     assert_equal "Failed to auto-categorize transactions: Fixed prompt tokens exceed context budget", error.message
   end
 

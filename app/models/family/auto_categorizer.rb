@@ -1,5 +1,8 @@
 class Family::AutoCategorizer
   Error = Class.new(StandardError)
+  # The provider call itself failed (upstream 5xx, truncated/unparseable output).
+  # Distinct from configuration errors so callers can retry it.
+  ProviderError = Class.new(Error)
 
   def initialize(family, transaction_ids: [])
     @family = family
@@ -48,7 +51,7 @@ class Family::AutoCategorizer
     )
 
     unless result.success?
-      raise Error, "Failed to auto-categorize transactions: #{result.error.message}"
+      raise ProviderError, "Failed to auto-categorize transactions: #{result.error.message}"
     end
 
     shadow_decisions = run_shadow(categories_input)

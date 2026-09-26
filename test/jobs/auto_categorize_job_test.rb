@@ -56,28 +56,72 @@ class AutoCategorizeJobTest < ActiveJob::TestCase
     assert_equal transaction_ids, entry.metadata["transaction_ids"]
   end
 
-  test "records unsuccessful provider responses as rule run failures" do
+  test "retries an unsuccessful provider response without failing the rule run" do
     transaction = create_transaction(account: @account, name: "Coffee shop").transaction
     provider = mock
-    provider_error = Provider::Error.new("Fixed prompt tokens exceed context budget")
+    provider_error = Provider::Error.new("the server responded with status 502")
 
     Provider::Registry.stubs(:preferred_llm_provider).returns(provider)
     provider.expects(:auto_categorize).returns(provider_error_response(provider_error))
 
-    assert_difference "DebugLogEntry.count", 1 do
-      assert_raises(Family::AutoCategorizer::Error) do
+    assert_no_difference "DebugLogEntry.count" do
+      assert_enqueued_with job: AutoCategorizeJob do
         AutoCategorizeJob.perform_now(@family, transaction_ids: [ transaction.id ], rule_run_id: @rule_run.id)
       end
     end
 
     @rule_run.reload
+    assert_equal "pending", @rule_run.status
+    assert_nil @rule_run.error_message
+    assert_equal 1, @rule_run.pending_jobs_count
+  end
+
+  test "completes the rule run when a retried provider call succeeds" do
+    transaction = create_transaction(account: @account, name: "Coffee shop").transaction
+    provider = mock
+    provider_error = Provider::Error.new("Could not parse JSON from response")
+
+    Provider::Registry.stubs(:preferred_llm_provider).returns(provider)
+    provider.expects(:auto_categorize).twice.returns(provider_error_response(provider_error))
+      .then.returns(provider_success_response([
+        Provider::LlmConcept::AutoCategorization.new(transaction_id: transaction.id, category_name: "Food")
+      ]))
+
+    perform_enqueued_jobs do
+      AutoCategorizeJob.perform_later(@family, transaction_ids: [ transaction.id ], rule_run_id: @rule_run.id)
+    end
+
+    @rule_run.reload
+    assert_equal "success", @rule_run.status
+    assert_nil @rule_run.error_message
+    assert_equal 1, @rule_run.transactions_modified
+    assert_equal 0, @rule_run.pending_jobs_count
+    assert_equal "Food", transaction.reload.category&.name
+  end
+
+  test "fails the rule run once after provider retries are exhausted" do
+    transaction = create_transaction(account: @account, name: "Coffee shop").transaction
+    provider = mock
+    provider_error = Provider::Error.new("Fixed prompt tokens exceed context budget")
+
+    Provider::Registry.stubs(:preferred_llm_provider).returns(provider)
+    provider.expects(:auto_categorize).times(AutoCategorizeJob::PROVIDER_ATTEMPTS).returns(provider_error_response(provider_error))
+
+    assert_difference "DebugLogEntry.count", 1 do
+      perform_enqueued_jobs do
+        AutoCategorizeJob.perform_later(@family, transaction_ids: [ transaction.id ], rule_run_id: @rule_run.id)
+      end
+    end
+
+    @rule_run.reload
     assert_equal "failed", @rule_run.status
-    assert_equal "Family::AutoCategorizer::Error: Failed to auto-categorize transactions: Fixed prompt tokens exceed context budget", @rule_run.error_message
+    assert_equal "Family::AutoCategorizer::ProviderError: Failed to auto-categorize transactions: Fixed prompt tokens exceed context budget", @rule_run.error_message
     assert_equal 0, @rule_run.pending_jobs_count
 
     entry = DebugLogEntry.order(:created_at).last
     assert_equal "rule_run", entry.category
-    assert_equal "Family::AutoCategorizer::Error", entry.metadata["error_class"]
+    assert_equal "AutoCategorizeJob", entry.source
+    assert_equal "Family::AutoCategorizer::ProviderError", entry.metadata["error_class"]
     assert_equal "Failed to auto-categorize transactions: Fixed prompt tokens exceed context budget", entry.metadata["error_message"]
     assert_equal [ transaction.id ], entry.metadata["transaction_ids"]
   end
@@ -90,8 +134,10 @@ class AutoCategorizeJobTest < ActiveJob::TestCase
     provider.expects(:auto_categorize).never
 
     assert_difference "DebugLogEntry.count", 2 do
-      assert_raises(Family::AutoCategorizer::Error) do
-        AutoCategorizeJob.perform_now(@family, transaction_ids: [ transaction.id ], rule_run_id: @rule_run.id)
+      assert_no_enqueued_jobs only: AutoCategorizeJob do
+        assert_raises(Family::AutoCategorizer::Error) do
+          AutoCategorizeJob.perform_now(@family, transaction_ids: [ transaction.id ], rule_run_id: @rule_run.id)
+        end
       end
     end
 
