@@ -147,6 +147,23 @@ class Assistant::Function::GetTransactionsTest < ActiveSupport::TestCase
     assert_operator result[:total_results], :<, @function.call({})[:total_results]
   end
 
+  # A misspelled kind used to match nothing, so a report showed "no one-time
+  # items" instead of telling the caller the filter was wrong.
+  test "unknown kinds are named instead of silently matching nothing" do
+    result = @function.call("kinds" => [ "onetime", "one_time" ])
+
+    assert_equal "Unknown transaction kind(s): onetime", result[:error]
+    assert_equal Transaction.kinds.keys, result[:valid_kinds]
+  end
+
+  test "kinds and types combine as AND" do
+    @transaction.update!(kind: "one_time")
+
+    result = @function.call("kinds" => [ "one_time" ], "types" => [ "transfer" ])
+
+    assert_not_includes result[:transactions].map { |t| t[:id] }, @transaction.id
+  end
+
   # is_transfer alone could not tell a card payment from an investment move or a
   # one-time windfall, so callers could not separate real spending and income
   # from money moving between the user's own accounts.

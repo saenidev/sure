@@ -90,8 +90,6 @@ class Assistant::Function::GetHoldings < Assistant::Function
     pagy = Pagy.new(count: ordered_holdings.count, page: resolved_page(params), limit: default_page_size)
     paginated_holdings = ordered_holdings.includes(:security, :account).offset(pagy.offset).limit(pagy.limit)
 
-    total_value = holdings_query.sum(:amount)
-
     normalized_holdings = paginated_holdings.map do |holding|
       {
         ticker: holding.ticker,

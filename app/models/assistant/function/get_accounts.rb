@@ -59,7 +59,8 @@ class Assistant::Function::GetAccounts < Assistant::Function
 
     accounts = accounts_scope(include_series).to_a
     sync_status = SyncStatus.new(accounts)
-    last_entry_on = Entry.where(account_id: accounts.map(&:id)).group(:account_id).maximum(:date)
+    last_entry_on = Entry.where(account_id: accounts.map(&:id)).where(date: ..Date.current)
+                         .group(:account_id).maximum(:date)
 
     {
       as_of_date: Date.current,
@@ -91,9 +92,13 @@ class Assistant::Function::GetAccounts < Assistant::Function
 
   private
     def provider_balance_as_of(account)
-      provider = account.account_providers.first&.provider || account.simplefin_account
-      column = provider && PROVIDER_BALANCE_DATE_COLUMNS[provider.class.name]
-      column && provider.public_send(column)&.iso8601
+      # An account can be linked through several providers (and older SimpleFIN
+      # links sit on the account directly); the oldest date is the one to warn on.
+      providers = account.account_providers.map(&:provider) + [ account.simplefin_account ]
+      providers.compact.uniq.filter_map { |provider|
+        column = PROVIDER_BALANCE_DATE_COLUMNS[provider.class.name]
+        column && provider.public_send(column)
+      }.min_by(&:to_date)&.iso8601
     end
 
     # No balances preload: the series goes through Balance::ChartSeriesBuilder,

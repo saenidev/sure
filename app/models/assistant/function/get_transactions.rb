@@ -153,6 +153,11 @@ class Assistant::Function::GetTransactions < Assistant::Function
   end
 
   def call(params = {})
+    unknown_kinds = Array(params["kinds"]).map(&:to_s) - Transaction.kinds.keys
+    if unknown_kinds.any?
+      return { error: "Unknown transaction kind(s): #{unknown_kinds.join(', ')}", valid_kinds: Transaction.kinds.keys }
+    end
+
     search_params = params.except("order", "page", "page_size", "sort_by")
     search_params["status"] = search_params.delete("statuses") if search_params.key?("statuses")
 

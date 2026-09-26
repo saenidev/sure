@@ -156,6 +156,25 @@ class Assistant::Function::GetAccountsTest < ActiveSupport::TestCase
     assert_nil accounts[manual.id][:provider_balance_as_of]
   end
 
+  # One account can be linked through two providers whose dates are different
+  # types (SimpleFIN a timestamp, IBKR a date); report the older one.
+  test "an account linked through two providers reports the older balance date" do
+    item = SimplefinItem.create!(family: @family, name: "SF Conn 2", access_url: "https://example.com/access")
+    simplefin_account = SimplefinAccount.create!(
+      simplefin_item: item, account_id: "ACT-two-providers", name: "Brokerage", currency: "USD",
+      current_balance: 10, account_type: "investment", balance_date: Time.zone.parse("2026-09-25 07:00:00")
+    )
+    ibkr = ibkr_accounts(:secondary_account)
+    account = @family.accounts.create!(name: "Dual Linked", balance: 10, currency: "USD", accountable: Investment.new)
+    AccountProvider.create!(account: account, provider: simplefin_account)
+    AccountProvider.create!(account: account, provider: ibkr)
+    ibkr.update!(report_date: Date.new(2026, 9, 20))
+
+    accounts = @fn.call[:accounts].index_by { |a| a[:id] }
+
+    assert_equal "2026-09-20", accounts[account.id][:provider_balance_as_of]
+  end
+
   # Manual balances (a foreign bank, a deposit) go stale silently; the date of
   # the latest entry is the only signal of when anyone last touched them.
   test "each account reports the date of its latest entry" do
@@ -163,6 +182,9 @@ class Assistant::Function::GetAccountsTest < ActiveSupport::TestCase
     manual.entries.create!(date: Date.new(2026, 1, 11), name: "Balance update", amount: 50, currency: "USD",
                            entryable: Valuation.new(kind: "reconciliation"))
     manual.entries.create!(date: Date.new(2025, 12, 1), name: "Coffee", amount: 5, currency: "USD",
+                           entryable: Transaction.new)
+    # A scheduled future entry must not make a stale balance look current.
+    manual.entries.create!(date: Date.current + 30, name: "Scheduled", amount: 5, currency: "USD",
                            entryable: Transaction.new)
     empty = @family.accounts.create!(name: "Empty Manual", balance: 0, currency: "USD", accountable: Depository.new)
 
