@@ -84,4 +84,67 @@ class Assistant::Function::GetAccountsTest < ActiveSupport::TestCase
     assert_not future_payload.key?(:historical_balances)
     assert(result[:accounts].any? { |a| a.key?(:historical_balances) })
   end
+
+  test "a linked account reports its provider item's failed sync alongside the last completed sync time" do
+    item = SimplefinItem.create!(family: @family, name: "SF Conn", access_url: "https://example.com/access")
+    simplefin_account = SimplefinAccount.create!(
+      simplefin_item: item,
+      account_id: "ACT-sync-status",
+      name: "Checking",
+      currency: "USD",
+      current_balance: 100,
+      account_type: "checking"
+    )
+    account = @family.accounts.create!(
+      name: "Linked Checking",
+      balance: 100,
+      currency: "USD",
+      accountable: Depository.new
+    )
+    AccountProvider.create!(account: account, provider: simplefin_account)
+
+    completed_at = Time.zone.parse("2026-09-22 02:00:00")
+    Sync.create!(
+      syncable: item,
+      status: "completed",
+      created_at: completed_at - 5.minutes,
+      completed_at: completed_at
+    )
+    Sync.create!(
+      syncable: item,
+      status: "failed",
+      created_at: Time.zone.parse("2026-09-24 02:00:00"),
+      failed_at: Time.zone.parse("2026-09-24 02:01:00"),
+      error: "Connection refused for https://user:s3cr3t@bridge.simplefin.org/simplefin/accounts " + ("x" * 300)
+    )
+
+    payload = @fn.call[:accounts].find { |a| a[:id] == account.id }
+
+    assert_not_nil payload
+    assert_equal "failed", payload[:last_sync_status]
+    assert_equal completed_at.iso8601, payload[:last_synced_at]
+    assert payload[:last_sync_error].present?
+    assert_includes payload[:last_sync_error], "Connection refused"
+    assert_not_includes payload[:last_sync_error], "s3cr3t"
+    assert payload[:last_sync_error].length <= 200
+  end
+
+  test "a manual account reports no sync status" do
+    manual = @family.accounts.create!(
+      name: "Manual Cash",
+      balance: 50,
+      currency: "USD",
+      accountable: Depository.new
+    )
+
+    payload = @fn.call[:accounts].find { |a| a[:id] == manual.id }
+
+    assert_not_nil payload
+    assert payload.key?(:last_synced_at)
+    assert payload.key?(:last_sync_status)
+    assert payload.key?(:last_sync_error)
+    assert_nil payload[:last_synced_at]
+    assert_nil payload[:last_sync_status]
+    assert_nil payload[:last_sync_error]
+  end
 end
