@@ -1,11 +1,27 @@
 class SimplefinItem::Syncer
   include SyncStats::Collector
 
-  # SimpleFIN outages (5xx, 429, dropped connections) can outlast the provider
+  # SimpleFIN outages (5xx, dropped connections) can outlast the provider
   # client's in-request retries. Retry the item once the outage has had time to
   # clear instead of waiting for the next nightly sync, but cap the retries so a
   # long outage cannot loop.
-  TRANSIENT_ERROR_TYPES = %i[server_error rate_limited request_failed network_error].freeze
+  #
+  # A 429 (:rate_limited) is deliberately absent: SimpleFIN rate limits are a
+  # daily refresh quota, so a retry 45 minutes later only spends more quota.
+  TRANSIENT_ERROR_TYPES = %i[server_error network_error].freeze
+
+  # Provider::Simplefin#with_retries wraps any exception it does not treat as
+  # retryable in a :request_failed error, keeping the original as `cause`. Only
+  # retry those when the cause is a network or timeout failure; a programming or
+  # data error fails the same way on every retry.
+  NETWORK_CAUSES = [
+    *Provider::Simplefin::RETRYABLE_ERRORS,
+    Timeout::Error,
+    Errno::EHOSTUNREACH,
+    Errno::ENETUNREACH,
+    Errno::EPIPE,
+    OpenSSL::SSL::SSLError
+  ].freeze
   AUTO_RETRY_DELAY = 45.minutes
   AUTO_RETRY_WINDOW = 12.hours
   MAX_AUTO_RETRIES = 2
@@ -65,7 +81,7 @@ class SimplefinItem::Syncer
     begin
       simplefin_item.import_latest_simplefin_data(sync: sync)
     rescue Provider::Simplefin::SimplefinError => e
-      schedule_auto_retry(sync) if TRANSIENT_ERROR_TYPES.include?(e.error_type)
+      schedule_auto_retry(sync) if transient_error?(e)
       raise
     end
 
@@ -103,6 +119,13 @@ class SimplefinItem::Syncer
   end
 
   private
+    def transient_error?(error)
+      return true if TRANSIENT_ERROR_TYPES.include?(error.error_type)
+      return false unless error.error_type == :request_failed
+
+      NETWORK_CAUSES.any? { |klass| error.cause.is_a?(klass) }
+    end
+
     def schedule_auto_retry(sync)
       recent_failures = simplefin_item.syncs
         .where(status: :failed)
