@@ -279,6 +279,47 @@ class TransactionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  # The original transaction is kept (excluded) only so provider syncs recognise
+  # its external_id. The trade now carries the cash movement, so the original
+  # must stop counting toward the balance or the cash leg is counted twice.
+  test "converting a transaction to a trade does not double count its cash in balances" do
+    account = @user.family.accounts.create!(
+      name: "Brokerage", balance: 100_000, cash_balance: 100_000, currency: "USD",
+      accountable: Investment.new, owner: @user
+    )
+    account.entries.create!(
+      name: "Opening balance", date: 5.days.ago.to_date, amount: 100_000, currency: "USD",
+      entryable: Valuation.new(kind: "opening_anchor")
+    )
+    entry = create_transaction(
+      account: account, name: "ROUNDHILL MEMORY ETF", amount: 66_000,
+      date: 2.days.ago.to_date, external_id: "simplefin_TRN-1", source: "simplefin"
+    )
+
+    post create_trade_from_transaction_transaction_url(entry.entryable), params: {
+      security_id: securities(:aapl).id, qty: 100, investment_activity_label: "Buy"
+    }
+    assert_redirected_to account_url(account)
+    assert entry.reload.excluded?
+
+    cash_on_trade_date = lambda do
+      Balance::ForwardCalculator.new(account.reload).calculate
+        .find { |balance| balance.date == 2.days.ago.to_date }.cash_balance
+    end
+
+    assert_equal 34_000, cash_on_trade_date.call
+
+    # A later provider sync re-delivers the original transaction. It must not be
+    # re-imported or start counting again.
+    assert_no_difference "account.entries.count" do
+      Account::ProviderImportAdapter.new(account).import_transaction(
+        external_id: "simplefin_TRN-1", source: "simplefin", amount: 66_000,
+        currency: "USD", date: 2.days.ago.to_date, name: "ROUNDHILL MEMORY ETF"
+      )
+    end
+    assert_equal 34_000, cash_on_trade_date.call
+  end
+
   test "updates with transaction details" do
     assert_no_difference [ "Entry.count", "Transaction.count" ] do
       patch transaction_url(@entry), params: {

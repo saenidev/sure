@@ -371,8 +371,16 @@ class TransactionsController < ApplicationController
       new_entry.lock_saved_attributes!
       new_entry.mark_user_modified!
 
-      # Mark original transaction as excluded (soft delete)
-      @entry.update!(excluded: true)
+      # Mark original transaction as excluded (soft delete). Balances count
+      # excluded entries (excluded only hides them from budgets and reports),
+      # and the trade now carries this cash movement, so zero the original's
+      # amount to keep it from being counted twice. It stays behind so provider
+      # syncs still recognise its external_id; excluded entries are skipped by
+      # those syncs, so the zero survives. The amount is kept in extra.
+      @transaction.update!(extra: (@transaction.extra || {}).merge(
+        "converted_to_trade" => { "trade_entry_id" => new_entry.id, "original_amount" => @entry.amount.to_s }
+      ))
+      @entry.update!(excluded: true, amount: 0)
     end
 
     flash[:notice] = t("transactions.convert_to_trade.success")
