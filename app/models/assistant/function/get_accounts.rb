@@ -1,4 +1,13 @@
 class Assistant::Function::GetAccounts < Assistant::Function
+  # Provider account class => column holding the date the institution last
+  # stamped the balance. A connection can sync successfully while one bank
+  # keeps serving an old balance; only this date reveals that. Providers
+  # without such a column report null rather than a guess.
+  PROVIDER_BALANCE_DATE_COLUMNS = {
+    "SimplefinAccount" => :balance_date,
+    "IbkrAccount" => :report_date
+  }.freeze
+
   class << self
     def name
       "get_accounts"
@@ -9,7 +18,9 @@ class Assistant::Function::GetAccounts < Assistant::Function
         Use this to see what accounts the user has along with their current balances.
 
         Linked accounts include last_synced_at, last_sync_status and last_sync_error
-        for their provider connection (null for manual accounts).
+        for their provider connection (null for manual accounts), and
+        provider_balance_as_of: when the institution last dated this account's
+        balance. A successful sync can still carry an old balance date.
 
         Returns account ids. Use them for account_ids filters in other tools.
 
@@ -61,7 +72,8 @@ class Assistant::Function::GetAccounts < Assistant::Function
           start_date: account.start_date,
           is_linked: account.linked?,
           provider: account.provider_name,
-          status: account.status
+          status: account.status,
+          provider_balance_as_of: provider_balance_as_of(account)
         }.merge(sync_status.for(account))
 
         if include_series
@@ -74,6 +86,12 @@ class Assistant::Function::GetAccounts < Assistant::Function
   end
 
   private
+    def provider_balance_as_of(account)
+      provider = account.account_providers.first&.provider || account.simplefin_account
+      column = provider && PROVIDER_BALANCE_DATE_COLUMNS[provider.class.name]
+      column && provider.public_send(column)&.iso8601
+    end
+
     # No balances preload: the series goes through Balance::ChartSeriesBuilder,
     # which runs its own query keyed by account ids.
     def accounts_scope(_include_series)

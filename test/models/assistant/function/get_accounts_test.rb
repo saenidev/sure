@@ -129,6 +129,33 @@ class Assistant::Function::GetAccountsTest < ActiveSupport::TestCase
     assert payload[:last_sync_error].length <= 200
   end
 
+  # The connection can sync fine while one institution keeps serving an old
+  # balance (a card whose bank stopped updating); only the provider's own
+  # balance date shows that.
+  test "a linked account reports when its provider last dated the balance" do
+    item = SimplefinItem.create!(family: @family, name: "SF Conn", access_url: "https://example.com/access")
+    balance_time = Time.zone.parse("2026-09-21 07:21:04")
+    simplefin_account = SimplefinAccount.create!(
+      simplefin_item: item, account_id: "ACT-balance-date", name: "Card", currency: "USD",
+      current_balance: -668.71, account_type: "credit", balance_date: balance_time
+    )
+    account = @family.accounts.create!(name: "Linked Card", balance: 668.71, currency: "USD", accountable: CreditCard.new)
+    AccountProvider.create!(account: account, provider: simplefin_account)
+
+    ibkr = ibkr_accounts(:main_account)
+    ibkr_linked = @family.accounts.create!(name: "Linked IBKR", balance: 3351, currency: "CHF", accountable: Investment.new)
+    AccountProvider.create!(account: ibkr_linked, provider: ibkr)
+
+    manual = @family.accounts.create!(name: "Manual Cash", balance: 50, currency: "USD", accountable: Depository.new)
+
+    accounts = @fn.call[:accounts].index_by { |a| a[:id] }
+
+    assert_equal balance_time.iso8601, accounts[account.id][:provider_balance_as_of]
+    assert_equal ibkr.report_date.iso8601, accounts[ibkr_linked.id][:provider_balance_as_of]
+    assert accounts[manual.id].key?(:provider_balance_as_of)
+    assert_nil accounts[manual.id][:provider_balance_as_of]
+  end
+
   test "a manual account reports no sync status" do
     manual = @family.accounts.create!(
       name: "Manual Cash",
