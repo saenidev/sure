@@ -32,9 +32,11 @@ class Entry < ApplicationRecord
   validates :external_id, uniqueness: { scope: [ :account_id, :source ] }, if: -> { external_id.present? && source.present? }
 
   validate :cannot_unexclude_split_parent
+  validate :cannot_unexclude_converted_original
   validate :split_child_date_matches_parent
 
   before_destroy :prevent_individual_child_deletion, if: :split_child?
+  after_destroy :restore_converted_original, if: :trade?
 
   scope :visible, -> {
     joins(:account).where(accounts: { status: [ "draft", "active" ] })
@@ -575,6 +577,39 @@ class Entry < ApplicationRecord
       return unless excluded_changed?(from: true, to: false) && split_parent?
 
       errors.add(:excluded, "cannot be toggled off for a split transaction")
+    end
+
+    # Converting a transaction to a trade zeroes and excludes the original; the
+    # trade carries the cash movement. Un-excluding the original while the trade
+    # still exists would bring it back into reports with a zero amount, and a
+    # later amount edit would count the movement twice. Deleting the trade is
+    # the way back: that restores the original (see restore_converted_original).
+    def cannot_unexclude_converted_original
+      return unless excluded_changed?(from: true, to: false) && transaction?
+
+      trade_entry_id = entryable.extra.is_a?(Hash) && entryable.extra.dig("converted_to_trade", "trade_entry_id")
+      return if trade_entry_id.blank? || !Entry.exists?(id: trade_entry_id)
+
+      errors.add(:excluded, "cannot be toggled off for a transaction converted to a trade")
+    end
+
+    # Undoes a transaction→trade conversion when its trade is deleted, whichever
+    # path deleted it (single, bulk, API), so the cash movement returns to the
+    # original transaction instead of vanishing from balances.
+    def restore_converted_original
+      Transaction
+        .joins(:entry)
+        .where(entries: { account_id: account_id })
+        .where("transactions.extra -> 'converted_to_trade' ->> 'trade_entry_id' = ?", id.to_s)
+        .includes(:entry)
+        .find_each do |transaction|
+          original_amount = transaction.extra.dig("converted_to_trade", "original_amount")
+          transaction.update!(extra: transaction.extra.except("converted_to_trade"))
+
+          attrs = { excluded: false }
+          attrs[:amount] = original_amount.to_d if original_amount.present?
+          transaction.entry.update!(attrs)
+        end
     end
 
     def split_child_date_matches_parent

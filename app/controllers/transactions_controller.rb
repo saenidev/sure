@@ -303,6 +303,12 @@ class TransactionsController < ApplicationController
       return
     end
 
+    if (refusal = conversion_refusal_key)
+      flash[:alert] = t("transactions.convert_to_trade.errors.#{refusal}")
+      redirect_back_or_to transactions_path
+      return
+    end
+
     render :convert_to_trade
   end
 
@@ -319,8 +325,8 @@ class TransactionsController < ApplicationController
       return
     end
 
-    if @entry.excluded?
-      flash[:alert] = t("transactions.convert_to_trade.errors.already_converted")
+    if (refusal = conversion_refusal_key)
+      flash[:alert] = t("transactions.convert_to_trade.errors.#{refusal}")
       redirect_back_or_to transactions_path
       return
     end
@@ -382,6 +388,8 @@ class TransactionsController < ApplicationController
       ))
       @entry.update!(excluded: true, amount: 0)
     end
+
+    @entry.sync_account_later
 
     flash[:notice] = t("transactions.convert_to_trade.success")
     redirect_to account_path(@entry.account), status: :see_other
@@ -735,6 +743,17 @@ class TransactionsController < ApplicationController
     end
 
     # Helper methods for convert_to_trade
+
+    # Why this transaction cannot become a trade, as an errors.* i18n key, or
+    # nil when it can. A pending transaction is replaced by its posted version
+    # (which would then count alongside the trade); a split's cash already lives
+    # on its children; and a transfer's legs must stay paired.
+    def conversion_refusal_key
+      return "pending" if @transaction.pending?
+      return "split" if @entry.split_child? || @entry.split_parent?
+      return "transfer" if @transaction.transfer.present?
+      "already_converted" if @entry.excluded?
+    end
 
     def resolve_security_for_conversion
       user_country = Current.family.country

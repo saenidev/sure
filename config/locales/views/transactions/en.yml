@@ -280,6 +280,9 @@ en:
       errors:
         not_investment_account: Only transactions in investment accounts can be converted to trades
         already_converted: This transaction has already been converted or excluded
+        pending: Pending transactions cannot be converted to trades. Wait until it posts.
+        split: Split transactions cannot be converted to trades
+        transfer: Transfers cannot be converted to trades
         enter_ticker: Please enter a ticker symbol
         security_not_found: Selected security no longer exists. Please select another.
         select_security: Please select or enter a security

@@ -320,6 +320,87 @@ class TransactionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 34_000, cash_on_trade_date.call
   end
 
+  test "converting a transaction to a trade re-syncs the account" do
+    account = conversion_account
+    entry = create_transaction(account: account, name: "ETF purchase", amount: 1_000, date: 2.days.ago.to_date)
+
+    assert_enqueued_with(job: SyncJob) do
+      post create_trade_from_transaction_transaction_url(entry.entryable), params: {
+        security_id: securities(:aapl).id, qty: 10, investment_activity_label: "Buy"
+      }
+    end
+    assert_redirected_to account_url(account)
+  end
+
+  test "a pending transaction cannot be converted to a trade" do
+    account = conversion_account
+    entry = create_transaction(account: account, name: "ETF purchase", amount: 1_000, date: 2.days.ago.to_date)
+    entry.transaction.update!(extra: { "simplefin" => { "pending" => true } })
+
+    assert_conversion_refused(entry, "transactions.convert_to_trade.errors.pending")
+  end
+
+  test "a split transaction cannot be converted to a trade" do
+    account = conversion_account
+    parent = create_transaction(account: account, name: "ETF purchase", amount: 1_000, date: 2.days.ago.to_date)
+    parent.split!([
+      { name: "Part A", amount: 600, category_id: nil },
+      { name: "Part B", amount: 400, category_id: nil }
+    ])
+    child = parent.child_entries.first
+
+    assert_conversion_refused(parent.reload, "transactions.convert_to_trade.errors.split")
+    assert_conversion_refused(child, "transactions.convert_to_trade.errors.split")
+  end
+
+  test "a transaction that is part of a transfer cannot be converted to a trade" do
+    account = conversion_account
+    transfer = create_transfer(from_account: accounts(:depository), to_account: account, amount: 1_000, date: 2.days.ago.to_date)
+
+    assert_conversion_refused(transfer.reload.inflow_transaction.entry, "transactions.convert_to_trade.errors.transfer")
+  end
+
+  # Deleting the trade a conversion produced must hand the cash movement back to
+  # the original transaction; otherwise the movement disappears from balances.
+  test "deleting a converted trade restores the original transaction's amount" do
+    account = conversion_account
+    entry = create_transaction(
+      account: account, name: "ROUNDHILL MEMORY ETF", amount: 66_000,
+      date: 2.days.ago.to_date, external_id: "simplefin_TRN-2", source: "simplefin"
+    )
+
+    post create_trade_from_transaction_transaction_url(entry.entryable), params: {
+      security_id: securities(:aapl).id, qty: 100, investment_activity_label: "Buy"
+    }
+    trade_entry = account.entries.find_by!(entryable_type: "Trade")
+    assert_equal 34_000, cash_on(account, 2.days.ago.to_date)
+
+    delete trade_url(trade_entry)
+
+    entry.reload
+    assert_equal 66_000, entry.amount
+    assert_not entry.excluded?
+    assert_nil entry.transaction.extra["converted_to_trade"]
+    assert_equal 34_000, cash_on(account, 2.days.ago.to_date)
+  end
+
+  # While the trade exists it carries the cash movement. Un-excluding the zeroed
+  # original would either count nothing (amount 0) or, if the amount were ever
+  # restored by hand, count it twice, so the toggle is refused.
+  test "a converted original cannot be un-excluded while its trade exists" do
+    account = conversion_account
+    entry = create_transaction(account: account, name: "ETF purchase", amount: 1_000, date: 2.days.ago.to_date)
+
+    post create_trade_from_transaction_transaction_url(entry.entryable), params: {
+      security_id: securities(:aapl).id, qty: 10, investment_activity_label: "Buy"
+    }
+
+    patch transaction_url(entry), params: { entry: { excluded: "0" } }
+
+    assert_response :unprocessable_entity
+    assert entry.reload.excluded?
+  end
+
   test "updates with transaction details" do
     assert_no_difference [ "Entry.count", "Transaction.count" ] do
       patch transaction_url(@entry), params: {
@@ -1696,6 +1777,36 @@ end
     # Per-row lazy loads use `column = ?`. Do not treat `IN (...)` as lazy
     # loads — ActiveRecord nested preloads also use single-value IN when only
     # one associated record is needed (e.g. one counterparty account).
+    def conversion_account
+      account = @user.family.accounts.create!(
+        name: "Brokerage", balance: 100_000, cash_balance: 100_000, currency: "USD",
+        accountable: Investment.new, owner: @user
+      )
+      account.entries.create!(
+        name: "Opening balance", date: 5.days.ago.to_date, amount: 100_000, currency: "USD",
+        entryable: Valuation.new(kind: "opening_anchor")
+      )
+      account
+    end
+
+    def cash_on(account, date)
+      Balance::ForwardCalculator.new(account.reload).calculate.find { |balance| balance.date == date }.cash_balance
+    end
+
+    def assert_conversion_refused(entry, alert_key)
+      amount_before = entry.amount
+
+      assert_no_difference -> { Entry.where(entryable_type: "Trade").count } do
+        post create_trade_from_transaction_transaction_url(entry.entryable), params: {
+          security_id: securities(:aapl).id, qty: 10, investment_activity_label: "Buy"
+        }
+      end
+
+      assert_equal I18n.t(alert_key), flash[:alert]
+      assert_equal amount_before, entry.reload.amount
+      assert_nil entry.transaction.extra&.dig("converted_to_trade")
+    end
+
     def single_record_lookups(normalized_queries, table:, column:)
       pattern = /
         from\s+#{Regexp.escape(table)}\s+
