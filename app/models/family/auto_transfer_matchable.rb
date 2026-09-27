@@ -94,7 +94,7 @@ module Family::AutoTransferMatchable
 
         inflow_transaction = transactions_by_id.fetch(match.inflow_transaction_id)
         outflow_transaction = transactions_by_id.fetch(match.outflow_transaction_id)
-        next unless auto_matchable_leg?(inflow_transaction) && auto_matchable_leg?(outflow_transaction)
+        next unless auto_matchable_pair?(inflow_transaction, outflow_transaction)
 
         # Skip this candidate when the transfer for this exact pair was not created
         # (a concurrent sync claimed one of the transactions for a different pairing);
@@ -130,10 +130,22 @@ module Family::AutoTransferMatchable
     # Only the automatic path applies this guard; the manual "match as transfer" dialog
     # still offers these rows, since a user confirming a match can judge it themselves.
     # A kind the user set by hand is never overwritten by an automatic match.
+    #
+    # The name check applies only across currencies: there the match is an amount x
+    # FX-rate guess and an interest credit can fall inside the tolerance band by
+    # chance. A same-currency exact-amount pair is strong evidence on its own, and
+    # names like "Online transfer to Interest Checking" are real transfers.
+    def auto_matchable_pair?(inflow_transaction, outflow_transaction)
+      legs = [ inflow_transaction, outflow_transaction ]
+      return false unless legs.all? { |leg| auto_matchable_leg?(leg) }
+
+      cross_currency = inflow_transaction.entry.currency != outflow_transaction.entry.currency
+      !(cross_currency && legs.any? { |leg| leg.entry.name.to_s.match?(NON_TRANSFER_NAME_PATTERN) })
+    end
+
     def auto_matchable_leg?(transaction)
       !transaction.locked?(:kind) &&
-        !NON_TRANSFER_ACTIVITY_LABELS.include?(transaction.investment_activity_label) &&
-        !transaction.entry.name.to_s.match?(NON_TRANSFER_NAME_PATTERN)
+        !NON_TRANSFER_ACTIVITY_LABELS.include?(transaction.investment_activity_label)
     end
 
     # Create the transfer for a matched candidate, tolerating a concurrent sync

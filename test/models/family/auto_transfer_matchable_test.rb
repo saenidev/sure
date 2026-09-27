@@ -605,15 +605,34 @@ class Family::AutoTransferMatchableTest < ActiveSupport::TestCase
     end
   end
 
-  test "does not auto-match a leg named as interest or commission" do
-    create_transaction(date: Date.current, account: @depository, amount: 5, name: "Trade Commission for SIVE")
-    create_transaction(date: Date.current, account: @credit_card, amount: -5, name: "Card credit")
-    create_transaction(date: Date.current, account: @depository, amount: 6, name: "Payment")
-    create_transaction(date: Date.current, account: @credit_card, amount: -6, name: "INTEREST PAID")
+  # The name guard only applies across currencies, where amount x FX-rate is a
+  # guess and an interest credit can land inside the tolerance band by chance.
+  test "does not auto-match a cross-currency leg named as interest or commission" do
+    load_exchange_prices
+    link_account!(@depository)
+    link_account!(@credit_card)
+
+    create_transaction(date: Date.current, account: @depository, amount: 500, name: "Trade Commission for SIVE")
+    create_transaction(date: Date.current, account: @credit_card, amount: -700, currency: "CAD", name: "Card credit")
+    create_transaction(date: Date.current, account: @depository, amount: 1000, name: "Payment")
+    create_transaction(date: Date.current, account: @credit_card, amount: -1400, currency: "CAD", name: "Interest Paid")
 
     assert_no_difference -> { Transfer.count } do
       @family.auto_match_transfers!
     end
+  end
+
+  # An exact same-currency amount is strong evidence on its own; account names
+  # like "Interest Checking" must not block it.
+  test "auto-matches a same-currency pair whose name mentions interest" do
+    outflow = create_transaction(date: Date.current, account: @depository, amount: 777, name: "Online transfer to Interest Checking")
+    inflow = create_transaction(date: Date.current, account: @credit_card, amount: -777, name: "Online transfer from Interest Checking")
+
+    assert_difference -> { Transfer.count } => 1 do
+      @family.auto_match_transfers!
+    end
+
+    assert Transfer.exists?(inflow_transaction_id: inflow.entryable_id, outflow_transaction_id: outflow.entryable_id)
   end
 
   test "does not auto-match or re-kind a leg whose kind the user locked" do
@@ -632,6 +651,7 @@ class Family::AutoTransferMatchableTest < ActiveSupport::TestCase
   test "a guarded leg does not block the real match, and the manual dialog still offers it" do
     # Same day as the outflow, so it would be the closest candidate without the guard
     interest = create_transaction(date: Date.current, account: @credit_card, amount: -500, name: "Interest paid")
+    interest.entryable.update!(investment_activity_label: "Interest")
     outflow = create_transaction(date: Date.current, account: @depository, amount: 500)
     real_inflow = create_transaction(date: 1.day.ago.to_date, account: @credit_card, amount: -500)
 
