@@ -15,6 +15,12 @@ module Family::AutoTransferMatchable
   # date_window: 30 vs. 4 widening that dialog already applies.
   MANUAL_MATCH_EXCHANGE_RATE_TOLERANCE = 0.1
 
+  # Activity labels that describe income, costs or trades inside one account, never
+  # one side of money moving between two accounts. A bank interest credit and a broker
+  # commission of about the same value would otherwise pair up across currencies.
+  NON_TRANSFER_ACTIVITY_LABELS = %w[Fee Interest Dividend Buy Sell].freeze
+  NON_TRANSFER_NAME_PATTERN = /interest|commission/i
+
   # Read at call time rather than frozen into a constant at boot, so a bad value falls back
   # instead of raising inside every sync: Family::Syncer and Account::Syncer both call
   # auto_match_transfers! without a tolerance of their own.
@@ -86,13 +92,15 @@ module Family::AutoTransferMatchable
         next if used_transaction_ids.include?(match.inflow_transaction_id) ||
                used_transaction_ids.include?(match.outflow_transaction_id)
 
+        inflow_transaction = transactions_by_id.fetch(match.inflow_transaction_id)
+        outflow_transaction = transactions_by_id.fetch(match.outflow_transaction_id)
+        next unless auto_matchable_leg?(inflow_transaction) && auto_matchable_leg?(outflow_transaction)
+
         # Skip this candidate when the transfer for this exact pair was not created
         # (a concurrent sync claimed one of the transactions for a different pairing);
         # marking it matched here would leave a transaction matched with no Transfer.
         next unless find_or_create_transfer!(match)
 
-        inflow_transaction = transactions_by_id.fetch(match.inflow_transaction_id)
-        outflow_transaction = transactions_by_id.fetch(match.outflow_transaction_id)
         destination_account = inflow_transaction.entry.account
         transfer_kind = Transfer.kind_for_account(destination_account)
 
@@ -119,6 +127,15 @@ module Family::AutoTransferMatchable
   end
 
   private
+    # Only the automatic path applies this guard; the manual "match as transfer" dialog
+    # still offers these rows, since a user confirming a match can judge it themselves.
+    # A kind the user set by hand is never overwritten by an automatic match.
+    def auto_matchable_leg?(transaction)
+      !transaction.locked?(:kind) &&
+        !NON_TRANSFER_ACTIVITY_LABELS.include?(transaction.investment_activity_label) &&
+        !transaction.entry.name.to_s.match?(NON_TRANSFER_NAME_PATTERN)
+    end
+
     # Create the transfer for a matched candidate, tolerating a concurrent sync
     # that already inserted the same pair.
     #

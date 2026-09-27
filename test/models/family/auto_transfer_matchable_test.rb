@@ -578,6 +578,62 @@ class Family::AutoTransferMatchableTest < ActiveSupport::TestCase
     assert_equal "funds_movement", inflow_entry.entryable.kind
   end
 
+  # A bank interest credit and a broker commission of about the same value used
+  # to be paired across currencies and hidden from income as a "transfer".
+  test "does not auto-match a leg labelled as fee, interest, dividend, buy or sell" do
+    %w[Fee Interest Dividend Buy Sell].each_with_index do |label, i|
+      amount = 300 + i
+      outflow = create_transaction(date: Date.current, account: @depository, amount: amount)
+      inflow = create_transaction(date: Date.current, account: @credit_card, amount: -amount)
+      [ outflow, inflow ][i % 2].entryable.update!(investment_activity_label: label)
+
+      assert_no_difference -> { Transfer.count }, "#{label} leg was auto-matched" do
+        @family.auto_match_transfers!
+      end
+    end
+  end
+
+  test "does not auto-match a leg named as interest or commission" do
+    create_transaction(date: Date.current, account: @depository, amount: 5, name: "Trade Commission for SIVE")
+    create_transaction(date: Date.current, account: @credit_card, amount: -5, name: "Card credit")
+    create_transaction(date: Date.current, account: @depository, amount: 6, name: "Payment")
+    create_transaction(date: Date.current, account: @credit_card, amount: -6, name: "INTEREST PAID")
+
+    assert_no_difference -> { Transfer.count } do
+      @family.auto_match_transfers!
+    end
+  end
+
+  test "does not auto-match or re-kind a leg whose kind the user locked" do
+    outflow = create_transaction(date: Date.current, account: @depository, amount: 500, kind: "one_time")
+    inflow = create_transaction(date: Date.current, account: @credit_card, amount: -500)
+    outflow.entryable.lock_attr!(:kind)
+
+    assert_no_difference -> { Transfer.count } do
+      @family.auto_match_transfers!
+    end
+
+    assert_equal "one_time", outflow.entryable.reload.kind
+    assert_equal "standard", inflow.entryable.reload.kind
+  end
+
+  test "a guarded leg does not block the real match, and the manual dialog still offers it" do
+    # Same day as the outflow, so it would be the closest candidate without the guard
+    interest = create_transaction(date: Date.current, account: @credit_card, amount: -500, name: "Interest paid")
+    outflow = create_transaction(date: Date.current, account: @depository, amount: 500)
+    real_inflow = create_transaction(date: 1.day.ago.to_date, account: @credit_card, amount: -500)
+
+    assert_difference -> { Transfer.count } => 1 do
+      @family.auto_match_transfers!
+    end
+
+    assert Transfer.exists?(inflow_transaction_id: real_inflow.entryable_id, outflow_transaction_id: outflow.entryable_id)
+
+    other_outflow = create_transaction(date: Date.current, account: @depository, amount: 500)
+    manual_candidates = interest.transaction.transfer_match_candidates.map(&:outflow_transaction_id)
+    assert_includes manual_candidates, other_outflow.entryable_id
+  end
+
   private
     # Simulates a live provider connection so `Account#manual?` (and the SQL
     # query's equivalent check) treats the account as linked. `AccountProvider`
