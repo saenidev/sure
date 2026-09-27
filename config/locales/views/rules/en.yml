@@ -99,6 +99,13 @@ en:
       confirm_body: Are you sure you want to reset the AI cache? This will allow AI rules to re-process all transactions. This may incur additional API costs.
       confirm_button: Reset Cache
       success: AI cache is being cleared. This may take a few moments.
+    action_executors:
+      set_transaction_kind:
+        label: Set transaction kind
+        kinds:
+          standard: Standard (income or expense)
+          funds_movement: Transfer between own accounts
+          one_time: One-time (excluded from budgets)
     condition_filters:
       transaction_type:
         income: Income
