@@ -408,7 +408,7 @@ module Forecast
           .where(date: period.start_date..[ period.end_date, start_on ].min, excluded: false, account_id: included_account_scope.ids)
           .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
           .where.not(transactions: { kind: Transaction::BUDGET_EXCLUDED_KINDS })
-          .where("transactions.investment_activity_label IS NULL OR transactions.investment_activity_label NOT IN (?)", Transaction::INTERNAL_MOVEMENT_LABELS)
+          .where("transactions.investment_activity_label IS NULL OR transactions.investment_activity_label NOT IN (?)", Transaction::INCOME_STATEMENT_EXCLUDED_LABELS)
           .order(:date, :account_id, :id)
           .includes(:entryable)
         tax_advantaged_ids = family.tax_advantaged_account_ids
@@ -429,7 +429,7 @@ module Forecast
       end
 
       def internal_investment_movement?(transaction)
-        transaction&.investment_activity_label.in?(Transaction::INTERNAL_MOVEMENT_LABELS)
+        transaction&.investment_activity_label.in?(Transaction::INCOME_STATEMENT_EXCLUDED_LABELS)
       end
 
       def convert_entry_amount(entry, source_suffix)

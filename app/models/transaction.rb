@@ -127,6 +127,12 @@ class Transaction < ApplicationRecord
   # Internal movement labels that should be excluded from budget (auto cash management)
   INTERNAL_MOVEMENT_LABELS = [ "Transfer", "Sweep In", "Sweep Out", "Exchange" ].freeze
 
+  # Labels kept out of income statement totals. Buy/Sell rows are brokerage trades
+  # that arrived as cash transactions (e.g. SimpleFIN has no trade type): cash moves
+  # into or out of holdings, which is neither income nor spending. Deliberately
+  # separate from INTERNAL_MOVEMENT_LABELS, which provider imports use to set kind.
+  INCOME_STATEMENT_EXCLUDED_LABELS = (INTERNAL_MOVEMENT_LABELS + %w[Buy Sell]).freeze
+
   # Providers that support pending transaction flags
   PENDING_PROVIDERS = %w[simplefin plaid lunchflow enable_banking akahu up monobank mercury redbark financekit].freeze
 

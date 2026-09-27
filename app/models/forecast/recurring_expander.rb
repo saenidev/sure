@@ -105,7 +105,7 @@ module Forecast
           .where(entries: { account_id: included_account_scope.id_values })
           .where.not(category_id: nil)
           .where.not(kind: Transaction::BUDGET_EXCLUDED_KINDS)
-          .where("transactions.investment_activity_label IS NULL OR transactions.investment_activity_label NOT IN (?)", Transaction::INTERNAL_MOVEMENT_LABELS)
+          .where("transactions.investment_activity_label IS NULL OR transactions.investment_activity_label NOT IN (?)", Transaction::INCOME_STATEMENT_EXCLUDED_LABELS)
           .includes(:entry, :transfer_as_outflow)
         tax_advantaged_ids = family.tax_advantaged_account_ids
         scope = scope.where.not(entries: { account_id: tax_advantaged_ids }) if tax_advantaged_ids.present?

@@ -434,6 +434,34 @@ class Forecast::BudgetInputBuilderTest < ActiveSupport::TestCase
     assert_equal 0.to_d, result.first.fetch(:actual_income)
   end
 
+  test "actual spending ignores brokerage trades labelled Buy or Sell, like the income statement" do
+    family = families(:dylan_family)
+    user = users(:family_admin)
+    family.budgets.destroy_all
+    purchase = entries(:transaction)
+    purchase.update!(date: Date.current, amount: 100, account: accounts(:depository))
+    purchase.transaction.update!(kind: "standard", category: categories(:food_and_drink))
+    buy = Transaction.create!(kind: "standard", category: categories(:food_and_drink), investment_activity_label: "Buy")
+    Entry.create!(account: accounts(:depository), entryable: buy, name: "Sandisk Corp", date: Date.current, amount: 900, currency: family.currency)
+    sell = Transaction.create!(kind: "standard", investment_activity_label: "Sell")
+    Entry.create!(account: accounts(:depository), entryable: sell, name: "Micron Technology", date: Date.current, amount: -700, currency: family.currency)
+    period = Forecast::PeriodBuilder::PeriodWindow.new(index: 0, start_date: Date.current.beginning_of_month, end_date: Date.current.end_of_month, precision: "daily_backed")
+
+    result = Forecast::BudgetInputBuilder.new(
+      family: family,
+      start_on: Date.current,
+      user: user,
+      periods: [ period ],
+      money_converter: Forecast::MoneyConverter.new(family: family, as_of: Date.current),
+      scenario_ids: [],
+      included_account_scope: Forecast::IncludedAccountScope.new(family: family, user: user)
+    ).call
+
+    category = result.first.fetch(:categories).find { |row| row.fetch(:category_id) == categories(:food_and_drink).id }
+    assert_equal 100.to_d, category.fetch(:actual_spending)
+    assert_equal 0.to_d, result.first.fetch(:actual_income)
+  end
+
   test "uncategorized actual spending is tracked separately for current-period budget gaps" do
     family = families(:dylan_family)
     user = users(:family_admin)

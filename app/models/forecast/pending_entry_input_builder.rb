@@ -208,7 +208,7 @@ module Forecast
       end
 
       def internal_investment_movement?(transaction)
-        transaction&.investment_activity_label.in?(Transaction::INTERNAL_MOVEMENT_LABELS)
+        transaction&.investment_activity_label.in?(Transaction::INCOME_STATEMENT_EXCLUDED_LABELS)
       end
 
       def investment_like?(account)

@@ -70,6 +70,26 @@ class Forecast::PendingEntryInputBuilderTest < ActiveSupport::TestCase
     assert_equal 0.to_d, row.fetch(:pending_spending)
   end
 
+  test "pending brokerage trades labelled Buy or Sell do not become income or spending" do
+    entry = entries(:transaction)
+    entry.update!(date: Date.current, amount: 900, account: accounts(:depository))
+    entry.transaction.update!(kind: "standard", investment_activity_label: "Buy", extra: { "simplefin" => { "pending" => true } })
+
+    result = Forecast::PendingEntryInputBuilder.new(
+      family: families(:dylan_family),
+      user: users(:family_admin),
+      start_on: Date.current,
+      end_on: 90.days.from_now.to_date,
+      money_converter: Forecast::MoneyConverter.new(family: families(:dylan_family), as_of: Date.current),
+      included_account_scope: Forecast::IncludedAccountScope.new(family: families(:dylan_family), user: users(:family_admin))
+    ).call
+
+    row = result.first
+    assert_equal "none", row.fetch(:budget_flow_type)
+    assert_equal 0.to_d, row.fetch(:expected_spending)
+    assert_equal 0.to_d, row.fetch(:pending_spending)
+  end
+
   test "pending investment contribution uses canonical investment contribution category" do
     family = families(:dylan_family)
     category = I18n.with_locale(family.locale) do

@@ -43,14 +43,18 @@ module IncomeStatement::ScopedTransactionsQuery
     end
 
     # Investment activity rows that move money within a portfolio
-    # (transfers, sweeps, exchanges) are neither income nor expenses.
+    # (transfers, sweeps, exchanges, trades) are neither income nor expenses.
     def investment_activity_label_sql(t)
       <<~SQL.chomp
         AND (
           #{t}.investment_activity_label IS NULL
-          OR #{t}.investment_activity_label NOT IN ('Transfer', 'Sweep In', 'Sweep Out', 'Exchange')
+          OR #{t}.investment_activity_label NOT IN (#{income_statement_excluded_labels_sql})
         )
       SQL
+    end
+
+    def income_statement_excluded_labels_sql
+      @income_statement_excluded_labels_sql ||= Transaction::INCOME_STATEMENT_EXCLUDED_LABELS.map { |l| "'#{l}'" }.join(", ")
     end
 
     def budget_excluded_kinds_sql

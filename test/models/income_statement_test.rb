@@ -269,6 +269,37 @@ class IncomeStatementTest < ActiveSupport::TestCase
     assert_equal Money.new(1900, @family.currency), totals.expense_money
   end
 
+  # A brokerage trade imported as a cash row (e.g. SimpleFIN) and labelled
+  # Buy/Sell moves money between cash and holdings; it is neither income nor
+  # spending. The label list stays separate from INTERNAL_MOVEMENT_LABELS so
+  # provider imports keep their kinds.
+  test "excludes Buy and Sell labelled transactions from totals, budget actuals and daily spending" do
+    investment = @family.accounts.create! name: "Brokerage", currency: @family.currency, balance: 0, accountable: Investment.new
+    create_transaction(account: investment, amount: 9000, name: "Sandisk Corp").entryable.update!(investment_activity_label: "Buy")
+    create_transaction(account: investment, amount: -7000, name: "Micron Technology").entryable.update!(investment_activity_label: "Sell")
+
+    income_statement = IncomeStatement.new(@family)
+    totals = income_statement.totals(date_range: Period.last_30_days.date_range)
+
+    assert_equal 4, totals.transactions_count
+    assert_equal Money.new(1000, @family.currency), totals.income_money
+    assert_equal Money.new(900, @family.currency), totals.expense_money
+    assert_equal 900, income_statement.expense_totals(period: Period.last_30_days).total
+    assert_equal 1000, income_statement.income_totals(period: Period.last_30_days).total
+    assert_equal 900, income_statement.daily_expense_series(period: Period.last_30_days).sum(&:total)
+  end
+
+  test "still counts other investment activity labels such as dividends and fees" do
+    investment = @family.accounts.create! name: "Brokerage", currency: @family.currency, balance: 0, accountable: Investment.new
+    create_transaction(account: investment, amount: -50, name: "Dividend").entryable.update!(investment_activity_label: "Dividend")
+    create_transaction(account: investment, amount: 5, name: "Fee").entryable.update!(investment_activity_label: "Fee")
+
+    totals = IncomeStatement.new(@family).totals(date_range: Period.last_30_days.date_range)
+
+    assert_equal Money.new(1050, @family.currency), totals.income_money
+    assert_equal Money.new(905, @family.currency), totals.expense_money
+  end
+
   test "excludes one-time transactions from income statement calculations" do
     # Create a one-time transaction
     create_transaction(account: @checking_account, amount: 250, category: @groceries_category, kind: "one_time")
