@@ -72,6 +72,17 @@ class Rule::ActionExecutor::SetTransactionKindTest < ActiveSupport::TestCase
     assert outflow.transfer.present?
   end
 
+  test "never overrides a ledger-only kind such as debt interest" do
+    @txn1.update!(kind: "debt_interest")
+    @txn2.update!(kind: "one_time")
+
+    modified = apply_kind("standard", ignore_attribute_locks: true)
+
+    assert_equal 1, modified
+    assert_equal "debt_interest", @txn1.reload.kind
+    assert_equal "standard", @txn2.reload.kind
+  end
+
   test "ignores kinds outside the allowed list" do
     assert_equal 0, apply_kind("cc_payment")
     assert_equal 0, apply_kind("bogus")

@@ -138,6 +138,17 @@ class Assistant::Function::UpdateTransactionTest < ActiveSupport::TestCase
     assert @transaction.reload.locked?(:kind)
   end
 
+  test "refuses to change a ledger-only kind such as debt interest" do
+    @transaction.update!(kind: "debt_interest")
+
+    result = @function.call("id" => @transaction.id, "kind" => "standard")
+
+    assert_equal false, result[:success]
+    assert_equal "ledger_only", result[:error]
+    assert_equal "debt_interest", @transaction.reload.kind
+    assert_not @transaction.locked?(:kind)
+  end
+
   test "rejects kinds that belong to transfers" do
     result = @function.call("id" => @transaction.id, "kind" => "cc_payment")
 

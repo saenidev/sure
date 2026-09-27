@@ -96,6 +96,10 @@ class Assistant::Function::UpdateTransaction < Assistant::Function
       return error("has_transfer", "This transaction is part of a transfer. Pass reject_transfer: true to unlink it before changing its kind.")
     end
 
+    if params.key?("kind") && Transaction::LEDGER_ONLY_KINDS.include?(transaction.kind)
+      return error("ledger_only", "This transaction is a #{transaction.kind} ledger entry; its kind cannot be changed.")
+    end
+
     entry_attrs = entry_attributes(params, entry)
     return entry_attrs if error_response?(entry_attrs)
 
