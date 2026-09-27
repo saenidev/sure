@@ -188,4 +188,46 @@ class Assistant::Function::GetTransactionsTest < ActiveSupport::TestCase
 
     assert_equal "Buy", item[:investment_activity_label]
   end
+
+  # is_transfer only reflects kind, so a card refund kinded cc_payment with no
+  # counterpart looked the same as a real payment between two accounts.
+  test "each transaction reports whether it is a leg of a real transfer" do
+    linked = transactions(:transfer_out)
+    unlinked = @transaction
+    unlinked.update!(kind: "cc_payment")
+
+    items = @function.call("page_size" => 100)[:transactions].index_by { |t| t[:id] }
+
+    assert_equal true, items[linked.id][:has_transfer_link]
+    assert_equal true, items[transactions(:transfer_in).id][:has_transfer_link]
+    assert_equal false, items[unlinked.id][:has_transfer_link]
+    assert_equal true, items[unlinked.id][:is_transfer]
+  end
+
+  test "each transaction reports whether the user has modified it" do
+    @transaction.entry.update!(user_modified: true)
+
+    items = @function.call("page_size" => 100)[:transactions].index_by { |t| t[:id] }
+
+    assert_equal true, items[@transaction.id][:user_modified]
+    assert_equal false, items[transactions(:transfer_out).id][:user_modified]
+  end
+
+  test "each transaction reports its locked attributes from both the transaction and its entry" do
+    @transaction.lock_attr!(:kind)
+    @transaction.lock_attr!(:category_id)
+    @transaction.entry.lock_attr!(:name)
+
+    items = @function.call("page_size" => 100)[:transactions].index_by { |t| t[:id] }
+
+    assert_equal %w[category_id kind name], items[@transaction.id][:locked]
+    assert_equal [], items[transactions(:transfer_out).id][:locked]
+  end
+
+  test "each transaction reports its account type" do
+    items = @function.call("page_size" => 100)[:transactions].index_by { |t| t[:id] }
+
+    assert_equal "Depository", items[transactions(:transfer_out).id][:account_type]
+    assert_equal "CreditCard", items[transactions(:transfer_in).id][:account_type]
+  end
 end

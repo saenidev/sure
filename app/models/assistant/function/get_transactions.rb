@@ -26,7 +26,12 @@ class Assistant::Function::GetTransactions < Assistant::Function
 
         Each transaction carries `kind`: standard, funds_movement, cc_payment,
         loan_payment, investment_contribution, one_time (a windfall or one-off
-        expense kept out of budgets) or debt_interest.
+        expense kept out of budgets) or debt_interest. `is_transfer` follows
+        kind alone; `has_transfer_link` is true only when the row is one leg of
+        an actual transfer between two of the user's accounts. `user_modified`
+        marks rows the user has edited by hand, `locked` lists attributes that
+        rules and syncs will not overwrite, and `account_type` is the account's
+        type (e.g. Depository, CreditCard, Investment).
 
         Note on pagination:
 
@@ -213,7 +218,11 @@ class Assistant::Function::GetTransactions < Assistant::Function
         tags: txn.tags.map(&:name),
         is_transfer: txn.transfer?,
         kind: txn.kind,
-        investment_activity_label: txn.investment_activity_label
+        investment_activity_label: txn.investment_activity_label,
+        has_transfer_link: txn.transfer.present?,
+        user_modified: entry.user_modified?,
+        locked: (txn.locked_attributes.to_h.keys + entry.locked_attributes.to_h.keys).uniq.sort,
+        account_type: entry.account.accountable_type
       }
     end
 
