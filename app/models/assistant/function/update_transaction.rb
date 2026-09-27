@@ -116,6 +116,12 @@ class Assistant::Function::UpdateTransaction < Assistant::Function
       end
 
       entry.update!(entry_attrs)
+      # Lock straight after the update, while saved_changes still describes it;
+      # any later save (tags, other locks) would reset it.
+      entry.lock_saved_attributes!
+      # Work on the instance the update and locks went through, so later
+      # lock_attr! calls merge into its current locked_attributes, not a stale copy
+      transaction = entry.entryable
 
       if params.key?("tag_ids")
         transaction.tag_ids = tag_ids
@@ -123,12 +129,11 @@ class Assistant::Function::UpdateTransaction < Assistant::Function
         transaction.lock_attr!(:tag_ids)
       end
 
-      entry.sync_account_later
-      entry.lock_saved_attributes!
       # Lock even when the value was already right, so rules and syncs keep it
       transaction.lock_attr!(:kind) if params.key?("kind")
       transaction.lock_attr!(:investment_activity_label) if params.key?("investment_activity_label")
       entry.mark_user_modified!
+      entry.sync_account_later
     end
 
     {

@@ -193,7 +193,9 @@ module Enrichable
       de.save
     end
 
+    # locked_attributes is the lock bookkeeping itself, never a lockable value:
+    # it shows up in saved_changes after any lock_attr! save.
     def ignored_enrichable_attributes
-      %w[id updated_at created_at]
+      %w[id updated_at created_at locked_attributes]
     end
 end

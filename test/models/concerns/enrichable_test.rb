@@ -48,6 +48,13 @@ class EnrichableTest < ActiveSupport::TestCase
     assert @enrichable.locked?(:balance)
   end
 
+  test "lock_saved_attributes! after a lock_attr! save does not lock locked_attributes itself" do
+    @enrichable.lock_attr!(:name)
+    @enrichable.lock_saved_attributes!
+
+    assert_not @enrichable.locked?(:locked_attributes)
+  end
+
   test "does not enrich locked attributes" do
     original_name = @enrichable.name
 

@@ -26,6 +26,24 @@ class Assistant::Function::UpdateTransactionTest < ActiveSupport::TestCase
     assert_equal [ tag.id ], @transaction.tag_ids
   end
 
+  test "category and tags in one call lock both, and nothing locks locked_attributes itself" do
+    result = @function.call(
+      "id" => @transaction.id,
+      "category_id" => categories(:subcategory).id,
+      "tag_ids" => [ tags(:one).id ]
+    )
+
+    assert_equal true, result[:success]
+
+    @transaction.reload
+    assert @transaction.locked?(:category_id), "category_id was not locked"
+    assert @transaction.locked?(:tag_ids), "tag_ids was not locked"
+
+    # The same union get_transactions reports as `locked`
+    locked = (@transaction.locked_attributes.keys + @transaction.entry.locked_attributes.keys).uniq
+    assert_not_includes locked, "locked_attributes"
+  end
+
   test "clears category merchant notes and tags when explicitly requested" do
     @transaction.update!(category: categories(:food_and_drink), merchant: merchants(:amazon))
     @transaction.tags = [ tags(:one) ]
