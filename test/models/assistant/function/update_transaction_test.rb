@@ -238,6 +238,41 @@ class Assistant::Function::UpdateTransactionTest < ActiveSupport::TestCase
     end
   end
 
+  test "refuses kind or activity label on a split parent" do
+    entry = @transaction.entry
+    entry.split!([
+      { name: "Part A", amount: entry.amount / 2, category_id: nil },
+      { name: "Part B", amount: entry.amount - (entry.amount / 2), category_id: nil }
+    ])
+
+    [ { "kind" => "one_time" }, { "investment_activity_label" => "Buy" } ].each do |params|
+      result = @function.call(params.merge("id" => @transaction.id))
+
+      assert_equal false, result[:success], params.inspect
+      assert_equal "split_parent", result[:error]
+    end
+
+    @transaction.reload
+    assert_equal "standard", @transaction.kind
+    assert_nil @transaction.investment_activity_label
+    assert_not @transaction.locked?(:kind)
+  end
+
+  test "reject_transfer is not authorized when the other leg's account is not fully writable" do
+    # Fixtures: family_member has full_control of checking (the outflow) but
+    # only read_only access to the credit card (the inflow)
+    outflow = transactions(:transfer_out)
+    function = Assistant::Function::UpdateTransaction.new(users(:family_member))
+
+    result = function.call("id" => outflow.id, "reject_transfer" => true)
+
+    assert_equal false, result[:success]
+    assert_equal "not_authorized", result[:error]
+    assert_match "both sides", result[:message]
+    assert outflow.reload.transfer.present?
+    assert_not outflow.entry.user_modified?
+  end
+
   test "reject_transfer and kind combine in one call" do
     inflow = transactions(:transfer_in)
 

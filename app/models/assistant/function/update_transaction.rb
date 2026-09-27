@@ -104,6 +104,11 @@ class Assistant::Function::UpdateTransaction < Assistant::Function
       return error("ledger_only", "This transaction is a #{transaction.kind} ledger entry; its kind cannot be changed.")
     end
 
+    # A split parent is excluded; its children carry the reportable amounts
+    if (params.key?("kind") || params.key?("investment_activity_label")) && entry.split_parent?
+      return error("split_parent", "This transaction is split, so its kind and activity label are not used. Change the split parts in the app's split editor.")
+    end
+
     entry_attrs = entry_attributes(params, entry)
     return entry_attrs if error_response?(entry_attrs)
 
