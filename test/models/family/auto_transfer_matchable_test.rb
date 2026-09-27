@@ -578,6 +578,18 @@ class Family::AutoTransferMatchableTest < ActiveSupport::TestCase
     assert_equal "funds_movement", inflow_entry.entryable.kind
   end
 
+  test "brokerage to brokerage assigns funds_movement kind and no contribution category" do
+    other_brokerage = @family.accounts.create!(name: "Second brokerage", balance: 0, currency: "USD", accountable: Investment.new)
+    outflow_entry = create_transaction(date: Date.current, account: accounts(:investment), amount: 500)
+    inflow_entry = create_transaction(date: Date.current, account: other_brokerage, amount: -500)
+
+    @family.auto_match_transfers!
+
+    assert_equal "funds_movement", outflow_entry.entryable.reload.kind
+    assert_equal "funds_movement", inflow_entry.entryable.reload.kind
+    assert_nil outflow_entry.entryable.category
+  end
+
   # A bank interest credit and a broker commission of about the same value used
   # to be paired across currencies and hidden from income as a "transfer".
   test "does not auto-match a leg labelled as fee, interest, dividend, buy or sell" do

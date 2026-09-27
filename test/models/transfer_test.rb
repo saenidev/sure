@@ -157,6 +157,27 @@ class TransferTest < ActiveSupport::TestCase
     assert_equal "funds_movement", Transfer.kind_for_account(accounts(:depository))
   end
 
+  # Moving money between two of the user's own brokerages is not a contribution;
+  # Transfer::Creator and the data importer already treat it this way.
+  test "kind_for_account returns funds_movement between investment or crypto accounts" do
+    other_brokerage = families(:dylan_family).accounts.create!(name: "Second brokerage", balance: 0, currency: "USD", accountable: Investment.new)
+
+    assert_equal "funds_movement", Transfer.kind_for_account(other_brokerage, source: accounts(:investment))
+    assert_equal "funds_movement", Transfer.kind_for_account(accounts(:crypto), source: accounts(:investment))
+    assert_equal "funds_movement", Transfer.kind_for_account(accounts(:investment), source: accounts(:crypto))
+  end
+
+  test "kind_for_account keeps investment_contribution from a cash source" do
+    assert_equal "investment_contribution", Transfer.kind_for_account(accounts(:investment), source: accounts(:depository))
+    assert_equal "investment_contribution", Transfer.kind_for_account(accounts(:crypto), source: accounts(:depository))
+  end
+
+  test "kind_for_account ignores an investment source for non-investment destinations" do
+    assert_equal "cc_payment", Transfer.kind_for_account(accounts(:credit_card), source: accounts(:investment))
+    assert_equal "loan_payment", Transfer.kind_for_account(accounts(:loan), source: accounts(:investment))
+    assert_equal "funds_movement", Transfer.kind_for_account(accounts(:depository), source: accounts(:investment))
+  end
+
   test "has_source_fee? returns true when source fee present" do
     transfer = transfers(:one)
     entry = accounts(:depository).entries.create!(name: "Fee", date: Date.current, amount: 5, currency: "USD", entryable: Transaction.new(kind: "standard"))

@@ -102,7 +102,7 @@ module Family::AutoTransferMatchable
         next unless find_or_create_transfer!(match)
 
         destination_account = inflow_transaction.entry.account
-        transfer_kind = Transfer.kind_for_account(destination_account)
+        transfer_kind = Transfer.kind_for_account(destination_account, source: outflow_transaction.entry.account)
 
         # The kind is determined by the DESTINATION account (inflow), matching Transfer::Creator logic
         inflow_transaction.update!(kind: "funds_movement")

@@ -280,6 +280,24 @@ class Rule::ActionTest < ActiveSupport::TestCase
     assert_equal category, transfer.outflow_transaction.category
   end
 
+  test "set_as_transfer_or_payment assigns funds_movement kind between investment accounts" do
+    brokerage = @family.accounts.create!(name: "Rule brokerage", balance: 1000, currency: "USD", accountable: Investment.new)
+    outflow = create_transaction(date: Date.current, account: brokerage, amount: 100, name: "Wire out").transaction
+
+    action = Rule::Action.new(
+      rule: @transaction_rule,
+      action_type: "set_as_transfer_or_payment",
+      value: accounts(:investment).id
+    )
+
+    action.apply(Transaction.where(id: outflow.id))
+
+    transfer = outflow.reload.transfer
+    assert transfer.present?, "Transfer should be created"
+    assert_equal "funds_movement", transfer.outflow_transaction.kind
+    assert_nil transfer.outflow_transaction.category
+  end
+
   test "set_investment_activity_label ignores invalid values" do
     action = Rule::Action.new(
       rule: @transaction_rule,
