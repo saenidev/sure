@@ -30,8 +30,9 @@ class Assistant::Function::GetTransactions < Assistant::Function
         kind alone; `has_transfer_link` is true only when the row is one leg of
         an actual transfer between two of the user's accounts. `user_modified`
         marks rows the user has edited by hand, `locked` lists attributes that
-        rules and syncs will not overwrite, and `account_type` is the account's
-        type (e.g. Depository, CreditCard, Investment).
+        rules and syncs will not overwrite, `account_type` is the account's
+        type (e.g. Depository, CreditCard, Investment), and `excluded` marks
+        rows the user hid from reports (search still returns them).
 
         Note on pagination:
 
@@ -222,7 +223,8 @@ class Assistant::Function::GetTransactions < Assistant::Function
         has_transfer_link: txn.transfer.present?,
         user_modified: entry.user_modified?,
         locked: (txn.locked_attributes.to_h.keys + entry.locked_attributes.to_h.keys).uniq.sort,
-        account_type: entry.account.accountable_type
+        account_type: entry.account.accountable_type,
+        excluded: entry.excluded?
       }
     end
 

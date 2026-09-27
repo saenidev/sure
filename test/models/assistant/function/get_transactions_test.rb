@@ -230,4 +230,15 @@ class Assistant::Function::GetTransactionsTest < ActiveSupport::TestCase
     assert_equal "Depository", items[transactions(:transfer_out).id][:account_type]
     assert_equal "CreditCard", items[transactions(:transfer_in).id][:account_type]
   end
+
+  # Search returns rows the user hid from reports (stale pending duplicates,
+  # etc.), so callers auditing classification must be able to skip them.
+  test "each transaction reports whether it is excluded from reports" do
+    @transaction.entry.update!(excluded: true)
+
+    items = @function.call("page_size" => 100)[:transactions].index_by { |t| t[:id] }
+
+    assert_equal true, items[@transaction.id][:excluded]
+    assert_equal false, items[transactions(:transfer_out).id][:excluded]
+  end
 end
