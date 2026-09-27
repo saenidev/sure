@@ -20,7 +20,9 @@ class Assistant::Function::UpdateTransaction < Assistant::Function
         not counted) or one_time (a windfall or one-off kept out of budgets).
         Transfer legs keep the kind their transfer gives them; pass
         reject_transfer: true (optionally together with kind) to unlink a wrong
-        match first. Every successful update marks the transaction as edited by
+        match first. Rejecting needs full access to both accounts, re-syncs
+        both, and is refused (transfer_has_fees) when the transfer carries fee
+        transactions, since rejecting would delete them. Every successful update marks the transaction as edited by
         the user, so syncs and rules will not overwrite it.
       INSTRUCTIONS
     end
@@ -73,7 +75,7 @@ class Assistant::Function::UpdateTransaction < Assistant::Function
         },
         reject_transfer: {
           type: "boolean",
-          description: "true to unlink this transaction from its transfer (both legs go back to standard and the pair is never auto-matched again). Omit otherwise."
+          description: "true to unlink this transaction from its transfer (both legs go back to standard and the pair is never auto-matched again). Refused when the transfer has fee transactions. Omit otherwise."
         }
       }
     )
@@ -92,6 +94,8 @@ class Assistant::Function::UpdateTransaction < Assistant::Function
     if reject_transfer
       return error("no_transfer", "This transaction is not part of a transfer.") unless transfer
       return error("not_authorized", "You do not have permission to update both sides of this transfer.") unless permitted_to_reject?(transfer)
+      # Rejecting destroys the transfer's fee transactions along with it
+      return error("transfer_has_fees", "This transfer has fee transactions that rejecting it would delete. Edit it in the app instead.") if transfer.has_fees?
     elsif params.key?("kind") && transfer
       return error("has_transfer", "This transaction is part of a transfer. Pass reject_transfer: true to unlink it before changing its kind.")
     end
@@ -113,6 +117,9 @@ class Assistant::Function::UpdateTransaction < Assistant::Function
 
     Entry.transaction do
       if reject_transfer
+        # Both legs' balances change, not only this one's; queue before the
+        # destroy while the transfer still knows its legs
+        transfer.sync_account_later
         transfer.reject!
         # reject! resets both legs through its own copies of the transactions
         transaction.reload

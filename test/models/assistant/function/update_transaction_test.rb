@@ -209,6 +209,35 @@ class Assistant::Function::UpdateTransactionTest < ActiveSupport::TestCase
     assert outflow.entry.user_modified?
   end
 
+  test "reject_transfer refuses when the transfer has fee transactions, keeping the fees" do
+    outflow = transactions(:transfer_out)
+    transfer = outflow.transfer
+    fee_entry = accounts(:depository).entries.create!(name: "Wire fee", date: Date.current, amount: 5, currency: "USD", entryable: Transaction.new(kind: "standard"))
+    transfer.fee_transactions << fee_entry.entryable
+
+    result = @function.call("id" => outflow.id, "reject_transfer" => true)
+
+    assert_equal false, result[:success]
+    assert_equal "transfer_has_fees", result[:error]
+    assert Entry.exists?(fee_entry.id)
+    assert outflow.reload.transfer.present?
+    assert_not RejectedTransfer.exists?(inflow_transaction_id: transfer.inflow_transaction_id, outflow_transaction_id: outflow.id)
+  end
+
+  test "reject_transfer queues a balance sync for both legs' accounts" do
+    outflow = transactions(:transfer_out)
+    inflow = transactions(:transfer_in)
+    accounts = [ outflow.entry.account, inflow.entry.account ]
+    assert_not_equal accounts.first, accounts.last
+
+    counts = accounts.to_h { |account| [ -> { Sync.where(syncable: account).count }, 1 ] }
+
+    assert_difference counts do
+      result = @function.call("id" => outflow.id, "reject_transfer" => true)
+      assert_equal true, result[:success]
+    end
+  end
+
   test "reject_transfer and kind combine in one call" do
     inflow = transactions(:transfer_in)
 
