@@ -133,8 +133,11 @@ class Transaction < ApplicationRecord
   # separate from INTERNAL_MOVEMENT_LABELS, which provider imports use to set kind.
   INCOME_STATEMENT_EXCLUDED_LABELS = (INTERNAL_MOVEMENT_LABELS + %w[Buy Sell]).freeze
 
-  # Providers that support pending transaction flags
-  PENDING_PROVIDERS = %w[simplefin plaid lunchflow enable_banking akahu up monobank mercury redbark financekit].freeze
+  # Providers that support pending transaction flags. "shortcut" is not a bank
+  # feed: it is a purchase hint posted through the API by an iPhone Shortcut
+  # (Apple Pay tap or bank alert) and settled later by the bank's posted
+  # transaction -- see ShortcutPending.
+  PENDING_PROVIDERS = %w[simplefin plaid lunchflow enable_banking akahu up monobank mercury redbark financekit shortcut].freeze
 
   # Slice size for the entry touch in reassign_category! — bounds the UPDATE
   # statement size when a merge or category destroy hits many transactions.
@@ -429,6 +432,8 @@ class Transaction < ApplicationRecord
 
   # Merge this pending transaction with its suggested posted match.
   # The pending entry is destroyed; the posted entry survives with attributes inherited from both sides.
+  # A Shortcut pending entry is settled instead (excluded, linked both ways) so
+  # API readers tracking it can see what became of it.
   # Attribute inheritance: Date + Category from pending, Name + Merchant from posted (booked).
   def merge_with_duplicate!
     return false unless pending?
@@ -522,7 +527,12 @@ class Transaction < ApplicationRecord
       posted_entry.mark_user_modified!
 
       Rails.logger.info("User merged pending entry #{pending_entry_id} (ext: #{external_id}) into posted entry #{posted_entry.id}")
-      pending_entry.destroy!
+      if pending_entry.shortcut?
+        settled = ShortcutPending::Settler.new(pending_entry.account).settle!(pending_entry, posted_entry, match: "manual")
+        raise ActiveRecord::Rollback unless settled
+      else
+        pending_entry.destroy!
+      end
       merge_succeeded = true
     end
 
@@ -560,12 +570,15 @@ class Transaction < ApplicationRecord
     account = entry.account
     currency = entry.currency
 
-    # Find recent posted transactions from the same account
+    # Find recent posted transactions from the same account. Shortcut entries
+    # are purchase hints, never the bank's posted version, so they are no
+    # merge target.
     account.entries
       .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
       .where.not(id: entry.id)
       .where(currency: currency)
       .where(Transaction.not_pending_sql)
+      .where("entries.source IS DISTINCT FROM ?", ShortcutPending::SOURCE)
       .order(date: :desc, created_at: :desc)
       .limit(limit)
       .offset(offset)

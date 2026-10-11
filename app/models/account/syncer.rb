@@ -7,6 +7,7 @@ class Account::Syncer
 
   def perform_sync(sync)
     Rails.logger.info("Processing balances (#{account.linked? ? 'reverse' : 'forward'})")
+    settle_shortcut_pendings
     import_market_data
     materialize_balances(window_start_date: sync.window_start_date)
     apply_provider_balance_overrides
@@ -18,6 +19,15 @@ class Account::Syncer
   end
 
   private
+    # Runs after any provider import for this account, and before balances
+    # are materialized so a settled (now excluded) hint drops out of them.
+    def settle_shortcut_pendings
+      ShortcutPending::Settler.new(account).settle_open!
+    rescue => e
+      Rails.logger.error("Error settling shortcut pending entries for account #{account.id}: #{e.class} - #{e.message}")
+      Sentry.capture_exception(e)
+    end
+
     def materialize_balances(window_start_date: nil)
       strategy = account.linked? ? :reverse : :forward
       Balance::Materializer.new(account, strategy: strategy, window_start_date: window_start_date).materialize_balances

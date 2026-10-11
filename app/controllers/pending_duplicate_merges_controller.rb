@@ -77,6 +77,7 @@ class PendingDuplicateMergesController < ApplicationController
         .where(currency: @transaction.entry.currency)
         .where.not(id: @transaction.entry.id)
         .where(Transaction.not_pending_sql)
+        .where("entries.source IS DISTINCT FROM ?", ShortcutPending::SOURCE)
         .first
     end
 

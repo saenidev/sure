@@ -892,6 +892,9 @@ RSpec.configure do |config|
               source: { type: :string, nullable: true },
               user_modified: { type: :boolean },
               classification: { type: :string },
+              pending: { type: :boolean, description: 'True while any provider (or a Shortcut hint) marks the transaction pending' },
+              excluded: { type: :boolean, description: 'Excluded from totals (settled Shortcut hints, stale pendings, split parents, user exclusions)' },
+              shortcut: { '$ref' => '#/components/schemas/TransactionShortcut', nullable: true },
               account: { '$ref' => '#/components/schemas/Account' },
               category: { '$ref' => '#/components/schemas/Category', nullable: true },
               merchant: { '$ref' => '#/components/schemas/Merchant', nullable: true },
@@ -902,6 +905,24 @@ RSpec.configure do |config|
               transfer: { '$ref' => '#/components/schemas/Transfer', nullable: true },
               created_at: { type: :string, format: :'date-time' },
               updated_at: { type: :string, format: :'date-time' }
+            }
+          },
+          TransactionShortcut: {
+            type: :object,
+            description: 'Present on Shortcut purchase hints (source "shortcut") and on posted transactions that settled one',
+            properties: {
+              status: { type: :string, nullable: true, enum: [ 'pending', 'settled', 'excluded', nil ], description: 'Hints only: pending, settled by a posted transaction, or excluded without settlement (stale or by the user)' },
+              origins: { type: :array, items: { type: :string, enum: %w[apple_pay bank_alert] } },
+              occurred_at: { type: :string, format: :'date-time', nullable: true },
+              original_amount: { type: :string, nullable: true, description: 'Amount seen by the phone in a foreign currency' },
+              original_currency: { type: :string, nullable: true },
+              conversion: { type: :string, nullable: true, enum: [ 'converted', 'unconverted', 'provided', nil ], description: 'converted: estimated at our rate; unconverted: no rate yet, amount is in original_currency; provided: account-currency amount sent by the client' },
+              settled_by_transaction_id: { type: :string, format: :uuid, nullable: true },
+              settled_by_entry_id: { type: :string, format: :uuid, nullable: true },
+              settled_at: { type: :string, format: :'date-time', nullable: true },
+              settlement_match: { type: :string, nullable: true, enum: [ 'exact', 'fx', 'tip', 'manual', nil ] },
+              matched_pending_transaction_id: { type: :string, format: :uuid, nullable: true },
+              matched_pending_entry_id: { type: :string, format: :uuid, nullable: true }
             }
           },
           TransactionCollection: {

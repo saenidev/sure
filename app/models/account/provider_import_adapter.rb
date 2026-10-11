@@ -802,6 +802,10 @@ class Account::ProviderImportAdapter
 
     query = query.where(external_id: nil) unless include_provider_entries
 
+    # A Shortcut purchase hint is never the institution's record of a
+    # transaction; the posted entry that settles it is.
+    query = query.where("entries.source IS DISTINCT FROM ?", ShortcutPending::SOURCE)
+
     # Add name filter if provided
     query = query.where(name: name) if name.present?
 

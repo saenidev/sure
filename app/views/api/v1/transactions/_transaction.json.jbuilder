@@ -21,6 +21,36 @@ json.external_id transaction.entry.external_id
 json.source transaction.entry.source
 json.user_modified transaction.entry.user_modified
 json.classification transaction.entry.classification
+json.pending transaction.pending?
+json.excluded transaction.entry.excluded
+
+# Shortcut purchase hints (source "shortcut") and the posted transactions that
+# settled them. status is set on hints only: pending, settled or excluded.
+shortcut = ShortcutPending.data(transaction)
+if shortcut.present?
+  json.shortcut do
+    json.status(
+      if !transaction.entry.shortcut? then nil
+      elsif shortcut["settled_by_entry_id"].present? then "settled"
+      elsif transaction.entry.excluded? then "excluded"
+      else "pending"
+      end
+    )
+    json.origins shortcut["origins"] || []
+    json.occurred_at shortcut["occurred_at"]
+    json.original_amount shortcut["original_amount"]
+    json.original_currency shortcut["original_currency"]
+    json.conversion shortcut["conversion"]
+    json.settled_by_transaction_id shortcut["settled_by_transaction_id"]
+    json.settled_by_entry_id shortcut["settled_by_entry_id"]
+    json.settled_at shortcut["settled_at"]
+    json.settlement_match shortcut["settlement_match"]
+    json.matched_pending_transaction_id shortcut["matched_pending_transaction_id"]
+    json.matched_pending_entry_id shortcut["matched_pending_entry_id"]
+  end
+else
+  json.shortcut nil
+end
 
 # Account information
 json.account do
