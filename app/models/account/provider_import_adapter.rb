@@ -2,12 +2,8 @@ class Account::ProviderImportAdapter
   # Matches a transaction any provider has flagged pending, for the lookups below that
   # join `transactions` directly. Derived from Transaction::PENDING_PROVIDERS rather
   # than spelled out, so a newly supported provider cannot silently drop out of
-  # pending→posted reconciliation. Frozen constant built from a frozen provider list:
-  # no user input reaches the SQL (same reasoning as Transaction::PENDING_CHECK_SQL).
-  PENDING_LOOKUP_SQL = Transaction::PENDING_PROVIDERS
-    .map { |provider| "(transactions.extra -> '#{provider}' ->> 'pending')::boolean = true" }
-    .join(" OR ")
-    .freeze
+  # pending→posted reconciliation.
+  PENDING_LOOKUP_SQL = Transaction::PENDING_SQL
 
   attr_reader :account, :skipped_entries
 
@@ -779,6 +775,10 @@ class Account::ProviderImportAdapter
     end
 
     query = query.where(external_id: nil) unless include_provider_entries
+
+    # A Shortcut purchase hint is never the institution's record of a
+    # transaction; the posted entry that settles it is.
+    query = query.where("entries.source IS DISTINCT FROM ?", ShortcutPending::SOURCE)
 
     # Add name filter if provided
     query = query.where(name: name) if name.present?

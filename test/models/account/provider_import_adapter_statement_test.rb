@@ -27,6 +27,17 @@ class Account::ProviderImportAdapterStatementTest < ActiveSupport::TestCase
     assert_equal synced, found
   end
 
+  test "a Shortcut purchase hint is never taken for the institution's record" do
+    create_transaction(account: @account, date: @date, amount: 50, external_id: "tap-1", source: "shortcut")
+    posted = create_transaction(account: @account, date: @date, amount: 50, external_id: "plaid-1", source: "plaid")
+
+    found = @adapter.find_duplicate_transaction(
+      date: @date, amount: 50, currency: "USD", include_provider_entries: true
+    )
+
+    assert_equal posted, found
+  end
+
   test "manual entries are still found when opting in" do
     manual = create_transaction(account: @account, date: @date, amount: 50)
 

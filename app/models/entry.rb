@@ -68,9 +68,8 @@ class Entry < ApplicationRecord
   # Pending transaction scopes - check Transaction.extra for provider pending flags
   # Works with any provider that stores pending status in extra["provider_name"]["pending"]
   scope :pending, -> {
-    conditions = Transaction::PENDING_PROVIDERS.map { |p| "(transactions.extra -> '#{p}' ->> 'pending')::boolean = true" }
     joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
-      .where(conditions.join(" OR "))
+      .where(Transaction::PENDING_SQL)
   }
 
   scope :excluding_pending, -> {
@@ -159,6 +158,10 @@ class Entry < ApplicationRecord
   # Retroactively reconcile pending transactions that have a matching posted version
   # This handles duplicates created before reconciliation code was deployed
   #
+  # Shortcut pending entries are left to ShortcutPending::Settler, which links
+  # both sides and allows for the FX and time-zone differences of a phone hint.
+  # Shortcut entries are never a posted match here either: they are not bank data.
+  #
   # @param account [Account, nil] Specific account to clean up, or nil for all accounts
   # @param dry_run [Boolean] If true, only report what would be done without making changes
   # @param date_window [Integer] Days to search forward for posted matches (default: 8)
@@ -167,12 +170,10 @@ class Entry < ApplicationRecord
   def self.reconcile_pending_duplicates(account: nil, dry_run: false, date_window: 8, amount_tolerance: 0.25)
     stats = { checked: 0, reconciled: 0, details: [] }
 
-    not_pending_sql = Transaction::PENDING_PROVIDERS
-      .map { |p| "(transactions.extra -> '#{p}' ->> 'pending')::boolean IS NOT TRUE" }
-      .join(" AND ")
+    not_pending_sql = Transaction::NOT_PENDING_SQL
 
     # Get pending entries to check
-    scope = Entry.pending.where(excluded: false)
+    scope = Entry.pending.where(excluded: false).where("entries.source IS DISTINCT FROM ?", ShortcutPending::SOURCE)
     scope = scope.where(account: account) if account
 
     scope.includes(:account, :entryable).find_each do |pending_entry|
@@ -188,6 +189,7 @@ class Entry < ApplicationRecord
         .where(amount: pending_entry.amount)
         .where(date: pending_entry.date..(pending_entry.date + date_window.days)) # Posted must be ON or AFTER pending date
         .where(not_pending_sql)
+        .where("entries.source IS DISTINCT FROM ?", ShortcutPending::SOURCE)
         .limit(2) # Only need to know if 0, 1, or 2+ candidates
         .to_a # Load limited records to avoid COUNT(*) on .size
 
@@ -231,6 +233,7 @@ class Entry < ApplicationRecord
         .where(date: pending_entry.date..(pending_entry.date + fuzzy_date_window.days)) # Posted ON or AFTER pending
         .where("ABS(entries.amount) BETWEEN ? AND ?", min_amount, max_amount)
         .where(not_pending_sql)
+        .where("entries.source IS DISTINCT FROM ?", ShortcutPending::SOURCE)
 
       # Match by name similarity (first 3 words)
       name_words = pending_entry.name.downcase.gsub(/[^a-z0-9\s]/, "").split.first(3).join(" ")
@@ -312,8 +315,15 @@ class Entry < ApplicationRecord
     Balance::TrendCalculator.new(self, entries, balances).trend
   end
 
+  # A Shortcut entry carries the phone's client id as external_id for
+  # idempotency, but it is a hint the user owns, not provider data: it stays
+  # editable and does not count as linked.
   def linked?
-    external_id.present?
+    external_id.present? && !shortcut?
+  end
+
+  def shortcut?
+    source == ShortcutPending::SOURCE
   end
 
   # Reconciliation state, following the Quicken uncleared / cleared / reconciled
@@ -333,7 +343,7 @@ class Entry < ApplicationRecord
   # than stored so it cannot drift, and deliberately not user-settable: this is a
   # fact about where the entry came from, not an opinion about it.
   def cleared?
-    external_id.present? || source.present?
+    (external_id.present? || source.present?) && !shortcut?
   end
 
   # A statement has been matched against this transaction. Unlike cleared?, this

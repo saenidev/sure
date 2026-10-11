@@ -44,6 +44,8 @@ class Api::V1::TransactionsController < Api::V1::BaseController
     # Rails will automatically use app/views/api/v1/transactions/index.json.jbuilder
     render :index
 
+  rescue InvalidFilterError => e
+    render_validation_error(e.message)
   rescue => e
     Rails.logger.error "TransactionsController#index error: #{e.message}"
     Rails.logger.error e.backtrace.join("\n")
@@ -90,7 +92,15 @@ class Api::V1::TransactionsController < Api::V1::BaseController
       return
     end
 
+    if !pending_requested? && idempotency_source == ShortcutPending::SOURCE
+      message = "Source \"#{ShortcutPending::SOURCE}\" is reserved for pending purchase hints (send pending: true and client_id)"
+      render json: { error: "validation_failed", message: message, errors: [ message ] }, status: :unprocessable_entity
+      return
+    end
+
     account = family.accounts.writable_by(current_resource_owner).find(account_id_param)
+
+    return create_shortcut_pending(account) if pending_requested?
 
     if idempotency_key_requested? && (existing_entry = existing_idempotent_entry(account))
       return render_existing_idempotent_entry(existing_entry)
@@ -114,6 +124,8 @@ class Api::V1::TransactionsController < Api::V1::BaseController
       }, status: :unprocessable_entity
     end
 
+  rescue ActiveRecord::RecordNotFound
+    raise
   rescue ActiveRecord::RecordNotUnique
     if idempotency_key_requested? && account && (existing_entry = existing_idempotent_entry(account))
       render_existing_idempotent_entry(existing_entry)
@@ -285,6 +297,13 @@ class Api::V1::TransactionsController < Api::V1::BaseController
         )
       end
 
+      # Changed-since filtering, for pollers. Settling a pending entry updates
+      # the entry (excluded) and the transaction (extra), so check both.
+      if params[:updated_since].present?
+        updated_since = parse_time_param(:updated_since)
+        query = query.where("entries.updated_at >= :since OR transactions.updated_at >= :since", since: updated_since)
+      end
+
       # Transaction type filtering (income/expense)
       if params[:type].present?
         case params[:type].downcase
@@ -312,8 +331,63 @@ class Api::V1::TransactionsController < Api::V1::BaseController
     def transaction_params
       params.require(:transaction).permit(
         :date, :amount, :name, :description, :notes, :currency,
-        :category_id, :merchant_id, :nature, :user_modified, tag_ids: []
+        :category_id, :merchant_id, :nature, :user_modified,
+        :pending, :client_id, :origin, :occurred_at, :original_amount, :original_currency,
+        tag_ids: []
       )
+    end
+
+    def parse_time_param(key)
+      Time.iso8601(params[key].to_s)
+    rescue ArgumentError
+      raise InvalidFilterError, "#{key} must be an ISO 8601 timestamp"
+    end
+
+    # A purchase hint from an iPhone Shortcut (Apple Pay tap or bank alert).
+    # 201 when a new pending entry is created; 200 when the request is a retry
+    # of a known client_id, or folds into the entry the other origin created.
+    def pending_requested?
+      ActiveModel::Type::Boolean.new.cast(params.dig(:transaction, :pending)) == true
+    end
+
+    def create_shortcut_pending(account)
+      result = ShortcutPending::Recorder.new(
+        account: account,
+        client_id: transaction_params[:client_id],
+        origin: transaction_params[:origin],
+        occurred_at: transaction_params[:occurred_at],
+        amount: pending_signed_amount,
+        currency: transaction_params[:currency],
+        original_amount: transaction_params[:original_amount],
+        original_currency: transaction_params[:original_currency],
+        name: transaction_params[:name] || transaction_params[:description],
+        date: transaction_params[:date],
+        notes: transaction_params[:notes],
+        category_id: transaction_params[:category_id],
+        merchant_id: transaction_params[:merchant_id],
+        tag_ids: transaction_params[:tag_ids]
+      ).record!
+
+      @entry = result.entry
+      @entry.sync_account_later unless result.outcome == :existing
+      @transaction = @entry.transaction
+      render :show, status: result.outcome == :created ? :created : :ok
+    rescue ActiveModel::ValidationError => e
+      render json: {
+        error: "validation_failed",
+        message: "Pending transaction could not be recorded",
+        errors: e.model.errors.full_messages
+      }, status: :unprocessable_entity
+    end
+
+    # Purchases are expenses unless the hint says otherwise (a refund alert).
+    def pending_signed_amount
+      return nil if transaction_params[:amount].blank?
+
+      amount = BigDecimal(transaction_params[:amount].to_s).abs
+      transaction_params[:nature].to_s.downcase.in?(%w[income inflow]) ? -amount : amount
+    rescue ArgumentError
+      transaction_params[:amount]
     end
 
     # An API client can opt a transaction it creates or updates into the

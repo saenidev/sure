@@ -133,27 +133,36 @@ class Transaction < ApplicationRecord
   # separate from INTERNAL_MOVEMENT_LABELS, which provider imports use to set kind.
   INCOME_STATEMENT_EXCLUDED_LABELS = (INTERNAL_MOVEMENT_LABELS + %w[Buy Sell]).freeze
 
-  # Providers that support pending transaction flags
-  PENDING_PROVIDERS = %w[simplefin plaid lunchflow enable_banking akahu up monobank mercury redbark financekit].freeze
+  # Providers that support pending transaction flags. "shortcut" is not a bank
+  # feed: it is a purchase hint posted through the API by an iPhone Shortcut
+  # (Apple Pay tap or bank alert) and settled later by the bank's posted
+  # transaction -- see ShortcutPending.
+  PENDING_PROVIDERS = %w[simplefin plaid lunchflow enable_banking akahu up monobank mercury redbark financekit shortcut].freeze
 
-  # Pre-computed SQL fragment for subqueries that check if a transaction (aliased as "t") is pending.
-  # Stored as a constant so static analysis can verify it contains no user input.
-  PENDING_CHECK_SQL = PENDING_PROVIDERS
-    .map { |p| "(t.extra -> '#{p}' ->> 'pending')::boolean = true" }
-    .join(" OR ")
-    .freeze
+  # Builds the SQL that checks whether a transaction row (under the given table
+  # alias) is pending for any provider in PENDING_PROVIDERS. Only ever called
+  # with literal aliases to build the frozen constants below, so no user input
+  # reaches the SQL and static analysis can verify that.
+  def self.pending_condition_sql(table_alias, pending: true)
+    if pending
+      PENDING_PROVIDERS.map { |p| "(#{table_alias}.extra -> '#{p}' ->> 'pending')::boolean = true" }.join(" OR ")
+    else
+      PENDING_PROVIDERS.map { |p| "(#{table_alias}.extra -> '#{p}' ->> 'pending')::boolean IS NOT TRUE" }.join(" AND ")
+    end
+  end
+  private_class_method :pending_condition_sql
+
+  # Pending / not-pending checks for queries that join `transactions` under its
+  # own name, and the pending check for subqueries that alias it as "t".
+  PENDING_SQL = pending_condition_sql("transactions").freeze
+  NOT_PENDING_SQL = pending_condition_sql("transactions", pending: false).freeze
+  PENDING_CHECK_SQL = pending_condition_sql("t").freeze
 
   # Pending transaction scopes - filter based on provider pending flags in extra JSONB
   # Works with any provider that stores pending status in extra["provider_name"]["pending"]
-  scope :pending, -> {
-    conditions = PENDING_PROVIDERS.map { |provider| "(transactions.extra -> '#{provider}' ->> 'pending')::boolean = true" }
-    where(conditions.join(" OR "))
-  }
+  scope :pending, -> { where(PENDING_SQL) }
 
-  scope :excluding_pending, -> {
-    conditions = PENDING_PROVIDERS.map { |provider| "(transactions.extra -> '#{provider}' ->> 'pending')::boolean IS DISTINCT FROM true" }
-    where(conditions.join(" AND "))
-  }
+  scope :excluding_pending, -> { where(NOT_PENDING_SQL) }
 
   # SQL snippet for raw queries that must exclude pending transactions.
   # Use in income statements, balance sheets, and raw analytics.
@@ -268,6 +277,8 @@ class Transaction < ApplicationRecord
 
   # Merge this pending transaction with its suggested posted match.
   # The pending entry is destroyed; the posted entry survives with attributes inherited from both sides.
+  # A Shortcut pending entry is settled instead (excluded, linked both ways) so
+  # API readers tracking it can see what became of it.
   # Attribute inheritance: Date + Category from pending, Name + Merchant from posted (booked).
   def merge_with_duplicate!
     return false unless pending?
@@ -361,7 +372,12 @@ class Transaction < ApplicationRecord
       posted_entry.mark_user_modified!
 
       Rails.logger.info("User merged pending entry #{pending_entry_id} (ext: #{external_id}) into posted entry #{posted_entry.id}")
-      pending_entry.destroy!
+      if pending_entry.shortcut?
+        settled = ShortcutPending::Settler.new(pending_entry.account).settle!(pending_entry, posted_entry, match: "manual")
+        raise ActiveRecord::Rollback unless settled
+      else
+        pending_entry.destroy!
+      end
       merge_succeeded = true
     end
 
@@ -399,14 +415,15 @@ class Transaction < ApplicationRecord
     account = entry.account
     currency = entry.currency
 
-    # Find recent posted transactions from the same account
-    conditions = PENDING_PROVIDERS.map { |provider| "(transactions.extra -> '#{provider}' ->> 'pending')::boolean IS NOT TRUE" }
-
+    # Find recent posted transactions from the same account. Shortcut entries
+    # are purchase hints, never the bank's posted version, so they are no
+    # merge target.
     account.entries
       .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
       .where.not(id: entry.id)
       .where(currency: currency)
-      .where(conditions.join(" AND "))
+      .where(NOT_PENDING_SQL)
+      .where("entries.source IS DISTINCT FROM ?", ShortcutPending::SOURCE)
       .order(date: :desc, created_at: :desc)
       .limit(limit)
       .offset(offset)
