@@ -79,18 +79,21 @@ refresh_demo_family:
 debt_maintenance:
   cron: "15 4 * * *" # daily at 4:15 AM UTC
   class: "DebtMaintenanceJob"
+  active_job: true
   queue: "scheduled"
   description: "Runs manual debt interest, obligation, and payment allocation maintenance"
 
 forecast_weekly_review:
   cron: "0 6 * * 1" # Mondays at 6:00 AM UTC
   class: "ForecastWeeklyReviewSchedulerJob"
+  active_job: true
   queue: "scheduled"
   description: "Fans out one weekly forecast review per eligible family (preview-enabled with accounts/scenarios)"
 
 forecast_market_close:
   cron: "30 22 * * 1-5" # 30 min after import_market_data, Monday through Friday
   class: "ForecastMarketCloseSchedulerJob"
+  active_job: true
   queue: "scheduled"
   description: "Fans out market-close forecast triggers per eligible family; generates only when movement is material"
 
