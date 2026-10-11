@@ -127,7 +127,7 @@ module ActiveSupport
       Rack::Test::UploadedFile.new(tempfile.path, content_type, true, original_filename: filename)
     end
 
-    def assert_queries_count(matcher:, max:)
+    def assert_max_queries_matching(matcher:, max:)
       queries = []
       callback = lambda do |_name, _start, _finish, _id, payload|
         sql = payload[:sql]

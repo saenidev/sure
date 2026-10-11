@@ -131,7 +131,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     end
 
     with_env_overrides("AI_DEBUG_MODE" => "true") do
-      assert_queries_count(matcher: /FROM "?tool_calls"?/i, max: 1) do
+      assert_max_queries_matching(matcher: /FROM "?tool_calls"?/i, max: 1) do
         get chat_url(chat)
       end
     end

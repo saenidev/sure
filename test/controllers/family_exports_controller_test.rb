@@ -89,7 +89,7 @@ class FamilyExportsControllerTest < ActionDispatch::IntegrationTest
       @family.family_exports.create!(status: index.even? ? "completed" : "processing")
     end
 
-    assert_queries_count(matcher: /SELECT .* FROM "family_exports"/, max: 2) do
+    assert_max_queries_matching(matcher: /SELECT .* FROM "family_exports"/, max: 2) do
       get family_exports_path
     end
 

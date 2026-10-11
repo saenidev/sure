@@ -93,7 +93,7 @@ class KrakenItemTest < ActiveSupport::TestCase
 
     preloaded_item = KrakenItem.includes(kraken_accounts: :account_provider).find(@item.id)
 
-    assert_queries_count(matcher: /SELECT .* FROM "(kraken_accounts|account_providers)"/, max: 0) do
+    assert_max_queries_matching(matcher: /SELECT .* FROM "(kraken_accounts|account_providers)"/, max: 0) do
       assert_equal I18n.t("kraken_items.kraken_item.sync_status.partial_sync", linked_count: 1, unlinked_count: 1),
                    preloaded_item.sync_status_summary
     end

@@ -355,7 +355,7 @@ class RulesControllerTest < ActionDispatch::IntegrationTest
       rule.save!
     end
 
-    assert_queries_count(matcher: /FROM "?rule_actions"?/i, max: 1) do
+    assert_max_queries_matching(matcher: /FROM "?rule_actions"?/i, max: 1) do
       get rules_url
     end
 

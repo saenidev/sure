@@ -33,7 +33,7 @@ class Settings::ProfilesControllerTest < ActionDispatch::IntegrationTest
 
     sign_in @admin
 
-    assert_queries_count(matcher: /FROM "?active_storage_attachments"?/i, max: 1) do
+    assert_max_queries_matching(matcher: /FROM "?active_storage_attachments"?/i, max: 1) do
       get settings_profile_path
     end
 

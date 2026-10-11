@@ -33,7 +33,7 @@ class TagsControllerTest < ActionDispatch::IntegrationTest
       entry.transaction.tags << tag
     end
 
-    assert_queries_count(matcher: /FROM "?taggings"?|JOIN "?taggings"?/i, max: 1) do
+    assert_max_queries_matching(matcher: /FROM "?taggings"?|JOIN "?taggings"?/i, max: 1) do
       get tags_url
     end
 

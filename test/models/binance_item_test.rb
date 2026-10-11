@@ -107,7 +107,7 @@ class BinanceItemTest < ActiveSupport::TestCase
 
     preloaded_item = BinanceItem.includes(binance_accounts: :account_provider).find(@item.id)
 
-    assert_queries_count(matcher: /SELECT .* FROM "(binance_accounts|account_providers)"/, max: 0) do
+    assert_max_queries_matching(matcher: /SELECT .* FROM "(binance_accounts|account_providers)"/, max: 0) do
       assert_equal I18n.t("binance_items.binance_item.sync_status.partial_sync", linked_count: 1, unlinked_count: 1),
                    preloaded_item.sync_status_summary
     end

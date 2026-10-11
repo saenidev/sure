@@ -69,7 +69,7 @@ class Api::V1::ChatsControllerTest < ActionDispatch::IntegrationTest
       )
     end
 
-    assert_queries_count(matcher: /FROM "?messages"?/i, max: 2) do
+    assert_max_queries_matching(matcher: /FROM "?messages"?/i, max: 2) do
       get "/api/v1/chats", headers: bearer_auth_header(@read_token)
     end
 
@@ -104,7 +104,7 @@ class Api::V1::ChatsControllerTest < ActionDispatch::IntegrationTest
       )
     end
 
-    assert_queries_count(matcher: /FROM "?tool_calls"?/i, max: 1) do
+    assert_max_queries_matching(matcher: /FROM "?tool_calls"?/i, max: 1) do
       get "/api/v1/chats/#{@chat.id}", headers: bearer_auth_header(@read_token)
     end
 
