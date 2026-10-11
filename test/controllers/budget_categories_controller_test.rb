@@ -238,7 +238,9 @@ class BudgetCategoriesControllerTest < ActionDispatch::IntegrationTest
       )
     end
 
-    assert_queries_count(matcher: /FROM "?entries"?/i, max: 1) do
+    # Per-transaction entry loads; the page's other entries queries (cache
+    # versions, earliest date) are not what the preload removes.
+    assert_queries_count(matcher: /FROM "entries" WHERE "entries"\."entryable_id"/i, max: 1) do
       get budget_budget_category_path(@budget, @parent_budget_category)
     end
 
