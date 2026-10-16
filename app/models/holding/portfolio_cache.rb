@@ -191,9 +191,18 @@ class Holding::PortfolioCache
             )
           end
 
-        # Low priority prices from holdings (if applicable)
+        # Low priority prices from holdings (if applicable). When a provider has
+        # reported holdings for this security, only those count: a holding this
+        # app calculated is itself derived from a price, and reading it back as
+        # market data lets one stale estimate carry forward through every later
+        # sync (gap-filled days never get corrected). Without any provider rows
+        # (manual or legacy accounts), all holdings remain usable as before.
         holding_prices = if use_holdings
-          (holdings_by_security_id[security.id] || []).map do |holding|
+          security_holdings = holdings_by_security_id[security.id] || []
+          provider_holdings = security_holdings.select { |holding| holding.account_provider_id.present? }
+          price_holdings = provider_holdings.any? ? provider_holdings : security_holdings
+
+          price_holdings.map do |holding|
             PriceWithPriority.new(
               price: Security::Price.new(
                 security: security,

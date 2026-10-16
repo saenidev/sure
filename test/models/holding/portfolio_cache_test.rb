@@ -57,6 +57,27 @@ class Holding::PortfolioCacheTest < ActiveSupport::TestCase
     assert_equal holding.price, cache.get_price(@security.id, holding.date).price
   end
 
+  test "ignores its own calculated holdings as a price source, using only provider holdings" do
+    Security::Price.delete_all
+    Entry.delete_all
+
+    provider = @account.account_providers.create!(provider: plaid_accounts(:one))
+
+    # A provider snapshot (the authoritative market price) and, on another day,
+    # a holding this app calculated earlier. Re-reading the calculated row as a
+    # price would carry a stale estimate forward through every later sync.
+    Holding.create!(security: @security, account: @account, date: 2.days.ago.to_date, qty: 1,
+                    price: 26.12, amount: 26.12, currency: "USD", account_provider: provider)
+    calculated = Holding.create!(security: @security, account: @account, date: 1.day.ago.to_date, qty: 1,
+                                 price: 4.8925, amount: 4.8925, currency: "USD")
+
+    cache = Holding::PortfolioCache.new(@account, use_holdings: true)
+
+    assert_equal BigDecimal("26.12"), cache.get_price(@security.id, 2.days.ago.to_date).price
+    assert_nil cache.get_price(@security.id, calculated.date),
+      "a calculated holding must not be reused as a market price"
+  end
+
   test "excludes income trades with zero price from trade price sources" do
     Security::Price.destroy_all
 
