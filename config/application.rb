@@ -76,5 +76,10 @@ module Sure
     # Handle OmniAuth/OIDC errors gracefully (must be before OmniAuth middleware)
     require_relative "../app/middleware/omniauth_error_handler"
     config.middleware.use OmniauthErrorHandler
+
+    # First in the stack, so Rack::Attack and ActionDispatch::RemoteIp both see
+    # the visitor's address rather than the tunnel's.
+    require_relative "../app/middleware/cloudflare_client_ip"
+    config.middleware.insert_before 0, CloudflareClientIp
   end
 end
