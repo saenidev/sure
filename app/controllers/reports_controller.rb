@@ -588,10 +588,10 @@ class ReportsController < ApplicationController
 
     def build_gains_by_tax_treatment(investment_statement)
       currency = Current.family.currency
-      # Eager-load account and accountable to avoid N+1 when accessing tax_treatment
-      current_holdings = investment_statement.current_holdings
-        .includes(account: :accountable)
-        .to_a
+      # The statement's memoized relation already preloads account: :accountable
+      # (for tax_treatment); chaining .includes here would build a new relation
+      # and load every holding a second time.
+      current_holdings = investment_statement.current_holdings.to_a
 
       # Group holdings by tax treatment (from account)
       holdings_by_treatment = current_holdings.group_by { |h| h.account.tax_treatment || :taxable }
@@ -649,9 +649,9 @@ class ReportsController < ApplicationController
         sell_trades.map { |t| t.entry.account.currency } +
         holdings_by_account.values.flatten.map(&:currency)
       ).compact.uniq.reject { |c| c == currency }
-      rates_by_trade_date = sell_trades.map { |t| t.entry.date }.uniq.each_with_object({}) do |date, memo|
-        memo[date] = ExchangeRate.rates_for(foreign_trade_currencies, to: currency, date: date)
-      end
+      rates_by_trade_date = ExchangeRate.rates_for_dates(
+        foreign_trade_currencies, to: currency, dates: sell_trades.map { |t| t.entry.date }
+      )
       convert_trade = ->(amount, from, date) {
         numeric = to_numeric.call(amount)
         from == currency ? numeric : numeric * (rates_by_trade_date.dig(date, from) || 1)

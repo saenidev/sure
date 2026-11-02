@@ -91,6 +91,8 @@ class Assistant::Function::GetHoldings < Assistant::Function
     paginated_holdings = ordered_holdings.includes(:security, :account).offset(pagy.offset).limit(pagy.limit)
 
     normalized_holdings = paginated_holdings.map do |holding|
+      # Without a stored cost basis this is two queries; read it once per row.
+      avg_cost = holding.avg_cost
       {
         ticker: holding.ticker,
         name: holding.name,
@@ -102,8 +104,8 @@ class Assistant::Function::GetHoldings < Assistant::Function
         family_currency: family.currency,
         amount_in_family_currency: in_family_currency(holding.amount, holding.currency)&.to_f&.round(2),
         weight: holding.weight&.round(2),
-        average_cost: holding.avg_cost&.to_f,
-        formatted_average_cost: holding.avg_cost&.format,
+        average_cost: avg_cost&.to_f,
+        formatted_average_cost: avg_cost&.format,
         account: holding.account.name,
         date: holding.date
       }

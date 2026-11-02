@@ -83,10 +83,13 @@ class Assistant::Function::GetAccounts < Assistant::Function
     sync_status = SyncStatus.new(accounts)
     last_entry_on = Entry.where(account_id: accounts.map(&:id)).where(date: ..Date.current)
                          .group(:account_id).maximum(:date)
+    # Account#start_date, for every account in one query rather than one each.
+    first_entry_on = Entry.where(account_id: accounts.map(&:id)).group(:account_id).minimum(:date)
 
     {
       as_of_date: as_of_date,
       accounts: accounts.map do |account|
+        start_date = (first_entry_on[account.id] || Date.current) - 1.day
         payload = {
           id: account.id,
           name: account.name,
@@ -96,7 +99,7 @@ class Assistant::Function::GetAccounts < Assistant::Function
           classification: account.classification,
           type: account.accountable_type,
           subtype: account.subtype,
-          start_date: account.start_date,
+          start_date: start_date,
           is_linked: account.linked?,
           provider: account.provider_name,
           status: account.status,
@@ -108,7 +111,7 @@ class Assistant::Function::GetAccounts < Assistant::Function
         payload[:terms] = terms if terms.present?
 
         if include_series
-          series = historical_balances(account, period)
+          series = historical_balances(account, period, start_date)
           payload[:historical_balances] = series if series
         end
         payload
@@ -196,8 +199,8 @@ class Assistant::Function::GetAccounts < Assistant::Function
       }.compact
     end
 
-    def historical_balances(account, period)
-      effective_start = [ account.start_date, period.start_date ].max
+    def historical_balances(account, period, start_date)
+      effective_start = [ start_date, period.start_date ].max
       # An account whose start date lies beyond the period (start_date derives
       # from the first entry, which can be future-dated) simply has no series;
       # it must not fail the whole accounts listing.

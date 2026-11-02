@@ -158,7 +158,10 @@
             <%# Expand/Collapse-all for the balance sheet, as the leftmost
                 icon in the header's hover cluster. Wired by the inline script
                 in _balance_sheet.html.erb (which finds it via this section). %>
-            <% if section[:key] == "balance_sheet" && @balance_sheet.classification_groups.any? { |cg| cg.account_groups.any? } %>
+            <%# @accounts.any? rather than the balance sheet's groups: this header sits
+                outside the section cache, and building the groups loads every
+                account on each view even when the section is a cache hit. %>
+            <% if section[:key] == "balance_sheet" && @accounts.any? %>
               <button
                 type="button"
                 class="flex items-center justify-center w-6 h-6 rounded-md text-secondary hover:text-primary hover:bg-container-inset-hover transition-colors opacity-0 group-hover:opacity-100"

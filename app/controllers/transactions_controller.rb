@@ -561,8 +561,8 @@ class TransactionsController < ApplicationController
 
   private
     def uncategorized_count_cache_key
-      "transactions_uncategorized_count/v5/#{Current.family.id}/#{Current.user.id}/" \
-        "#{Current.family.entries_version}/#{Current.family.accounts_status_version}/#{Current.account_share_version}"
+      "transactions_uncategorized_count/v6/#{Current.family.id}/#{Current.user.id}/" \
+        "#{Current.family.entries_cache_version}/#{Current.family.accounts_status_version}/#{Current.account_share_version}"
     end
 
     def projected_recurring_cache_key

@@ -38,6 +38,10 @@ class Balance::SyncCache
   private
     attr_reader :account
 
+    def exchange_rate_store
+      @exchange_rate_store ||= ExchangeRate::MemoizedStore.new
+    end
+
     def entries_by_date
       @entries_by_date ||= converted_entries.group_by(&:date)
     end
@@ -48,7 +52,8 @@ class Balance::SyncCache
 
         totals = account.holdings.each_with_object(Hash.new(0)) do |h, acc|
           begin
-            converted = Money.new(h.amount, h.currency).exchange_to(account.currency, date: h.date).amount
+            # One holding row per security per day, so memoize the rate per day.
+            converted = Money.new(h.amount, h.currency, store: exchange_rate_store).exchange_to(account.currency, date: h.date).amount
           rescue Money::ConversionError => error
             # Fall back to a 1:1 rate, which misstates the holding by the FX gap. Excluding it
             # instead would be worse here: `BaseCalculator#derive_cash_balance_on_date_from_total`

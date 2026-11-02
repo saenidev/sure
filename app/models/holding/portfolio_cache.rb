@@ -37,7 +37,7 @@ class Holding::PortfolioCache
     price = price_with_priority.price
     return nil unless price
 
-    price_money = Money.new(price.price, price.currency)
+    price_money = Money.new(price.price, price.currency, store: exchange_rate_store)
 
     begin
       converted_amount = price_money.exchange_to(account.currency, date: date).amount
@@ -89,6 +89,12 @@ class Holding::PortfolioCache
 
   private
     PriceWithPriority = Data.define(:price, :priority, :source)
+
+    # get_price runs for every security on every day; the rate depends only
+    # on the date, so look each one up once per sync.
+    def exchange_rate_store
+      @exchange_rate_store ||= ExchangeRate::MemoizedStore.new
+    end
 
     # Only splits the holdings can see: from the account's start date, when
     # its holdings begin, to today. A split announced for a future ex-date is

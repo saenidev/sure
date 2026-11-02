@@ -72,7 +72,7 @@ class InvestmentStatement
     @current_holdings ||= Holding::CurrentForInvestmentAccounts
       .new(current_holdings_account_ids)
       .relation
-      .includes(:security, :account)
+      .includes(:security, account: :accountable)
   end
 
   # Top investments rolled up by security across accounts, ranked by

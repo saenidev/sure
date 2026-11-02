@@ -99,6 +99,33 @@ module ExchangeRate::Provided
       end
     end
 
+    # rates_for over several dates at once: { date => { currency => rate } }.
+    # Same fallbacks as rates_for (exact date, then the nearest rate within
+    # NEAREST_RATE_LOOKBACK_DAYS, then the provider, then 1), but two queries
+    # for all the dates rather than one or two per date.
+    def rates_for_dates(currencies, to:, dates:)
+      unique_currencies = currencies.uniq
+      unique_dates = dates.uniq
+      return unique_dates.index_with { {} } if unique_currencies.empty? || unique_dates.empty?
+
+      stored = where(from_currency: unique_currencies, to_currency: to)
+                 .where(date: (unique_dates.min - NEAREST_RATE_LOOKBACK_DAYS)..unique_dates.max)
+                 .order(date: :desc)
+                 .to_a
+                 .group_by(&:from_currency)
+
+      unique_dates.index_with do |date|
+        unique_currencies.index_with do |currency|
+          # Newest first, so the first on or before the date is the exact
+          # match when there is one and the nearest earlier rate otherwise.
+          rate = stored.fetch(currency, []).find { |r| r.date <= date && r.date >= date - NEAREST_RATE_LOOKBACK_DAYS }
+          rate ||= find_or_fetch_rate(from: currency, to: to, date: date)
+          Rails.logger.warn("No exchange rate found for #{currency}/#{to} on #{date}, using 1") if rate.nil?
+          rate&.rate || 1
+        end
+      end
+    end
+
     # @return [Integer] The number of exchange rates synced
     def import_provider_rates(from:, to:, start_date:, end_date:, clear_cache: false)
       unless provider.present?
