@@ -383,8 +383,8 @@ class SimplefinItem::Importer
       # SimpleFin typically only provides 60-90 days of history (bank-dependent).
       # Use adaptive chunking: start with 2 chunks, continue if new data found,
       # stop after 2 consecutive empty chunks. Max 6 chunks (360 days) for safety.
-      chunk_size_days = 60
-      max_requests = 6  # Down from 22 - SimpleFIN rarely provides >90 days anyway
+      chunk_size_days = 45 # SimpleFIN's recommended maximum window per request
+      max_requests = 8  # 45 x 8 keeps the same ~1-year reach as 60 x 6
       current_end_date = Time.current
 
       # Decide how far back to walk:
@@ -1113,7 +1113,17 @@ class SimplefinItem::Importer
     end
 
     def general_provider_error?(error)
-      !error.is_a?(String) && error[:code].to_s.start_with?("gen.")
+      return false if error.is_a?(String) || advisory_range_warning?(error)
+
+      error[:code].to_s.start_with?("gen.")
+    end
+
+    # SimpleFIN answers a window over 45 days with a gen.api note ("Requested
+    # date range exceeds recommended range of 45 days...") but still returns
+    # the full data. It is advice, not a failure, so it must not discard a
+    # response that carries every account.
+    def advisory_range_warning?(error)
+      error[:code].to_s == "gen.api" && error[:msg].to_s.match?(/exceeds recommended range/i)
     end
 
     def partial_provider_response?(accounts_data)
