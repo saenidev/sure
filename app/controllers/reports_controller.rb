@@ -387,10 +387,12 @@ class ReportsController < ApplicationController
     def build_spending_comparison
       return nil unless preview_features_enabled?
 
+      income_statement = Current.family.income_statement(user: Current.user)
+
       IncomeStatement::SpendingComparison.new(
-        @income_statement,
+        income_statement,
         period: @period,
-        history_start: IncomeStatement::SpendingComparison.history_start(@income_statement)
+        history_start: IncomeStatement::SpendingComparison.history_start(income_statement)
       )
     end
 

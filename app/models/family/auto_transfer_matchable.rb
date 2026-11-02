@@ -124,6 +124,11 @@ module Family::AutoTransferMatchable
       require_common_writer: true
     )
 
+    transaction_ids = candidates_scope.flat_map do |match|
+      [ match.inflow_transaction_id, match.outflow_transaction_id ]
+    end.uniq
+    transactions_by_id = Transaction.includes(entry: :account).where(id: transaction_ids).index_by(&:id)
+
     # Track which transactions we've already matched to avoid duplicates
     used_transaction_ids = Set.new
 

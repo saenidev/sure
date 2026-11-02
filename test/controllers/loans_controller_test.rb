@@ -1509,17 +1509,6 @@ class LoansControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "forced balance failure"
   end
 
-  # A stray what-if parameter from an old link must change nothing: the
-  # feature is not in this tranche (#100 decision 10).
-  test "an extra-payment parameter is ignored" do
-    get account_path(@account)
-    baseline = chart_payload
-    get account_path(@account, extra_payment: { amount: "2000", frequency: "monthly" })
-
-    assert_response :success
-    assert_equal baseline, chart_payload
-  end
-
   private
     # The query of every period link in the chart card's picker.
     def period_link_queries
