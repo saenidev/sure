@@ -56,12 +56,26 @@ class MfaController < ApplicationController
     if @user && !@user.active?
       session.delete(:mfa_user_id)
       redirect_to new_session_path, alert: t("sessions.create.account_deactivated")
-    elsif @user&.verify_otp?(params[:code])
+    elsif @user && already_signed_in_as?(@user)
+      # A double submit (password manager auto-submit plus Enter) sends the same
+      # code twice: the first request signs in, and the second would fail as a
+      # replayed code and show "invalid code" to a user who is in fact signed in.
+      session.delete(:mfa_user_id)
+      redirect_to root_path
+    elsif @user && (otp_result = @user.verify_otp(params[:code])) == :accepted
       if complete_mfa_sign_in(@user)
         redirect_to root_path
       else
         redirect_to new_session_path, alert: t("sessions.create.account_deactivated")
       end
+    elsif otp_result == :replayed && @user.sessions.where(created_at: 30.seconds.ago..).exists?
+      # The concurrent twin of a double submit carries the cookies from before
+      # the first request signed in. Its correct-but-used code means that first
+      # request just succeeded, so send it home rather than to an error page.
+      # No session is created here: a browser without the new session cookie
+      # lands back on the sign-in page.
+      session.delete(:mfa_user_id)
+      redirect_to root_path
     else
       flash.now[:alert] = t(".invalid_code")
       render :verify, status: :unprocessable_entity
@@ -143,6 +157,10 @@ class MfaController < ApplicationController
   end
 
   private
+    def already_signed_in_as?(user)
+      Session.find_active_by_cookie(cookies.signed[:session_token])&.user_id == user.id
+    end
+
 
     # Turning the second factor on or off changes how the account is protected,
     # so it is confirmed with the password rather than with possession of an
