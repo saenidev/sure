@@ -1,5 +1,5 @@
 class AutoCategorizeJob < ApplicationJob
-  queue_as :medium_priority
+  queue_as :ai_low_priority
 
   PROVIDER_ATTEMPTS = 3
 

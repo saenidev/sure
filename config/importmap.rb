@@ -56,8 +56,8 @@ pin "internmap", preload: [ "authenticated" ] # @2.0.3
 pin "robust-predicates", preload: [ "authenticated" ] # @3.0.2
 pin "@floating-ui/dom", to: "@floating-ui--dom.js", preload: [ "authenticated" ] # @1.7.0
 pin "@floating-ui/core", to: "@floating-ui--core.js", preload: [ "authenticated" ] # @1.7.0
-pin "@floating-ui/utils", to: "@floating-ui--utils.js", preload: [ "authenticated" ] # @0.2.9
-pin "@floating-ui/utils/dom", to: "@floating-ui--utils--dom.js", preload: [ "authenticated" ] # @0.2.9
+pin "@floating-ui/utils", to: "@floating-ui--utils.js", preload: [ "authenticated" ] # @0.2.12
+pin "@floating-ui/utils/dom", to: "@floating-ui--utils--dom.js", preload: [ "authenticated" ] # @0.2.12
 pin "d3-sankey", preload: [ "authenticated" ] # @0.12.3
 pin "d3-array-src", to: "d3-array.js", preload: [ "authenticated" ]
 pin "d3-shape-src", to: "d3-shape.js", preload: [ "authenticated" ]

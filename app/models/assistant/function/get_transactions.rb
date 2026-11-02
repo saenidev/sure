@@ -24,15 +24,41 @@ class Assistant::Function::GetTransactions < Assistant::Function
         types: ["income", "expense"] to exclude transfers between the user's
         own accounts. Use a small page_size when you only need a few rows.
 
-        Each transaction carries `kind`: standard, funds_movement, cc_payment,
-        loan_payment, investment_contribution, one_time (a windfall or one-off
-        expense kept out of budgets) or debt_interest. `is_transfer` follows
-        kind alone; `has_transfer_link` is true only when the row is one leg of
-        an actual transfer between two of the user's accounts. `user_modified`
-        marks rows the user has edited by hand, `locked` lists attributes that
-        rules and syncs will not overwrite, `account_type` is the account's
-        type (e.g. Depository, CreditCard, Investment), and `excluded` marks
-        rows the user hid from reports (search still returns them).
+        Reading a row:
+
+        - `amount` is always POSITIVE. The direction is in `classification`
+          ("income" or "expense"). Summing `amount` without reading
+          `classification` gives a wrong total.
+        - `kind` distinguishes a real expense ("standard") from money moving
+          between the user's own accounts ("funds_movement", "cc_payment",
+          "loan_payment", "investment_contribution") and from a one-off
+          ("one_time"). Use it before attributing spend to a category.
+          `debt_interest` rows are ledger-only interest on a debt account.
+        - `is_transfer` follows kind alone; `has_transfer_link` is true only when
+          the row is one leg of an actual transfer between two of the user's
+          accounts.
+        - `user_modified` marks rows the user has edited by hand, `locked` lists
+          attributes that rules and syncs will not overwrite, and `account_type`
+          is the account's type (e.g. Depository, CreditCard, Investment).
+        - `transfer_account` names the account on the other side of a transfer.
+        - `pending` and `excluded` appear only when true; an absent key means
+          false. A pending row may still change amount or disappear.
+        - `clean_name` is the raw bank label with its prefixes, embedded dates
+          and card numbers removed ("CB 02/09 CARREFOUR MARKET" becomes
+          "CARREFOUR MARKET"). It appears only when it differs from `name`.
+          Group by it when `merchant` is null.
+        - `rail` is how the money moved ("card", "direct_debit", "transfer",
+          "withdrawal", "cheque", "fee", "loan_payment", "refund"), read from
+          the label. `rail: "refund"` is the only signal that an inflow is money
+          coming back rather than earnings, since Sure stores no refund link.
+        - `operation_date` is the date printed in the bank label, present only
+          when it differs from `date`. `date` is whatever the provider supplied
+          and is often the settlement date, so use `operation_date` when the
+          user asks when a payment was actually made.
+
+        Note: `total_income` and `total_expenses` are computed over the whole
+        filtered set and exclude tax-advantaged accounts, so they do not always
+        equal the sum of the rows on this page.
 
         Note on pagination:
 
@@ -182,10 +208,12 @@ class Assistant::Function::GetTransactions < Assistant::Function
       end
     end
 
+    accessible_account_ids = user.accessible_accounts.visible.pluck(:id)
+
     search = Transaction::Search.new(
       family,
       filters: search_params,
-      accessible_account_ids: user.accessible_accounts.visible.pluck(:id)
+      accessible_account_ids: accessible_account_ids
     )
     transactions_query = search.transactions_scope
     pagy_query = ordered(transactions_query, params)
@@ -204,8 +232,9 @@ class Assistant::Function::GetTransactions < Assistant::Function
 
     normalized_transactions = paginated_transactions.map do |txn|
       entry = txn.entry
-      {
+      row = {
         id: txn.id,
+        entry_id: entry.id,
         name: entry.name,
         date: entry.date,
         amount: entry.amount.abs,
@@ -223,9 +252,25 @@ class Assistant::Function::GetTransactions < Assistant::Function
         has_transfer_link: txn.transfer.present?,
         user_modified: entry.user_modified?,
         locked: (txn.locked_attributes.to_h.keys + entry.locked_attributes.to_h.keys).uniq.sort,
-        account_type: entry.account.accountable_type,
-        excluded: entry.excluded?
+        account_type: entry.account.accountable_type
       }
+
+      # Sparse by design: these are false on the large majority of rows, and a
+      # `"pending": false` on every line of a 50-row page is pure token cost.
+      # The tool description tells the caller that an absent key means false.
+      row[:pending] = true if txn.pending?
+      row[:excluded] = true if entry.excluded?
+
+      # A transfer's two legs can sit on either side of a sharing boundary: the
+      # visible leg is legitimately in this result, but naming the account on
+      # the other end would disclose an account this user cannot reach. The key
+      # is then left out rather than blanked, matching the sparse convention.
+      counterparty = transfer_counterparty_account(txn)
+      row[:transfer_account] = counterparty.name if counterparty && accessible_account_ids.include?(counterparty.id)
+
+      apply_label_hints(row, entry)
+
+      row
     end
 
     {
@@ -240,6 +285,37 @@ class Assistant::Function::GetTransactions < Assistant::Function
   end
 
   private
+    # Raw bank labels ("CB 02/09 CARREFOUR MARKET") are what most rows carry
+    # when no merchant was ever detected, and they defeat both grouping and
+    # categorization. The cleaned form is emitted only when it actually differs,
+    # so a user-written name costs nothing.
+    #
+    # operation_date is emitted only when it disagrees with the stored date. The
+    # two differ exactly when the provider recorded a settlement date while the
+    # card was used earlier, which is the gap that makes fee timing impossible
+    # to explain from `date` alone.
+    def apply_label_hints(row, entry)
+      label = Transaction::LabelNormalizer.normalize(entry.name, on: entry.date, region: family.country)
+
+      row[:clean_name] = label.name if label.normalized?(entry.name)
+      row[:rail] = label.rail if label.rail
+      row[:operation_date] = label.operation_date if label.operation_date && label.operation_date != entry.date
+
+      row
+    end
+
+    # The transfer pair is already preloaded for both directions (see the
+    # `includes` above), so naming the other side costs no extra query. Without
+    # it an assistant sees `is_transfer: true` and cannot tell a card payment
+    # from a move into savings.
+    def transfer_counterparty_account(txn)
+      transfer = txn.transfer
+      return nil unless transfer
+
+      other = transfer.inflow_transaction_id == txn.id ? transfer.outflow_transaction : transfer.inflow_transaction
+      other&.entry&.account
+    end
+
     def ordered(query, params)
       if params["sort_by"] == "amount"
         # Fully literal order strings; nothing user-provided reaches Arel.sql

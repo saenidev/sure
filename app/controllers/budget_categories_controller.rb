@@ -11,12 +11,16 @@ class BudgetCategoriesController < ApplicationController
 
   def show
     # The aggregate `Budget#actual_spending` already excludes transactions
-    # whose kind is in BUDGET_EXCLUDED_KINDS, including transfer-like,
-    # one-time, and ledger-only debt interest rows, via IncomeStatement.
-    # The drilldown list must apply the same filter so category rows match
-    # the aggregate. See issue #1059.
+    # whose kind is in BUDGET_EXCLUDED_KINDS (funds_movement, one_time,
+    # cc_payment, ledger-only debt interest) via IncomeStatement. The drilldown list must apply the
+    # same filter, otherwise a matched transfer (post-#874 the matcher
+    # correctly tags inflow as funds_movement and outflow per destination
+    # account) shows under the Uncategorized card -- or any retained
+    # category -- even though the aggregate ignores it. See issue #1059.
+    # A family that does not count investing as spending also leaves out
+    # investment contributions (Family#analytics_excluded_kinds).
     @recent_transactions = @budget.transactions
-                                  .where.not(transactions: { kind: Transaction::BUDGET_EXCLUDED_KINDS })
+                                  .where.not(transactions: { kind: Current.family.analytics_excluded_kinds })
 
     if params[:id] == BudgetCategory.uncategorized.id
       @budget_category = @budget.uncategorized_budget_category
