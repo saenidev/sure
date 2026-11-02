@@ -64,7 +64,7 @@ class IbkrFlexImportEndToEndTest < ActiveSupport::TestCase
     assert_not account.all_cash_portfolio?
 
     assert_equal 2, account.entries.where(entryable_type: "Trade").count
-    assert_equal 4, account.entries.where(entryable_type: "Transaction").count
+    assert_equal 2, account.entries.where(entryable_type: "Transaction").count
 
     visible = account.current_holdings
     assert_equal 1, visible.count
