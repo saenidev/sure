@@ -438,9 +438,9 @@ class IbkrAccountProcessorTest < ActiveSupport::TestCase
 
     assert_not_nil trade
     assert_equal BigDecimal("5"), trade.entryable.qty
-    assert_equal BigDecimal("745.0"), trade.amount
-    assert_not_nil fee
-    assert_equal BigDecimal("1.25"), fee.amount
+    # The commission is the trade's fee, not a separate transaction.
+    assert_equal BigDecimal("746.25"), trade.amount
+    assert_nil fee
   end
 
   test "processor repairs default opening anchor after importing activity entries" do

@@ -909,6 +909,8 @@ class Family::AutoTransferMatchableTest < ActiveSupport::TestCase
     inflow_entry = create_transaction(date: Date.current, account: other_brokerage, amount: -500)
 
     @family.auto_match_transfers!
+    # An auto-match stays pending; the kinds apply once it is confirmed.
+    Transfer.find_by!(outflow_transaction_id: outflow_entry.entryable_id).confirm!
 
     assert_equal "funds_movement", outflow_entry.entryable.reload.kind
     assert_equal "funds_movement", inflow_entry.entryable.reload.kind

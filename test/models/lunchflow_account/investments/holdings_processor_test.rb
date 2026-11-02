@@ -113,7 +113,7 @@ class LunchflowAccount::Investments::HoldingsProcessorTest < ActiveSupport::Test
       processor.process
     end
 
-    holding = @account.holdings.find_by!(external_id: "lunchflow_hld_total_basis")
+    holding = @account.holdings.where("external_id LIKE ?", "lunchflow_hld_total_basis_%").sole
 
     assert_in_delta 450.0, holding.cost_basis.to_f, 0.01
     assert_in_delta 5_000.0, holding.trend.value.amount.to_f, 0.01

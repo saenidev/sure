@@ -368,7 +368,7 @@ class SimplefinAccount::Investments::HoldingsProcessorTest < ActiveSupport::Test
     assert_in_delta 150.0,  position[:cost_basis].to_f, 0.01
     # The open lot keeps identifying the row, even though the closed lot's id
     # sorts first.
-    assert_equal "simplefin_lot-b-open", position[:external_id]
+    assert_match(/\Asimplefin_lot-b-open_/, position[:external_id])
   end
 
   test "a sold SimpleFIN position stops showing as a current holding" do

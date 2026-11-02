@@ -196,6 +196,8 @@ class Assistant::Function::UpdateTransactionTest < ActiveSupport::TestCase
   test "reject_transfer unlinks both legs and remembers the rejection" do
     outflow = transactions(:transfer_out)
     inflow = transactions(:transfer_in)
+    # Only a confirmed transfer gives its legs transfer kinds to reset.
+    outflow.transfer.confirm!
 
     result = @function.call("id" => outflow.id, "reject_transfer" => true)
 

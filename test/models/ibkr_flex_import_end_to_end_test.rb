@@ -56,7 +56,7 @@ class IbkrFlexImportEndToEndTest < ActiveSupport::TestCase
 
     result = IbkrAccount::Processor.new(ibkr_account).process
 
-    assert_equal({ holdings: 1, trades: 2, transactions: 4 }, result)
+    assert_equal({ holdings: 1, trades: 2, transactions: 2 }, result)
 
     account.reload
     assert_equal BigDecimal("3351"), account.balance

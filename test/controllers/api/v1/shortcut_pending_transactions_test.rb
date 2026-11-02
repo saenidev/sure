@@ -13,6 +13,9 @@ class Api::V1::ShortcutPendingTransactionsTest < ActionDispatch::IntegrationTest
 
   setup do
     travel_to Time.zone.parse("2026-10-12 12:00:00 UTC")
+    # The bridge host is fictional; resolve it to a public address so the
+    # SimpleFIN internal-address guard lets the stubbed request through.
+    Provider::Simplefin.any_instance.stubs(:resolve_addresses).returns([ "93.184.216.34" ])
 
     @user = users(:family_admin)
     @family = @user.family

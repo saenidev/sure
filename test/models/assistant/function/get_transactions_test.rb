@@ -239,7 +239,8 @@ class Assistant::Function::GetTransactionsTest < ActiveSupport::TestCase
     items = @function.call("page_size" => 100)[:transactions].index_by { |t| t[:id] }
 
     assert_equal true, items[@transaction.id][:excluded]
-    assert_equal false, items[transactions(:transfer_out).id][:excluded]
+    # Sparse: the key is left out when false.
+    assert_not items[transactions(:transfer_out).id].key?(:excluded)
   end
   test "reports kind and entry id on every row" do
     result = @function.call("search" => @transaction.entry.name)
