@@ -71,6 +71,7 @@ en:
         title: 'Authorization required'
         prompt: 'Authorize %{client_name} to use your account?'
         able_to: 'This application will be able to'
+        redirect_host: 'Access goes to %{host}. The name above can be faked, so continue only if you just started this yourself and you recognise that address.'
       show:
         title: 'Authorization code'
         authorization_code_label: 'Authorization Code:'

@@ -85,7 +85,7 @@ class SessionsController < ApplicationController
 
         if @session
           flash[:notice] = t("invitations.accept_choice.joined_household") if accept_pending_invitation_for(user)
-          redirect_to root_path
+          redirect_to after_authentication_path
         else
           redirect_to new_session_path, alert: t("sessions.create.account_deactivated")
         end
@@ -236,7 +236,7 @@ class SessionsController < ApplicationController
         return
       end
       flash[:notice] = t("invitations.accept_choice.joined_household") if accept_pending_invitation_for(user)
-      redirect_to root_path
+      redirect_to after_authentication_path
     end
   end
 
@@ -319,7 +319,7 @@ class SessionsController < ApplicationController
           return
         end
         flash[:notice] = t("invitations.accept_choice.joined_household") if accept_pending_invitation_for(user)
-        redirect_to root_path
+        redirect_to after_authentication_path
       end
     else
       # Mobile SSO with no linked identity - cache pending auth and redirect

@@ -7,6 +7,12 @@
     <p class="text-sm text-secondary">
       <%= raw t(".prompt", client_name: content_tag(:span, @pre_auth.client.name, class: "font-medium text-primary")) %>
     </p>
+    <% redirect_host = URI.parse(@pre_auth.redirect_uri.to_s).host rescue nil %>
+    <% if redirect_host.present? %>
+      <p class="text-xs text-secondary">
+        <%= raw t(".redirect_host", host: content_tag(:span, redirect_host, class: "font-medium text-primary")) %>
+      </p>
+    <% end %>
   </div>
 
   <% if @pre_auth.scopes.count > 0 %>

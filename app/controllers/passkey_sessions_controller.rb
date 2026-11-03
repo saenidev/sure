@@ -61,7 +61,7 @@ class PasskeySessionsController < ApplicationController
 
     return render_invalid unless complete_sign_in(user)
 
-    render json: { redirect_url: root_path }
+    render json: { redirect_url: after_authentication_path }
   rescue WebAuthn::Error, ActionController::BadRequest, ActionController::ParameterMissing
     render_invalid
   end

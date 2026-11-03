@@ -18,6 +18,8 @@ Doorkeeper.configure do
       # Return the authenticated user object as the resource owner.
       session_record.user
     else
+      # Come back to this consent screen after logging in.
+      session[:return_to_after_authenticating] = request.fullpath if request.get?
       redirect_to new_session_url
     end
   end

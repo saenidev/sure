@@ -61,10 +61,10 @@ class MfaController < ApplicationController
       # code twice: the first request signs in, and the second would fail as a
       # replayed code and show "invalid code" to a user who is in fact signed in.
       session.delete(:mfa_user_id)
-      redirect_to root_path
+      redirect_to after_authentication_path
     elsif @user && (otp_result = @user.verify_otp(params[:code])) == :accepted
       if complete_mfa_sign_in(@user)
-        redirect_to root_path
+        redirect_to after_authentication_path
       else
         redirect_to new_session_path, alert: t("sessions.create.account_deactivated")
       end

@@ -36,6 +36,14 @@ module Authentication
       nil
     end
 
+    # Where to send the user after logging in: the page that sent them to the
+    # login form (e.g. an OAuth consent screen), or the dashboard.
+    def after_authentication_path
+      path = session.delete(:return_to_after_authenticating)
+      # A local path only: "//host" and "/\host" both leave the site.
+      path.is_a?(String) && path.match?(%r{\A/(?![/\\])}) ? path : root_path
+    end
+
     def create_session_for(user)
       return false unless user&.persisted?
 
