@@ -108,6 +108,13 @@ Doorkeeper.configure do
   #
   access_token_expires_in 1.year
 
+  # MCP clients from dynamic registration get short tokens and refresh them.
+  custom_access_token_expires_in do |context|
+    client = context.client
+    application = client.respond_to?(:application) ? client.application : client
+    McpOauthClient::ACCESS_TOKEN_TTL.to_i if McpOauthClient.registered?(application)
+  end
+
   # Assign custom TTL for access tokens. Will be used instead of access_token_expires_in
   # option if defined. In case the block returns `nil` value Doorkeeper fallbacks to
   # +access_token_expires_in+ configuration option value. If you really need to issue a
